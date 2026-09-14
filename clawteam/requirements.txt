@@ -1,0 +1,2 @@
+-r requirements.lock.txt
+clawteam @ git+https://github.com/HKUDS/ClawTeam.git@01198332ef9270c32c5460b8a178f964fc0df451

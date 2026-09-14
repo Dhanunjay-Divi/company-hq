@@ -1,0 +1,39 @@
+{
+  "schema": 1,
+  "reviewed_on": "2026-09-13",
+  "supervisor_policy": "best_reviewed_available",
+  "preferred_supervisors": [
+    {
+      "provider": "codex",
+      "model": "gpt-6-astra",
+      "effort": "high",
+      "reason": "Current runtime describes this as its most capable model; user requests a top-model supervisor."
+    }
+  ],
+  "reviewed_codex_models": [
+    "gpt-6-astra",
+    "gpt-5.6-sol",
+    "gpt-5.6-terra",
+    "gpt-5.6-luna",
+    "gpt-5.5",
+    "gpt-5.3-codex-spark"
+  ],
+  "workers": {
+    "default": "gpt-5.6-terra",
+    "scout": "gpt-5.6-luna",
+    "reviewer": "gpt-5.6-sol",
+    "max_concurrent": 3
+  },
+  "follow_official_upgrade_hint": true,
+  "unknown_models": "review_current_official_capabilities_before_ranking",
+  "automatic_updates": "review_stage_test_activate_relevant_tools_with_rollback",
+  "scope": "all_projects",
+  "provider_note": "Codex execution is enabled. Other clients are discovered but need a verified integration and their own authorized login before use. Never put a third-party model ID into Codex's OpenAI-only model selector.",
+  "organization": {
+    "structure": "overall_head -> department_supervisors -> specialists",
+    "department_supervisor_default": "gpt-5.6-sol",
+    "department_supervisor_effort": "high",
+    "staffing": "goal_and_dependency_driven",
+    "concurrency_note": "Current worker limit schedules departments and specialists; it does not cap total project responsibilities."
+  }
+}

@@ -1,0 +1,19 @@
+#!/bin/sh
+set -eu
+
+umask 077
+
+exec /usr/bin/env -i \
+  PATH=/usr/bin:/bin:/usr/sbin:/sbin \
+  LANG=C \
+  HOME=/Users/uno \
+  USER=uno \
+  LOGNAME=uno \
+  XDG_CONFIG_HOME=/Users/Shared/agent-toolkit-codebase-memory-mcp-501/config \
+  CBM_CACHE_DIR=/Users/Shared/agent-toolkit-codebase-memory-mcp-501/cache \
+  CBM_RUNTIME_DIR=/Users/Shared/agent-toolkit-codebase-memory-mcp-501/runtime \
+  CBM_LOG_LEVEL=warn \
+  /usr/bin/python3 \
+  /Users/uno/.local/share/agent-toolkit/codebase-memory-mcp-0.10.8/bin/mcp_guard.py \
+  /Users/uno/.local/share/agent-toolkit/codebase-memory-mcp-0.10.8/bin/codebase-memory-mcp \
+  --ui=false "$@"

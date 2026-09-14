@@ -1,0 +1,8 @@
+(version 1)
+(deny default)
+(allow process*)
+(allow sysctl-read)
+(allow mach-lookup)
+(allow file-read*)
+(allow file-write* (subpath (param "STATE_ROOT")))
+(deny network*)

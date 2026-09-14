@@ -1,0 +1,42 @@
+{
+  "schema": 1,
+  "installed_on": "2026-09-13",
+  "package": "@nanonets/graft",
+  "version": "0.18.0",
+  "npm_git_head": "de8456e892bad5aeee11403e47fb2227773eb27e",
+  "npm_integrity": "sha512-sNshNND1Q/qSXiuSh9nW8NniWyaD+m55oJZ6oCGJsLzxot52WSJrdThsQ3NZVTNT+lqivlYkkqN8b/nf22S/Xw==",
+  "package_lock_sha256": "2c4d3d56f1ff74a50d2e31aa40e9fe23ed9e30d941cce4b0516fe8138a27ad93",
+  "install_command": "npm install --prefix /Users/uno/.local/share/agent-toolkit/graft-0.18.0 --ignore-scripts --save-exact @nanonets/graft@0.18.0",
+  "lifecycle_scripts_run": false,
+  "node": "24.1.0",
+  "native_binding": {
+    "package": "tree-sitter-kotlin@0.3.8",
+    "reason": "The npm package contains no macOS arm64 prebuild; lifecycle scripts were disabled.",
+    "build_tool": "npm-bundled node-gyp 11.2.0",
+    "node_headers": "/opt/homebrew/Cellar/node/24.1.0",
+    "sha256": "03be162de9ca93cb37d4b76498499cc60e2b3e78db8257347f98f9d03edcaa59"
+  },
+  "npm_audit": {
+    "production_dependencies": 45,
+    "vulnerabilities": {
+      "info": 0,
+      "low": 0,
+      "moderate": 0,
+      "high": 0,
+      "critical": 0,
+      "total": 0
+    }
+  },
+  "enabled_scope": "wrapper-only structural build, query, and explicit loopback visualization",
+  "disabled": [
+    "init",
+    "deep model build",
+    "brain",
+    "MCP registration/server",
+    "upgrade",
+    "repository hooks",
+    "agent configuration"
+  ],
+  "wrapper": "/Users/uno/.local/share/agent-toolkit/graft.py",
+  "state_root": "/Users/uno/.local/share/agent-toolkit/state/graft"
+}

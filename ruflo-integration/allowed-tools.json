@@ -1,0 +1,19 @@
+{
+  "schema": 1,
+  "tools": [
+    "memory_store",
+    "memory_retrieve",
+    "memory_list",
+    "memory_stats",
+    "task_create",
+    "task_status",
+    "task_list",
+    "task_update",
+    "task_complete",
+    "task_cancel",
+    "coordination_topology",
+    "coordination_sync",
+    "coordination_node",
+    "coordination_metrics"
+  ]
+}

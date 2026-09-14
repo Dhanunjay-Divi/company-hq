@@ -1,0 +1,43 @@
+# Generated/dependency files
+node_modules/
+deps/
+venv/
+.venv/
+validation-venv/
+dist/
+build/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.DS_Store
+SOURCE.zip
+*.log
+*.app/
+*.dmg
+*.tar.gz
+# Private per-machine/project data
+state/
+runs/
+bindings/
+logs/
+backups/
+verification-workspace/
+verification-fixtures/
+saved-projects.json
+capabilities.json
+upstream-status.json
+managed-default.json
+*-receipt.json
+pinky-before.json
+product-integrity.json
+current-setup-run.txt
+# Credentials and account artifacts
+.env
+.env.*
+!.env.example
+auth.json
+config.toml
+*.pem
+*.key
+*.sqlite*
+*.db

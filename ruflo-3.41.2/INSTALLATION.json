@@ -1,0 +1,25 @@
+{
+  "checked_on": "2026-09-13",
+  "ruflo": "3.41.2",
+  "cli": "3.33.0",
+  "install_scripts_executed": false,
+  "optional_dependencies_installed": false,
+  "global_or_project_init_executed": false,
+  "mcp_registered": false,
+  "daemon_enabled": false,
+  "operational_use_enabled": false,
+  "probe": "Sanitized environment, absolute node and wrapper path, exactly --version",
+  "probe_output": "ruflo v3.41.2",
+  "package_lock_sha256": "9af7ae2fd379e0b08da454e6870f2fd8510ef131db36226e3dd56f48624b57d1",
+  "installed_lock_integrities_verified": true,
+  "npm_audit_affected_packages": {"high": 3, "moderate": 2, "critical": 0},
+  "inactivity_reasons": [
+    "Regular CLI startup including --help can mutate project/global configuration and start background services.",
+    "Dependency advisories remain; do not treat the installation as security-approved.",
+    "The version fast path is not evidence that runtime or optional capabilities work."
+  ],
+  "registry_integrities": {
+    "ruflo": "sha512-G0tf6hq9lm1edZCY//ihTaEVPjniVK73/EW3/OfJf+QWwW91AwGo/taWE50GSHnQz9N/3Bd0S+8+xuZyCaveCg==",
+    "cli": "sha512-htAstxDzzcSAy1o9h8J7Fql9vOFU6cqv+cnnSy7XIBUhS3WNUWb+d38ftjcMZkTWB82M5xfeIZ41XPYhGRmbuw=="
+  }
+}

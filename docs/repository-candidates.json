@@ -1,0 +1,688 @@
+{
+  "source": "https://app.notion.com/p/The-Top-40-Claude-Repos-3d8e396e06bb81f89f09e657d663b003",
+  "source_access": "Read public rendered Notion page through browser, 2026-09-14 UTC",
+  "notice": "Metadata is not a source audit, license approval, subscription entitlement, or permission to install. No candidate is activated by this file.",
+  "repositories": [
+    {
+      "repo": "shareAI-lab/learn-claude-code",
+      "category": "Harness",
+      "review_status": "candidate; metadata only",
+      "installed_by_this_handoff": false,
+      "metadata": {
+        "canonical_repo": "shareAI-lab/learn-claude-code",
+        "url": "https://github.com/shareAI-lab/learn-claude-code",
+        "description": "Bash is all you need -  A nano claude code\u2013like \u300cagent harness\u300d, built from 0 to 1",
+        "archived": false,
+        "license_spdx": "MIT",
+        "default_branch": "main",
+        "observed_head": "0dcafa2ae053a1ddd6a72f265431104b08a5aa13",
+        "pushed_at": "2026-08-26T16:38:22Z"
+      },
+      "next_action": "Backlog: identify a concrete missing capability before source review or installation."
+    },
+    {
+      "repo": "multica-ai/andrej-karpathy-skills",
+      "category": "Harness",
+      "review_status": "candidate; metadata only",
+      "installed_by_this_handoff": false,
+      "metadata": {
+        "canonical_repo": "multica-ai/andrej-karpathy-skills",
+        "url": "https://github.com/multica-ai/andrej-karpathy-skills",
+        "description": "A single CLAUDE.md file to improve Claude Code behavior, derived from Andrej Karpathy's observations on LLM coding pitfalls.",
+        "archived": false,
+        "license_spdx": null,
+        "default_branch": "main",
+        "observed_head": "2c606141936f1eeef17fa3043a72095b4765b9c2",
+        "pushed_at": "2026-04-20T10:05:04Z"
+      },
+      "next_action": "Backlog: identify a concrete missing capability before source review or installation."
+    },
+    {
+      "repo": "obra/superpowers",
+      "category": "Harness",
+      "review_status": "README and metadata assessed; implementation compatibility and install behavior not validated",
+      "installed_by_this_handoff": false,
+      "metadata": {
+        "canonical_repo": "obra/superpowers",
+        "url": "https://github.com/obra/superpowers",
+        "description": "An agentic skills framework & software development methodology that works.",
+        "archived": false,
+        "license_spdx": "MIT",
+        "default_branch": "main",
+        "observed_head": "b36e0829c6d0140e93cfef2ca599b1b07d4a7797",
+        "pushed_at": "2026-09-12T00:16:38Z"
+      },
+      "next_action": "First: bounded implementation plans, systematic debugging and staged code review; resolve workflow conflicts."
+    },
+    {
+      "repo": "DietrichGebert/ponytail",
+      "category": "Harness",
+      "review_status": "candidate; metadata only",
+      "installed_by_this_handoff": false,
+      "metadata": {
+        "canonical_repo": "DietrichGebert/ponytail",
+        "url": "https://github.com/DietrichGebert/ponytail",
+        "description": "Makes your AI agent think like the laziest senior dev in the room. The best code is the code you never wrote.",
+        "archived": false,
+        "license_spdx": "MIT",
+        "default_branch": "main",
+        "observed_head": "356918eba965ee1eac64bd3a7f0dd02108350de5",
+        "pushed_at": "2026-09-07T16:27:01Z"
+      },
+      "next_action": "Backlog: identify a concrete missing capability before source review or installation."
+    },
+    {
+      "repo": "garrytan/gstack",
+      "category": "Harness",
+      "review_status": "README and metadata assessed; implementation compatibility and install behavior not validated",
+      "installed_by_this_handoff": false,
+      "metadata": {
+        "canonical_repo": "garrytan/gstack",
+        "url": "https://github.com/garrytan/gstack",
+        "description": "Use Garry Tan's exact Claude Code setup: 23 opinionated tools that serve as CEO, Designer, Eng Manager, Release Manager, Doc Engineer, and QA",
+        "archived": false,
+        "license_spdx": "MIT",
+        "default_branch": "main",
+        "observed_head": "71f6048e8ada25180e61438abc1d98cb151fe9a7",
+        "pushed_at": "2026-09-11T19:40:16Z"
+      },
+      "next_action": "First: product/design review and browser QA workflow candidates; adapt host requirements and release authorization."
+    },
+    {
+      "repo": "affaan-m/ECC",
+      "category": "Harness",
+      "review_status": "README and metadata assessed; implementation compatibility and install behavior not validated",
+      "installed_by_this_handoff": false,
+      "metadata": {
+        "canonical_repo": "affaan-m/ECC",
+        "url": "https://github.com/affaan-m/ECC",
+        "description": "The agent harness performance optimization system. Skills, instincts, memory, security, and research-first development for Claude Code, Codex, Opencode, Cursor and beyond.",
+        "archived": false,
+        "license_spdx": "MIT",
+        "default_branch": "main",
+        "observed_head": "8321021c54d670126ce3b2969d5deb880b4b0c2a",
+        "pushed_at": "2026-09-14T04:55:52Z"
+      },
+      "next_action": "First: inspect selected context, verification and review components; no wholesale hooks/config installation."
+    },
+    {
+      "repo": "Yeachan-Heo/oh-my-claudecode",
+      "category": "Harness",
+      "review_status": "candidate; metadata only",
+      "installed_by_this_handoff": false,
+      "metadata": {
+        "canonical_repo": "Yeachan-Heo/oh-my-claudecode",
+        "url": "https://github.com/Yeachan-Heo/oh-my-claudecode",
+        "description": "Teams-first Multi-agent orchestration for Claude Code",
+        "archived": false,
+        "license_spdx": "MIT",
+        "default_branch": "main",
+        "observed_head": "5281b19e0d64f8e6dc6767f2130299a88af2dc71",
+        "pushed_at": "2026-09-14T03:45:59Z"
+      },
+      "next_action": "Backlog: identify a concrete missing capability before source review or installation."
+    },
+    {
+      "repo": "coleam00/Archon",
+      "category": "Harness",
+      "review_status": "candidate; metadata only",
+      "installed_by_this_handoff": false,
+      "metadata": {
+        "canonical_repo": "coleam00/Archon",
+        "url": "https://github.com/coleam00/Archon",
+        "description": "The first open-source harness builder for AI coding. Make AI coding deterministic and repeatable.",
+        "archived": false,
+        "license_spdx": "MIT",
+        "default_branch": "dev",
+        "observed_head": "a7e300b2a74051711b7de2262c267cb96d3002d2",
+        "pushed_at": "2026-09-14T04:51:24Z"
+      },
+      "next_action": "Backlog: identify a concrete missing capability before source review or installation."
+    },
+    {
+      "repo": "Leonxlnx/taste-skill",
+      "category": "Skills",
+      "review_status": "candidate; metadata only",
+      "installed_by_this_handoff": false,
+      "metadata": {
+        "canonical_repo": "Leonxlnx/taste-skill",
+        "url": "https://github.com/Leonxlnx/taste-skill",
+        "description": "Taste-Skill - gives your AI good taste. stops the AI from generating boring, generic slop ",
+        "archived": false,
+        "license_spdx": "MIT",
+        "default_branch": "main",
+        "observed_head": "ccbc15639c97057cbfcf32ecebc38ef716e4bb37",
+        "pushed_at": "2026-08-24T15:23:56Z"
+      },
+      "next_action": "UI candidate after readability/onboarding acceptance criteria are defined."
+    },
+    {
+      "repo": "anthropics/skills",
+      "category": "Skills",
+      "review_status": "candidate; metadata only",
+      "installed_by_this_handoff": false,
+      "metadata": {
+        "canonical_repo": "anthropics/skills",
+        "url": "https://github.com/anthropics/skills",
+        "description": "Public repository for Agent Skills",
+        "archived": false,
+        "license_spdx": null,
+        "default_branch": "main",
+        "observed_head": "34040c9c568585f6929bedeaad110ad08f079624",
+        "pushed_at": "2026-09-10T19:44:11Z"
+      },
+      "next_action": "Backlog: identify a concrete missing capability before source review or installation."
+    },
+    {
+      "repo": "mattpocock/skills",
+      "category": "Skills",
+      "review_status": "candidate; metadata only",
+      "installed_by_this_handoff": false,
+      "metadata": {
+        "canonical_repo": "mattpocock/skills",
+        "url": "https://github.com/mattpocock/skills",
+        "description": "Skills for Real Engineers. Straight from my .agents directory.",
+        "archived": false,
+        "license_spdx": "MIT",
+        "default_branch": "main",
+        "observed_head": "3cca18b368ae95cdbdebbff572ccafa662551015",
+        "pushed_at": "2026-09-04T08:45:43Z"
+      },
+      "next_action": "Backlog: identify a concrete missing capability before source review or installation."
+    },
+    {
+      "repo": "wshobson/agents",
+      "category": "Skills",
+      "review_status": "candidate; metadata only",
+      "installed_by_this_handoff": false,
+      "metadata": {
+        "canonical_repo": "wshobson/agents",
+        "url": "https://github.com/wshobson/agents",
+        "description": "Multi-harness agentic plugin marketplace for Claude Code, Codex, Cursor, OpenCode, GitHub Copilot, Google Antigravity, and Pi",
+        "archived": false,
+        "license_spdx": "MIT",
+        "default_branch": "main",
+        "observed_head": "4236bb91f8395b0435f1d8b8baf9e8e4c69a8620",
+        "pushed_at": "2026-09-14T01:07:51Z"
+      },
+      "next_action": "Backlog: identify a concrete missing capability before source review or installation."
+    },
+    {
+      "repo": "anthropics/claude-plugins-official",
+      "category": "Skills",
+      "review_status": "candidate; metadata only",
+      "installed_by_this_handoff": false,
+      "metadata": {
+        "canonical_repo": "anthropics/claude-plugins-official",
+        "url": "https://github.com/anthropics/claude-plugins-official",
+        "description": "Official, Anthropic-managed directory of high quality Claude Code Plugins.",
+        "archived": false,
+        "license_spdx": "Apache-2.0",
+        "default_branch": "main",
+        "observed_head": "022b3c274938ddfb9fd928fc582eb9b9ed0f537f",
+        "pushed_at": "2026-09-13T23:08:22Z"
+      },
+      "next_action": "Backlog: identify a concrete missing capability before source review or installation."
+    },
+    {
+      "repo": "addyosmani/agent-skills",
+      "category": "Skills",
+      "review_status": "candidate; metadata only",
+      "installed_by_this_handoff": false,
+      "metadata": {
+        "canonical_repo": "addyosmani/agent-skills",
+        "url": "https://github.com/addyosmani/agent-skills",
+        "description": "Production-grade engineering skills for AI coding agents.",
+        "archived": false,
+        "license_spdx": "MIT",
+        "default_branch": "main",
+        "observed_head": "be4e44a9fbc5e8df0beaefadbb28bd22ee61cc39",
+        "pushed_at": "2026-09-12T03:14:59Z"
+      },
+      "next_action": "Backlog: identify a concrete missing capability before source review or installation."
+    },
+    {
+      "repo": "nextlevelbuilder/ui-ux-pro-max-skill",
+      "category": "Skills",
+      "review_status": "candidate; metadata only",
+      "installed_by_this_handoff": false,
+      "metadata": {
+        "canonical_repo": "nextlevelbuilder/ui-ux-pro-max-skill",
+        "url": "https://github.com/nextlevelbuilder/ui-ux-pro-max-skill",
+        "description": "An AI skill that provides design intelligence for building professional UI/UX across multiple platforms.",
+        "archived": false,
+        "license_spdx": "MIT",
+        "default_branch": "main",
+        "observed_head": "7f69fed6a2717900085f1bc3b263721f8ba025e2",
+        "pushed_at": "2026-09-10T06:53:40Z"
+      },
+      "next_action": "UI candidate; compare against current graph interaction constraints."
+    },
+    {
+      "repo": "travisvn/awesome-claude-skills",
+      "category": "Skills",
+      "review_status": "candidate; metadata only",
+      "installed_by_this_handoff": false,
+      "metadata": {
+        "canonical_repo": "travisvn/awesome-claude-skills",
+        "url": "https://github.com/travisvn/awesome-claude-skills",
+        "description": "A curated list of awesome Claude Skills, resources, and tools for customizing Claude AI workflows \u2014 particularly Claude Code",
+        "archived": false,
+        "license_spdx": null,
+        "default_branch": "main",
+        "observed_head": "1da55aa810f206d3fe2005e7e3989b15a275d942",
+        "pushed_at": "2026-04-28T19:30:24Z"
+      },
+      "next_action": "Backlog: identify a concrete missing capability before source review or installation."
+    },
+    {
+      "repo": "OthmanAdi/planning-with-files",
+      "category": "Memory",
+      "review_status": "candidate; metadata only",
+      "installed_by_this_handoff": false,
+      "metadata": {
+        "canonical_repo": "OthmanAdi/planning-with-files",
+        "url": "https://github.com/OthmanAdi/planning-with-files",
+        "description": "Persistent file-based planning for AI coding agents and long-running tasks. Crash-proof markdown plans, session recovery after /clear and compaction, per-turn re-injection against context rot, deterministic completion gate. Manus-style. Install from npm, the Claude Code plugin marketplace, or npx skills. Codex, Cursor, OpenCode, 60+ agents.",
+        "archived": false,
+        "license_spdx": "MIT",
+        "default_branch": "master",
+        "observed_head": "8699bc573c48ead0df2aaf72792838a7b69cb72e",
+        "pushed_at": "2026-09-14T06:31:59Z"
+      },
+      "next_action": "Backlog: identify a concrete missing capability before source review or installation."
+    },
+    {
+      "repo": "thedotmack/claude-mem",
+      "category": "Memory",
+      "review_status": "candidate; metadata only",
+      "installed_by_this_handoff": false,
+      "metadata": {
+        "canonical_repo": "thedotmack/claude-mem",
+        "url": "https://github.com/thedotmack/claude-mem",
+        "description": "Persistent Context Across Sessions for Every Agent \u2013  Captures everything your agent does during sessions, compresses it with AI, and injects relevant context back into future sessions. Works with Claude Code, OpenClaw, Codex, Gemini, Hermes, Copilot, OpenCode + More",
+        "archived": false,
+        "license_spdx": "Apache-2.0",
+        "default_branch": "main",
+        "observed_head": "40be934a846cca6d2038f1d9800428a4f4d5136f",
+        "pushed_at": "2026-09-13T09:42:20Z"
+      },
+      "next_action": "Backlog: identify a concrete missing capability before source review or installation."
+    },
+    {
+      "repo": "colbymchenry/codegraph",
+      "category": "Memory",
+      "review_status": "candidate; metadata only",
+      "installed_by_this_handoff": false,
+      "metadata": {
+        "canonical_repo": "colbymchenry/codegraph",
+        "url": "https://github.com/colbymchenry/codegraph",
+        "description": "Pre-indexed code knowledge graph, auto syncs on code changes, for Claude Code, Codex, Gemini, Cursor, OpenCode, AntiGravity, Kiro, CoPilot, and Hermes Agent \u2014 fewer tokens, fewer tool calls, 100% local",
+        "archived": false,
+        "license_spdx": "MIT",
+        "default_branch": "main",
+        "observed_head": "3ed73bc127323e63153bf6ec8354afa82ce36aaf",
+        "pushed_at": "2026-09-14T06:47:15Z"
+      },
+      "next_action": "Backlog: identify a concrete missing capability before source review or installation."
+    },
+    {
+      "repo": "Graphify-Labs/graphify",
+      "category": "Memory",
+      "review_status": "candidate; metadata only",
+      "installed_by_this_handoff": false,
+      "metadata": {
+        "canonical_repo": "Graphify-Labs/graphify",
+        "url": "https://github.com/Graphify-Labs/graphify",
+        "description": "Turn any codebase, with its docs, SQL schemas, configs, and PDFs, into a queryable knowledge graph. A /graphify skill for Claude Code, Cursor, Codex, and Gemini CLI: local deterministic AST parsing, every edge explained, no vector store.",
+        "archived": false,
+        "license_spdx": "Apache-2.0",
+        "default_branch": "v8",
+        "observed_head": "fe66389083369c3159aa391117185c8f58b4d07c",
+        "pushed_at": "2026-09-12T21:24:20Z"
+      },
+      "next_action": "Backlog: identify a concrete missing capability before source review or installation."
+    },
+    {
+      "repo": "yamadashy/repomix",
+      "category": "Memory",
+      "review_status": "candidate; metadata only",
+      "installed_by_this_handoff": false,
+      "metadata": {
+        "canonical_repo": "yamadashy/repomix",
+        "url": "https://github.com/yamadashy/repomix",
+        "description": "\ud83d\udce6 Repomix is a powerful tool that packs your entire repository into a single, AI-friendly file. Perfect for when you need to feed your codebase to Large Language Models (LLMs) or other AI tools like Claude, ChatGPT, DeepSeek, Perplexity, Gemini, Gemma, Llama, Grok, and more.",
+        "archived": false,
+        "license_spdx": "MIT",
+        "default_branch": "main",
+        "observed_head": "6c5ead0d2b83911d4284be9f3424e7381ae44763",
+        "pushed_at": "2026-09-13T06:41:37Z"
+      },
+      "next_action": "Backlog: identify a concrete missing capability before source review or installation."
+    },
+    {
+      "repo": "rohitg00/agentmemory",
+      "category": "Memory",
+      "review_status": "candidate; metadata only",
+      "installed_by_this_handoff": false,
+      "metadata": {
+        "canonical_repo": "rohitg00/agentmemory",
+        "url": "https://github.com/rohitg00/agentmemory",
+        "description": "#1 Persistent memory for AI coding agents based on real-world benchmarks",
+        "archived": false,
+        "license_spdx": "Apache-2.0",
+        "default_branch": "main",
+        "observed_head": "e04ba88819c365c9acf9d6661ea802143e728bd6",
+        "pushed_at": "2026-09-14T06:11:28Z"
+      },
+      "next_action": "Backlog: identify a concrete missing capability before source review or installation."
+    },
+    {
+      "repo": "gastownhall/beads",
+      "category": "Memory",
+      "review_status": "candidate; metadata only",
+      "installed_by_this_handoff": false,
+      "metadata": {
+        "canonical_repo": "gastownhall/beads",
+        "url": "https://github.com/gastownhall/beads",
+        "description": "Beads - A memory upgrade for your coding agent",
+        "archived": false,
+        "license_spdx": "MIT",
+        "default_branch": "main",
+        "observed_head": "f56632adcfabed7da6ed0aabe4e760066b472c46",
+        "pushed_at": "2026-09-14T01:06:14Z"
+      },
+      "next_action": "Backlog: identify a concrete missing capability before source review or installation."
+    },
+    {
+      "repo": "multica-ai/multica",
+      "category": "Tools",
+      "review_status": "candidate; metadata only",
+      "installed_by_this_handoff": false,
+      "metadata": {
+        "canonical_repo": "multica-ai/multica",
+        "url": "https://github.com/multica-ai/multica",
+        "description": "Make humans and AI agents work as one team \u2014 open-source and self-hostable.",
+        "archived": false,
+        "license_spdx": "NOASSERTION",
+        "default_branch": "main",
+        "observed_head": "8bf525eb2dde0e4e97174bc21ecbc6ff11fc998a",
+        "pushed_at": "2026-09-14T06:48:11Z"
+      },
+      "next_action": "Backlog: identify a concrete missing capability before source review or installation."
+    },
+    {
+      "repo": "firecrawl/firecrawl",
+      "category": "Tools",
+      "review_status": "candidate; metadata only",
+      "installed_by_this_handoff": false,
+      "metadata": {
+        "canonical_repo": "firecrawl/firecrawl",
+        "url": "https://github.com/firecrawl/firecrawl",
+        "description": "The context API to search, scrape, and interact with the web at scale. \ud83d\udd25",
+        "archived": false,
+        "license_spdx": "AGPL-3.0",
+        "default_branch": "main",
+        "observed_head": "fec7b60dfd8971fd148f7824a17fd8efc9626a93",
+        "pushed_at": "2026-09-14T06:33:45Z"
+      },
+      "next_action": "Backlog: identify a concrete missing capability before source review or installation."
+    },
+    {
+      "repo": "farion1231/cc-switch",
+      "category": "Tools",
+      "review_status": "candidate; metadata only",
+      "installed_by_this_handoff": false,
+      "metadata": {
+        "canonical_repo": "farion1231/cc-switch",
+        "url": "https://github.com/farion1231/cc-switch",
+        "description": "A cross-platform desktop All-in-One assistant for Claude Code, Codex, OpenCode, OpenClaw, Grok Build & Hermes Agent. Only official website: ccswitch.io",
+        "archived": false,
+        "license_spdx": "MIT",
+        "default_branch": "main",
+        "observed_head": "bd247a4adb92adfee0f065f0bdaac9580cfc276a",
+        "pushed_at": "2026-09-13T15:41:36Z"
+      },
+      "next_action": "Backlog: identify a concrete missing capability before source review or installation."
+    },
+    {
+      "repo": "upstash/context7",
+      "category": "Tools",
+      "review_status": "candidate; metadata only",
+      "installed_by_this_handoff": false,
+      "metadata": {
+        "canonical_repo": "upstash/context7",
+        "url": "https://github.com/upstash/context7",
+        "description": "Context7 Platform -- Up-to-date code documentation for LLMs and AI code editors",
+        "archived": false,
+        "license_spdx": "MIT",
+        "default_branch": "master",
+        "observed_head": "6f42b66f3b6dee20ba870dd6f70f1b565eb62e6e",
+        "pushed_at": "2026-09-11T11:52:12Z"
+      },
+      "next_action": "Optional documentation retrieval if native official docs tools leave a gap."
+    },
+    {
+      "repo": "BloopAI/vibe-kanban",
+      "category": "Tools",
+      "review_status": "candidate; metadata only",
+      "installed_by_this_handoff": false,
+      "metadata": {
+        "canonical_repo": "BloopAI/vibe-kanban",
+        "url": "https://github.com/BloopAI/vibe-kanban",
+        "description": "Get 10X more out of Claude Code, Codex or any coding agent",
+        "archived": false,
+        "license_spdx": "Apache-2.0",
+        "default_branch": "main",
+        "observed_head": "4deb7eca8f381f7cbc1f9d15515a9ab8f8009053",
+        "pushed_at": "2026-09-12T06:20:43Z"
+      },
+      "next_action": "UI/task lifecycle reference; do not add a second canonical task store by default."
+    },
+    {
+      "repo": "github/github-mcp-server",
+      "category": "Tools",
+      "review_status": "candidate; metadata only",
+      "installed_by_this_handoff": false,
+      "metadata": {
+        "canonical_repo": "github/github-mcp-server",
+        "url": "https://github.com/github/github-mcp-server",
+        "description": "GitHub's official MCP Server",
+        "archived": false,
+        "license_spdx": "MIT",
+        "default_branch": "main",
+        "observed_head": "7d13a7ad6f2a17f351a6d77ce280c85ae1821f4d",
+        "pushed_at": "2026-09-10T21:27:59Z"
+      },
+      "next_action": "Use only if existing GitHub connector/gh cannot satisfy the workflow."
+    },
+    {
+      "repo": "microsoft/playwright-mcp",
+      "category": "Tools",
+      "review_status": "candidate; metadata only",
+      "installed_by_this_handoff": false,
+      "metadata": {
+        "canonical_repo": "microsoft/playwright-mcp",
+        "url": "https://github.com/microsoft/playwright-mcp",
+        "description": "Playwright MCP server",
+        "archived": false,
+        "license_spdx": "Apache-2.0",
+        "default_branch": "main",
+        "observed_head": "8a13ef8e9f7385a0f89477922127f31cbfde9761",
+        "pushed_at": "2026-09-11T22:45:15Z"
+      },
+      "next_action": "Use only if existing browser tooling cannot provide required validation."
+    },
+    {
+      "repo": "oraios/serena",
+      "category": "Tools",
+      "review_status": "candidate; metadata only",
+      "installed_by_this_handoff": false,
+      "metadata": {
+        "canonical_repo": "oraios/serena",
+        "url": "https://github.com/oraios/serena",
+        "description": "A powerful MCP toolkit for coding, providing semantic retrieval and editing capabilities  - the IDE for your agent",
+        "archived": false,
+        "license_spdx": "MIT",
+        "default_branch": "main",
+        "observed_head": "403ad0a562bbc86ff5a0e26c23544dbd99235c15",
+        "pushed_at": "2026-09-12T21:16:52Z"
+      },
+      "next_action": "Optional code navigation only if existing codebase-memory/Graft leave a concrete gap."
+    },
+    {
+      "repo": "musistudio/claude-code-router",
+      "category": "Tools",
+      "review_status": "candidate; metadata only",
+      "installed_by_this_handoff": false,
+      "metadata": {
+        "canonical_repo": "musistudio/claude-code-router",
+        "url": "https://github.com/musistudio/claude-code-router",
+        "description": "One local control plane for every AI agent: route across models, fuse new capabilities, orchestrate tools, and stay fully in control.",
+        "archived": false,
+        "license_spdx": "MIT",
+        "default_branch": "main",
+        "observed_head": "afba89fa3778c772574636f1bd9aaad9138b44b7",
+        "pushed_at": "2026-09-14T02:45:58Z"
+      },
+      "next_action": "Backlog: identify a concrete missing capability before source review or installation."
+    },
+    {
+      "repo": "punkpeye/awesome-mcp-servers",
+      "category": "Tools",
+      "review_status": "candidate; metadata only",
+      "installed_by_this_handoff": false,
+      "metadata": {
+        "canonical_repo": "punkpeye/awesome-mcp-servers",
+        "url": "https://github.com/punkpeye/awesome-mcp-servers",
+        "description": "A collection of MCP servers.",
+        "archived": false,
+        "license_spdx": "MIT",
+        "default_branch": "main",
+        "observed_head": "547444f90b30398768764300211ceccf8205b209",
+        "pushed_at": "2026-09-13T07:49:46Z"
+      },
+      "next_action": "Backlog: identify a concrete missing capability before source review or installation."
+    },
+    {
+      "repo": "x1xhlol/system-prompts-and-models-of-ai-tools",
+      "category": "Cost",
+      "review_status": "candidate; metadata only",
+      "installed_by_this_handoff": false,
+      "metadata": {
+        "canonical_repo": "x1xhlol/system-prompts-and-models-of-ai-tools",
+        "url": "https://github.com/x1xhlol/system-prompts-and-models-of-ai-tools",
+        "description": "FULL Augment Code, Claude Code, Cluely, CodeBuddy, Comet, Cursor, Devin AI, Junie, Kiro, Leap.new, Lovable, Manus, NotionAI, Orchids.app, Perplexity, Poke, Qoder, Replit, Same.dev, Trae, Traycer AI, VSCode Agent, Warp.dev, Windsurf, Xcode, Z.ai Code, Dia & v0. (And other Open Sourced) System Prompts, Internal Tools & AI Models",
+        "archived": false,
+        "license_spdx": "GPL-3.0",
+        "default_branch": "main",
+        "observed_head": "1e4203a7d88873c1b37ab2d1c07074fea498c274",
+        "pushed_at": "2026-08-11T13:01:09Z"
+      },
+      "next_action": "Backlog: identify a concrete missing capability before source review or installation."
+    },
+    {
+      "repo": "shanraisshan/claude-code-best-practice",
+      "category": "Cost",
+      "review_status": "candidate; metadata only",
+      "installed_by_this_handoff": false,
+      "metadata": {
+        "canonical_repo": "shanraisshan/claude-code-best-practice",
+        "url": "https://github.com/shanraisshan/claude-code-best-practice",
+        "description": "from vibe coding to agentic engineering - practice makes claude perfect",
+        "archived": false,
+        "license_spdx": "MIT",
+        "default_branch": "main",
+        "observed_head": "87432c648babd48d504c84e879662b653fc7d9a8",
+        "pushed_at": "2026-09-14T06:37:52Z"
+      },
+      "next_action": "Backlog: identify a concrete missing capability before source review or installation."
+    },
+    {
+      "repo": "openai/codex-plugin-cc",
+      "category": "Cost",
+      "review_status": "candidate; metadata only",
+      "installed_by_this_handoff": false,
+      "metadata": {
+        "canonical_repo": "openai/codex-plugin-cc",
+        "url": "https://github.com/openai/codex-plugin-cc",
+        "description": "Use Codex from Claude Code to review code or delegate tasks.",
+        "archived": false,
+        "license_spdx": "Apache-2.0",
+        "default_branch": "main",
+        "observed_head": "db52e28f4d9ded852ab3942cea316258ae4ef346",
+        "pushed_at": "2026-07-08T00:17:31Z"
+      },
+      "next_action": "Backlog: identify a concrete missing capability before source review or installation."
+    },
+    {
+      "repo": "jarrodwatts/claude-hud",
+      "category": "Cost",
+      "review_status": "candidate; metadata only",
+      "installed_by_this_handoff": false,
+      "metadata": {
+        "canonical_repo": "jarrodwatts/claude-hud",
+        "url": "https://github.com/jarrodwatts/claude-hud",
+        "description": "A Claude Code plugin that shows what's happening - context usage, active tools, running agents, and todo progress",
+        "archived": false,
+        "license_spdx": "MIT",
+        "default_branch": "main",
+        "observed_head": "939eb66485832dead1b0a28a954f76f7aa2bdb06",
+        "pushed_at": "2026-09-12T21:32:41Z"
+      },
+      "next_action": "Backlog: identify a concrete missing capability before source review or installation."
+    },
+    {
+      "repo": "rtk-ai/rtk",
+      "category": "Cost",
+      "review_status": "candidate; metadata only",
+      "installed_by_this_handoff": false,
+      "metadata": {
+        "canonical_repo": "rtk-ai/rtk",
+        "url": "https://github.com/rtk-ai/rtk",
+        "description": "CLI proxy that reduces LLM token consumption by 60-90% on common dev commands. Single Rust binary, zero dependencies",
+        "archived": false,
+        "license_spdx": "Apache-2.0",
+        "default_branch": "develop",
+        "observed_head": "d402152ffa050ca3753672e3d49c3f2ff498a07b",
+        "pushed_at": "2026-09-13T23:28:04Z"
+      },
+      "next_action": "Cost candidate: benchmark reduced tool output while preserving errors and evidence."
+    },
+    {
+      "repo": "headroomlabs-ai/headroom",
+      "category": "Cost",
+      "review_status": "candidate; metadata only",
+      "installed_by_this_handoff": false,
+      "metadata": {
+        "canonical_repo": "headroomlabs-ai/headroom",
+        "url": "https://github.com/headroomlabs-ai/headroom",
+        "description": "Compress tool outputs, logs, files, and RAG chunks before they reach the LLM. 20% fewer tokens for coding agents, 60-95% fewer tokens for JSON, same answers. Library, proxy, MCP server.",
+        "archived": false,
+        "license_spdx": "Apache-2.0",
+        "default_branch": "main",
+        "observed_head": "aa4739e54ad46d48dd829f730af359c4824c04c4",
+        "pushed_at": "2026-09-13T17:09:20Z"
+      },
+      "next_action": "Cost candidate: evaluate protocol/auth implications and matched benchmarks before use."
+    },
+    {
+      "repo": "JuliusBrussee/caveman",
+      "category": "Cost",
+      "review_status": "candidate; metadata only",
+      "installed_by_this_handoff": false,
+      "metadata": {
+        "canonical_repo": "JuliusBrussee/caveman",
+        "url": "https://github.com/JuliusBrussee/caveman",
+        "description": "\ud83e\udea8 why use many token when few token do trick \u2014 Claude Code skill that cuts 65% of tokens by talking like caveman",
+        "archived": false,
+        "license_spdx": "NOASSERTION",
+        "default_branch": "main",
+        "observed_head": "15581d14007fd01fb3f132016741962f34936ca2",
+        "pushed_at": "2026-09-13T07:27:49Z"
+      },
+      "next_action": "Backlog: identify a concrete missing capability before source review or installation."
+    }
+  ],
+  "metadata_checked_at": "2026-09-14T06:50:30.773655+00:00"
+}

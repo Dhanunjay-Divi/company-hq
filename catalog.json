@@ -1,0 +1,84 @@
+{
+  "schema": 1,
+  "reviewed_on": "2026-09-13",
+  "repositories": [
+    {
+      "repo": "ruvnet/ruflo",
+      "reviewed_ref": "b02c0cacec225deea01f586b66a9694393369432",
+      "version": "3.41.2",
+      "decision": "Enabled narrow sandboxed MCP for 14 project-scoped task, exact-memory and coordination tools; native Codex executes real workers. General CLI and hash/mock semantic search remain disabled."
+    },
+    {
+      "repo": "777genius/agent-teams-ai",
+      "reviewed_ref": "c2e9212e7a1a8daed34d7464432fc18eec62b238",
+      "version": "2.14.2",
+      "decision": "Actual graph package and avatars reused in Company HQ; full separate runtime remains blocked. Native Codex app-server bridge executes the supervisor. Legacy compatibility source patches retained for review."
+    },
+    {
+      "repo": "NanmiCoder/dsh-agent-teams",
+      "reviewed_ref": "3b95edbe04aacc4a27cc91ba41430c1f69e47739",
+      "version": "0.1.18",
+      "decision": "DSH-specific; not needed for native Codex"
+    },
+    {
+      "repo": "Orkas-AI/Orkas",
+      "reviewed_ref": null,
+      "version": null,
+      "decision": "alternative general-purpose desktop team; no runtime/security validation, not installed"
+    },
+    {
+      "repo": "bradygaster/squad",
+      "reviewed_ref": "8b7921127613ae5739a8e94739db86089a2b1a57",
+      "version": "0.13.1",
+      "decision": "Copilot-centered; consider only for a Copilot project"
+    },
+    {
+      "repo": "HKUDS/ClawTeam",
+      "reviewed_ref": "01198332ef9270c32c5460b8a178f964fc0df451",
+      "version": "0.3.0 source / 0.2.0 release",
+      "decision": "Installed pinned 0.3.0 existing browser board, canonical tasks and real file inboxes through a guarded local adapter. Native Codex executes agents; inbox messages do not automatically wake them. Framework spawning/hooks/proxy disabled."
+    },
+    {
+      "repo": "2FastLabs/agent-squad",
+      "reviewed_ref": "31eccfeb0d546262d1d0ec2e2e5239186f8d2954",
+      "version": "TypeScript 1.1.4 / Python 1.1.3",
+      "decision": "application SDK, not a coding-agent manager; add only to a project that needs it"
+    },
+    {
+      "repo": "Seeed-Solution/MeshClaw",
+      "reviewed_ref": "9b62688c2eb705f8d48349289009024804444925",
+      "version": "0.2.2",
+      "decision": "LoRa/OpenClaw hardware integration; not needed for normal app development"
+    },
+    {
+      "repo": "affaan-m/ECC",
+      "reviewed_ref": null,
+      "version": null,
+      "decision": "reference compact review packets; review upstream instructions before adoption"
+    },
+    {
+      "repo": "garrytan/gstack",
+      "reviewed_ref": null,
+      "version": null,
+      "decision": "reference reproducible QA/regression tracking; no automatic hooks or installation"
+    },
+    {
+      "repo": "trailhq/Graft",
+      "reviewed_ref": "de8456e892bad5aeee11403e47fb2227773eb27e",
+      "version": "0.18.0",
+      "decision": "Installed pinned 0.18.0 structural CLI and tested build/query/viz with external synthetic fixture; model features disabled; use graft.py wrapper"
+    },
+    {
+      "repo": "DeusData/codebase-memory-mcp",
+      "reviewed_ref": "46ae198fc11cda80e817acbc5f5908d7c2de7032",
+      "version": "0.10.8",
+      "decision": "Official0.10.8 binary installed and MCP registered with12 guarded tools; durable external state, no watcher/autoindex/repo writes; real fixture and concurrentMCP verification passed."
+    },
+    {
+      "repo": "msitarzewski/agency-agents",
+      "reviewed_ref": "ad9264e309bd5e5422c04784372d7841b1e5d604",
+      "version": null,
+      "decision": "Actual pinned source installed for on-demand specialist guidance covering research, product, design, engineering, QA, marketing and operations; no full-roster prompt injection or upstream installer."
+    }
+  ]
+}

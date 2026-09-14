@@ -1,0 +1,314 @@
+diff --git a/src/features/codex-account/main/composition/codexSnapshotRefreshOptions.ts b/src/features/codex-account/main/composition/codexSnapshotRefreshOptions.ts
+index a3e1bc864..7286eb379 100644
+--- a/src/features/codex-account/main/composition/codexSnapshotRefreshOptions.ts
++++ b/src/features/codex-account/main/composition/codexSnapshotRefreshOptions.ts
+@@ -6,6 +6,32 @@ export interface CodexSnapshotRefreshOptions {
+   forceRefreshToken: boolean;
+ }
+ 
++export const AGENT_TEAMS_CODEX_NATIVE_ACCOUNT_PROFILE_ENV =
++  'AGENT_TEAMS_CODEX_NATIVE_ACCOUNT_PROFILE';
++
++export type CodexNativeAccountProfile = 'legacy-compatible' | 'modern';
++
++export function resolveCodexNativeAccountProfile(
++  env: NodeJS.ProcessEnv = process.env
++): CodexNativeAccountProfile {
++  return env[AGENT_TEAMS_CODEX_NATIVE_ACCOUNT_PROFILE_ENV]?.trim().toLowerCase() === 'modern'
++    ? 'modern'
++    : 'legacy-compatible';
++}
++
++export function shouldMaterializeLegacyCodexAuth(env: NodeJS.ProcessEnv = process.env): boolean {
++  return resolveCodexNativeAccountProfile(env) === 'legacy-compatible';
++}
++
++export function applyCodexNativeAccountProfile(
++  options: CodexSnapshotRefreshOptions,
++  env: NodeJS.ProcessEnv = process.env
++): CodexSnapshotRefreshOptions {
++  return resolveCodexNativeAccountProfile(env) === 'modern'
++    ? { ...options, forceRefreshToken: false }
++    : options;
++}
++
+ // Every forceRefreshToken read rotates the ChatGPT refresh token inside its own
+ // `codex app-server` process, and one launch preparation issues several such reads
+ // sequentially. Rotating the token multiple times within seconds risks OpenAI's
+diff --git a/src/features/codex-account/main/composition/createCodexAccountFeature.ts b/src/features/codex-account/main/composition/createCodexAccountFeature.ts
+index 27573c3f8..fac717f0a 100644
+--- a/src/features/codex-account/main/composition/createCodexAccountFeature.ts
++++ b/src/features/codex-account/main/composition/createCodexAccountFeature.ts
+@@ -34,11 +34,13 @@ import {
+ } from '../infrastructure/detectCodexLocalAccountArtifacts';
+ 
+ import {
++  applyCodexNativeAccountProfile,
+   applyForcedTokenRefreshReuseWindow,
+   type CodexSnapshotRefreshOptions,
+   doRefreshOptionsCover,
+   mergeRefreshOptions,
+   normalizeRefreshOptions,
++  shouldMaterializeLegacyCodexAuth,
+ } from './codexSnapshotRefreshOptions';
+ 
+ import type { Logger } from '@shared/utils/logger';
+@@ -323,7 +325,7 @@ class CodexAccountFeatureFacadeImpl implements CodexAccountFeatureFacade {
+   }): Promise<CodexAccountSnapshotDto> {
+     this.ensureActive();
+     const normalizedOptions = applyForcedTokenRefreshReuseWindow(
+-      normalizeRefreshOptions(options),
++      applyCodexNativeAccountProfile(normalizeRefreshOptions(options)),
+       this.lastForcedTokenRefreshAtMs,
+       Date.now()
+     );
+@@ -390,10 +392,8 @@ class CodexAccountFeatureFacadeImpl implements CodexAccountFeatureFacade {
+       }
+ 
+       const env = this.envBuilder.buildControlPlaneEnv({ binaryPath });
+-      // Only a login that this call actually owns invalidates the forced-rotation reuse
+-      // window. A duplicate request (a second click while a login is starting or pending)
+-      // is a no-op inside the manager and leaves the credentials untouched, so clearing
+-      // the window for it would spend an extra refresh-token rotation on nothing.
++      // Only a login this call owns invalidates the reuse window. A duplicate request is a
++      // no-op inside the manager, so clearing the window would spend a rotation on nothing.
+       const started = await this.loginSessionManager.start({
+         binaryPath,
+         env,
+@@ -494,8 +494,7 @@ class CodexAccountFeatureFacadeImpl implements CodexAccountFeatureFacade {
+ 
+     while (nextOptions) {
+       this.ensureActive();
+-      // Queued forced options may have waited behind a rotation that just completed, so the
+-      // reuse-window downgrade is re-evaluated per drained iteration.
++      // Re-evaluate queued forced options because an earlier iteration may have rotated.
+       const effectiveOptions = applyForcedTokenRefreshReuseWindow(
+         nextOptions,
+         this.lastForcedTokenRefreshAtMs,
+@@ -588,7 +587,7 @@ class CodexAccountFeatureFacadeImpl implements CodexAccountFeatureFacade {
+       return snapshot;
+     }
+ 
+-    if (localActiveChatgptAccountPresent) {
++    if (localActiveChatgptAccountPresent && shouldMaterializeLegacyCodexAuth()) {
+       await ensureCodexLegacyAuthFromActiveAccount().catch((error) => {
+         this.logger.warn('codex account legacy auth compatibility sync failed', {
+           error: error instanceof Error ? error.message : String(error),
+diff --git a/src/renderer/components/team/dialogs/LaunchTeamDialog.tsx b/src/renderer/components/team/dialogs/LaunchTeamDialog.tsx
+index 3cf97090c..7eb94581d 100644
+--- a/src/renderer/components/team/dialogs/LaunchTeamDialog.tsx
++++ b/src/renderer/components/team/dialogs/LaunchTeamDialog.tsx
+@@ -376,7 +376,7 @@ export const LaunchTeamDialog = (props: LaunchTeamDialogProps): React.JSX.Elemen
+   const relaunchInheritedSyncRef = useRef<boolean | undefined>(undefined);
+   const relaunchSyncEditedRef = useRef(false);
+   const [skipPermissions, setSkipPermissionsRaw] = useState(
+-    () => localStorage.getItem('team:lastSkipPermissions') !== 'false'
++    () => localStorage.getItem('team:lastSkipPermissions') === 'true'
+   );
+   const [selectedEffort, setSelectedEffortRaw] = useState(() => {
+     const stored = localStorage.getItem('team:lastSelectedEffort');
+@@ -989,7 +989,7 @@ export const LaunchTeamDialog = (props: LaunchTeamDialogProps): React.JSX.Elemen
+         ? memberSettingsDraft.settings.effort ?? '' : launchPrefill.effort);
+       setSelectedFastModeRaw(launchPrefill.fastMode);
+       setLimitContextRaw(launchPrefill.limitContext);
+-      const storedSkipPermissions = localStorage.getItem('team:lastSkipPermissions') !== 'false';
++      const storedSkipPermissions = localStorage.getItem('team:lastSkipPermissions') === 'true';
+       setSkipPermissionsRaw(savedRequest?.skipPermissions ?? storedSkipPermissions);
+       hydrationRef.current.key = effectiveTeamName;
+     })();
+diff --git a/src/renderer/services/createTeamPreferences.ts b/src/renderer/services/createTeamPreferences.ts
+index 36b7ab284..1ec81aaa4 100644
+--- a/src/renderer/services/createTeamPreferences.ts
++++ b/src/renderer/services/createTeamPreferences.ts
+@@ -252,7 +252,7 @@ export function getStoredCreateTeamSkipPermissions(): boolean {
+     readCreateTeamPreference(
+       CREATE_TEAM_SKIP_PERMISSIONS_KEY,
+       `${LEGACY_TEAM_PREFIX}lastSkipPermissions`
+-    ) !== 'false'
++    ) === 'true'
+   );
+ }
+ 
+diff --git a/test/features/codex-account/main/createCodexAccountFeature.test.ts b/test/features/codex-account/main/createCodexAccountFeature.test.ts
+index c92e14830..f07d05540 100644
+--- a/test/features/codex-account/main/createCodexAccountFeature.test.ts
++++ b/test/features/codex-account/main/createCodexAccountFeature.test.ts
+@@ -14,6 +14,7 @@ const {
+   binaryClearCacheMock,
+   binaryResolveMock,
+   detectLocalAccountStateMock,
++  ensureLegacyAuthMock,
+   getCachedShellEnvMock,
+   loginCancelMock,
+   loginDisposeMock,
+@@ -32,6 +33,7 @@ const {
+   apiKeyHasPreferredMock: vi.fn(),
+   apiKeyLookupMock: vi.fn(),
+   detectLocalAccountStateMock: vi.fn(),
++  ensureLegacyAuthMock: vi.fn(),
+   getCachedShellEnvMock: vi.fn(),
+   resolveInteractiveShellEnvBestEffortMock: vi.fn(),
+   readAccountMock: vi.fn(),
+@@ -55,6 +57,7 @@ const {
+ 
+ const originalOpenAiApiKey = process.env.OPENAI_API_KEY;
+ const originalCodexApiKey = process.env.CODEX_API_KEY;
++const originalCodexNativeAccountProfile = process.env.AGENT_TEAMS_CODEX_NATIVE_ACCOUNT_PROFILE;
+ 
+ function emitLoginState(nextState: CodexLoginStateDto): void {
+   loginStateContainer.current = structuredClone(nextState);
+@@ -94,7 +97,7 @@ vi.mock(
+     detectCodexLocalAccountState: detectLocalAccountStateMock,
+     detectCodexLocalAccountArtifacts: async () =>
+       (await detectLocalAccountStateMock()).hasArtifacts,
+-    ensureCodexLegacyAuthFromActiveAccount: vi.fn().mockResolvedValue(null),
++    ensureCodexLegacyAuthFromActiveAccount: ensureLegacyAuthMock,
+   })
+ );
+ 
+@@ -238,6 +241,7 @@ describe('createCodexAccountFeature', () => {
+     vi.clearAllMocks();
+     delete process.env.OPENAI_API_KEY;
+     delete process.env.CODEX_API_KEY;
++    delete process.env.AGENT_TEAMS_CODEX_NATIVE_ACCOUNT_PROFILE;
+     binaryResolveMock.mockResolvedValue('/usr/local/bin/codex');
+     binaryClearCacheMock.mockReset();
+     resolveInteractiveShellEnvBestEffortMock.mockReset();
+@@ -248,6 +252,7 @@ describe('createCodexAccountFeature', () => {
+       hasArtifacts: false,
+       hasActiveChatgptAccount: false,
+     });
++    ensureLegacyAuthMock.mockResolvedValue(null);
+     getCachedShellEnvMock.mockReturnValue({});
+     readAccountSnapshotMock.mockReset();
+     readAccountMock.mockReset();
+@@ -312,6 +317,52 @@ describe('createCodexAccountFeature', () => {
+     } else {
+       delete process.env.CODEX_API_KEY;
+     }
++
++    if (typeof originalCodexNativeAccountProfile === 'string') {
++      process.env.AGENT_TEAMS_CODEX_NATIVE_ACCOUNT_PROFILE = originalCodexNativeAccountProfile;
++    } else {
++      delete process.env.AGENT_TEAMS_CODEX_NATIVE_ACCOUNT_PROFILE;
++    }
++  });
++
++  it('uses the modern native account without legacy export or token rotation', async () => {
++    process.env.AGENT_TEAMS_CODEX_NATIVE_ACCOUNT_PROFILE = 'modern';
++    detectLocalAccountStateMock.mockResolvedValue({
++      hasArtifacts: true,
++      hasActiveChatgptAccount: true,
++    });
++    readAccountMock.mockResolvedValue({
++      account: createAccountResponse(),
++      initialize: {
++        codexHome: '/Users/test/.codex',
++        platformFamily: 'unix',
++        platformOs: 'macos',
++      },
++    });
++    readRateLimitsMock.mockResolvedValue(createRateLimitsResponse());
++
++    const feature = createCodexAccountFeature({
++      logger: createLoggerPort(),
++      configManager: createConfigManager('chatgpt'),
++    });
++
++    try {
++      const snapshot = await feature.refreshSnapshot({
++        includeRateLimits: true,
++        forceRefreshToken: true,
++      });
++
++      expect(snapshot.launchReadinessState).toBe('ready_chatgpt');
++      expect(ensureLegacyAuthMock).not.toHaveBeenCalled();
++      expect(readAccountSnapshotMock).toHaveBeenCalledWith(
++        expect.objectContaining({
++          includeRateLimits: true,
++          refreshToken: false,
++        })
++      );
++    } finally {
++      await feature.dispose();
++    }
+   });
+ 
+   it('builds a healthy snapshot from app-server account truth, API-key availability, and rate limits', async () => {
+diff --git a/test/features/codex-account/main/codexNativeAccountProfile.test.ts b/test/features/codex-account/main/codexNativeAccountProfile.test.ts
+new file mode 100644
+index 000000000..0d7b47cb0
+--- /dev/null
++++ b/test/features/codex-account/main/codexNativeAccountProfile.test.ts
+@@ -0,0 +1,43 @@
++import { describe, expect, it } from 'vitest';
++
++import {
++  AGENT_TEAMS_CODEX_NATIVE_ACCOUNT_PROFILE_ENV,
++  applyCodexNativeAccountProfile,
++  resolveCodexNativeAccountProfile,
++  shouldMaterializeLegacyCodexAuth,
++} from '../../../../src/features/codex-account/main/composition/codexSnapshotRefreshOptions';
++
++describe('codexNativeAccountProfile', () => {
++  it('preserves upstream legacy compatibility by default', () => {
++    const env = {};
++
++    expect(resolveCodexNativeAccountProfile(env)).toBe('legacy-compatible');
++    expect(shouldMaterializeLegacyCodexAuth(env)).toBe(true);
++    expect(
++      applyCodexNativeAccountProfile({ includeRateLimits: true, forceRefreshToken: true }, env)
++    ).toEqual({ includeRateLimits: true, forceRefreshToken: true });
++  });
++
++  it('keeps modern native Codex account storage authoritative', () => {
++    const env = { [AGENT_TEAMS_CODEX_NATIVE_ACCOUNT_PROFILE_ENV]: 'modern' };
++
++    expect(resolveCodexNativeAccountProfile(env)).toBe('modern');
++    expect(shouldMaterializeLegacyCodexAuth(env)).toBe(false);
++    expect(
++      applyCodexNativeAccountProfile({ includeRateLimits: true, forceRefreshToken: true }, env)
++    ).toEqual({ includeRateLimits: true, forceRefreshToken: false });
++  });
++
++  it('only enables the modern profile for its explicit value', () => {
++    expect(
++      resolveCodexNativeAccountProfile({
++        [AGENT_TEAMS_CODEX_NATIVE_ACCOUNT_PROFILE_ENV]: ' MODERN ',
++      })
++    ).toBe('modern');
++    expect(
++      resolveCodexNativeAccountProfile({
++        [AGENT_TEAMS_CODEX_NATIVE_ACCOUNT_PROFILE_ENV]: 'disabled',
++      })
++    ).toBe('legacy-compatible');
++  });
++});
+diff --git a/test/renderer/services/createTeamPreferences.test.ts b/test/renderer/services/createTeamPreferences.test.ts
+new file mode 100644
+index 000000000..e32161726
+--- /dev/null
++++ b/test/renderer/services/createTeamPreferences.test.ts
+@@ -0,0 +1,22 @@
++import { beforeEach, describe, expect, it } from 'vitest';
++
++import {
++  getStoredCreateTeamSkipPermissions,
++  setStoredCreateTeamSkipPermissions,
++} from '../../../src/renderer/services/createTeamPreferences';
++
++describe('createTeamPreferences permissions', () => {
++  beforeEach(() => {
++    localStorage.clear();
++  });
++
++  it('keeps tool approvals enabled when no preference exists', () => {
++    expect(getStoredCreateTeamSkipPermissions()).toBe(false);
++  });
++
++  it('preserves an explicit auto-approve preference', () => {
++    setStoredCreateTeamSkipPermissions(true);
++
++    expect(getStoredCreateTeamSkipPermissions()).toBe(true);
++  });
++});
