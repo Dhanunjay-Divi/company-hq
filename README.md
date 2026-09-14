@@ -13,6 +13,8 @@ This private repository preserves the shared toolkit source built on 13–14 Sep
 - [Reviewer instructions](docs/REVIEWER.md)
 - [Packaging provenance](docs/PACKAGING.md)
 
+During this initial phase, the implementer can commit and push directly to main without draft PRs. The original Codex supervisor reviews pushed checkpoints afterward and can commit corrections.
+
 The user talks primarily to the overall supervisor. Useful functional leads and specialists should be allocated according to the actual goal, available account access, complexity and cost. A visible roster is not proof that those agents are running.
 
 ## Source layout
@@ -48,7 +50,7 @@ python3 -m unittest discover -s clawteam/integration -p test_codex_bridge.py
 python3 scripts/check_source_bundle.py
 ```
 
-The full HTTP suite also needs the pinned ClawTeam dependency environment at `clawteam/venv` and the frontend build. See [portability limits](docs/STATUS.md) before starting the server: several copied integration paths still target the original installation. Do not point a fresh clone at another project's live state by accident. Refactor these paths in the first implementation PR; don't change HOME or CODEX_HOME to compensate.
+The full HTTP suite also needs the pinned ClawTeam dependency environment at `clawteam/venv` and the frontend build. See [portability limits](docs/STATUS.md) before starting the server: several copied integration paths still target the original installation. Do not point a fresh clone at another project's live state by accident. Refactor these paths in the first implementation milestone; don't change HOME or CODEX_HOME to compensate.
 
 The original local installation can be opened using its `clawteam/integration/team-ui` launcher. That existing installation is not replaced by cloning this repository.
 

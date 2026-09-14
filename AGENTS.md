@@ -2,9 +2,9 @@
 
 Read README.md, docs/STATUS.md and docs/IMPLEMENTER-HANDOFF.md before substantive work. The reusable operating guidance is in skills/agent-toolkit/SKILL.md; the current repository and user instructions take precedence over historical installation notes.
 
-Work only in this repository or an isolated worktree. Use a codex/ feature branch. The original live toolkit and product repositories are separate deployment targets; do not mutate them as a side effect of development or tests.
+Work only in this repository or an isolated worktree. During this initial phase, commit and push directly to main in small coherent checkpoints; a feature branch is optional for isolation, not a review gate. Fetch before pushing, integrate concurrent changes carefully, and never force-push shared history. The original live toolkit and product repositories are separate deployment targets; do not mutate them as a side effect of development or tests.
 
-The implementing agent owns bounded implementation and validation. The original Codex supervisor is the reviewer. Deliver draft PRs with exact commits, evidence, screenshots where relevant and explicit remaining gaps. Do not self-merge or mark the original reviewer as having approved. The human can send the PR back to that reviewer task.
+The implementing agent owns bounded implementation and validation. The original Codex supervisor is the reviewer. The user authorizes the implementer to work, commit and push without draft PRs or prior reviewer approval during this initial phase. Continue through the agreed milestones, sharing exact pushed commit IDs, evidence, screenshots where relevant and remaining gaps. The original reviewer can inspect pushed commits and make follow-up fixes directly. Do not mark the reviewer as having approved before an actual review.
 
 Use native sub-agents only for useful independent assignments, with economical capable models and compact context. Do not create idle departments or competing schedulers. Apply one canonical task authority and project-scoped memory.
 
