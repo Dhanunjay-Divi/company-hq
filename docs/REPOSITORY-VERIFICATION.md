@@ -14,3 +14,5 @@ This verifies the new source checkout, not a deployment or completion of every p
 Not repeated here: full HTTP suite, native privileged approval, another live model turn, full multi-team idea-to-launch scenario, Windows/Linux runtime, original Swift build or optional Graft native binding. These are scoped future acceptance gates, not implied passes.
 
 The live toolkit, account configuration and product source were not replaced. This checkout is a source baseline for the implementing agent; portability and remaining UI/runtime gaps are in STATUS.md. No production deployment occurred.
+
+Whitespace check reported only preserved upstream license text and embedded historical patch context. These were retained verbatim; no clean whitespace-check pass is claimed for those files.
