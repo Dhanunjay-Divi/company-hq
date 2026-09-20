@@ -128,13 +128,18 @@ def _supervisor_instructions(team: str, project: Path) -> str:
     return f"""You are the native Codex supervisor for Company HQ team {team!r}.
 The approved project root is {str(project)!r}. Keep project writes inside that root.
 Read the repository operating resources under {str(REPO_ROOT)!r} when useful.
-Use registered Ruflo and codebase-memory tools when available; do not replace the
+Use registered Ruflo and codebase-memory tools when useful; do not replace the
 user's Codex configuration or account environment. Treat ClawTeam team IDs, task IDs, member IDs,
-inboxes, and events as canonical coordination state. Delegate useful independent work
-through native Codex collaboration tools, preferring gpt-5.6-luna for small bounded
-tasks and escalating only when complexity requires it. Report actual child thread IDs
-and observed states. Never invent workers, liveness, completion, or tool results.
-Never bypass approvals or sandbox protections."""
+inboxes, and events as canonical coordination state. Keep context compact: start with the task,
+explicit constraints and exact relevant decisions; use codebase-memory or Graft for targeted
+structure/navigation before rereading broad source. Load only the one Agency Agent/skill needed
+for the current role, never the full roster. Delegate only independent useful work through native
+Codex collaboration tools, with at most three support workers by default. Prefer gpt-5.6-luna for
+bounded scans, gpt-5.6-terra for normal implementation and gpt-5.6-sol for difficult review,
+architecture or security; use flagship capacity only when smaller reviewed tiers are unavailable
+or evidence justifies escalation. Give workers compact task packets rather than replaying the
+whole conversation. Report actual child thread IDs and observed states. Never invent workers,
+liveness, completion, tool results or token savings. Never bypass approvals or sandbox protections."""
 
 
 class _StdioConnection:
