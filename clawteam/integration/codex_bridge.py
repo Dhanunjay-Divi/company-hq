@@ -226,6 +226,7 @@ class _TeamSession:
     pending_calls: dict[object, _PendingCall] = field(default_factory=dict)
     approvals: dict[str, _Approval] = field(default_factory=dict)
     children: dict[str, dict[str, Any]] = field(default_factory=dict)
+    worker_messages: dict[str, dict[str, Any]] = field(default_factory=dict)
     completed_turns: set[str] = field(default_factory=set)
     lock: threading.RLock = field(default_factory=threading.RLock)
     operation_lock: threading.Lock = field(default_factory=threading.Lock)
@@ -247,9 +248,12 @@ class CodexBridge:
             raise ValueError("max_events must be between 20 and 5000")
         self.state_dir = Path(state_dir).resolve()
         self.binding_dir = self.state_dir / "bindings"
+        self.event_dir = self.state_dir / "events"
         self.binding_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+        self.event_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
         os.chmod(self.state_dir, 0o700)
         os.chmod(self.binding_dir, 0o700)
+        os.chmod(self.event_dir, 0o700)
         self.codex_path = Path(codex_path)
         self.max_events = max_events
         self.request_timeout = request_timeout
@@ -262,6 +266,35 @@ class CodexBridge:
     def _binding_path(self, team: str) -> Path:
         digest = hashlib.sha256(team.encode("utf-8")).hexdigest()
         return self.binding_dir / f"{digest}.json"
+
+    def _event_path(self, team: str) -> Path:
+        digest = hashlib.sha256(team.encode("utf-8")).hexdigest()
+        return self.event_dir / f"{digest}.json"
+
+    def _read_event_journal(self, team: str) -> list[dict[str, Any]]:
+        path = self._event_path(team)
+        if not path.exists():
+            return []
+        if path.is_symlink() or not path.is_file() or path.stat().st_size > 8_000_000:
+            raise BridgeError("runtime event journal is not a regular bounded file")
+        try:
+            value = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise BridgeError("runtime event journal is unreadable") from exc
+        if not isinstance(value, list):
+            raise BridgeError("runtime event journal is invalid")
+        clean = [item for item in value if isinstance(item, dict) and isinstance(item.get("seq"), int)]
+        return clean[-self.max_events :]
+
+    def _persist_event_journal(self, session: _TeamSession) -> None:
+        path = self._event_path(session.team)
+        # Streaming deltas are intentionally ephemeral; persist compact evidence
+        # that is useful after restart without turning transcripts into a second chat log.
+        value = [item for item in session.events if item.get("type") != "message.delta"][-self.max_events :]
+        temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+        temporary.write_text(json.dumps(value, separators=(",", ":"), ensure_ascii=False) + "\n", encoding="utf-8")
+        os.chmod(temporary, 0o600)
+        os.replace(temporary, path)
 
     def _read_binding(self, team: str) -> dict[str, Any] | None:
         path = self._binding_path(team)
@@ -325,13 +358,15 @@ class CodexBridge:
         return resolved, binding
 
     def _new_session(self, team: str, project: Path, model: str, mode: str) -> _TeamSession:
+        existing_events = self._read_event_journal(team)
         session = _TeamSession(
             team=team,
             project=project,
             model=model,
             mode=mode,
             connection=self.connection_factory(self.codex_path),
-            events=deque(maxlen=self.max_events),
+            events=deque(existing_events, maxlen=self.max_events),
+            next_event_seq=(existing_events[-1]["seq"] + 1 if existing_events else 1),
         )
         with self._sessions_lock:
             current = self._sessions.get(team)
@@ -528,6 +563,46 @@ class CodexBridge:
             "turnId": turn_id,
         }
 
+    def message_worker(self, team: str, child_thread_id: str, content: str) -> dict[str, Any]:
+        session = self._require_session(_validate_team(team))
+        content = _validate_prompt(content)
+        if not isinstance(child_thread_id, str) or child_thread_id not in session.children:
+            raise BridgeError("native worker is not known to this team session")
+        request_id = uuid.uuid4().hex
+        marker = f"[HQ-MSG:{request_id}]"
+        record = {
+            "requestId": request_id,
+            "threadId": child_thread_id,
+            "status": "requested",
+            "createdAtMs": _now_ms(),
+            "preview": _safe_text(content, 500),
+        }
+        with session.lock:
+            session.worker_messages[request_id] = record
+        self._event(session, "worker.message.requested", {
+            "text": "User requested delivery to a native worker",
+            **record,
+        })
+        instruction = (
+            f"Deliver this user message to native child thread {child_thread_id!r} using the native "
+            f"collaboration tool. Preserve the correlation marker {marker} in the child message. "
+            "If the child is currently running, use sendMessage/sendInput. If it is completed or idle, "
+            "use followupTask/resume only because the user explicitly requested this delivery. "
+            f"Message: {marker} {content}"
+        )
+        try:
+            delivery = self.send(team, instruction)
+        except Exception:
+            with session.lock:
+                record["status"] = "failed_to_request"
+                record["updatedAtMs"] = _now_ms()
+            self._event(session, "worker.message.failed", {
+                "text": "Could not request native worker delivery",
+                **record,
+            })
+            raise
+        return {"accepted": True, "requestId": request_id, "worker": child_thread_id, "delivery": delivery}
+
     def stop(self, team: str) -> dict[str, Any]:
         session = self._require_session(_validate_team(team))
         with session.operation_lock:
@@ -594,6 +669,7 @@ class CodexBridge:
                 "lastEventSeq": 0,
                 "pendingApprovals": [],
                 "children": [],
+                "workerMessages": [],
             }
         with session.lock:
             result = {
@@ -608,6 +684,7 @@ class CodexBridge:
                 "lastEventSeq": session.next_event_seq - 1,
                 "pendingApprovals": [dict(item.data) for item in session.approvals.values()],
                 "children": [dict(value) for value in session.children.values()],
+                "workerMessages": [dict(value) for value in session.worker_messages.values()][-100:],
             }
             if session.error:
                 result["error"] = session.error
@@ -620,7 +697,16 @@ class CodexBridge:
         with self._sessions_lock:
             session = self._sessions.get(team)
         if not session:
-            return {"team": team, "afterSeq": after_seq, "nextSeq": after_seq, "events": []}
+            journal = self._read_event_journal(team)
+            oldest = journal[0]["seq"] if journal else after_seq + 1
+            next_seq = journal[-1]["seq"] if journal else after_seq
+            return {
+                "team": team,
+                "afterSeq": after_seq,
+                "nextSeq": next_seq,
+                "truncated": bool(journal) and after_seq + 1 < oldest,
+                "events": [dict(event) for event in journal if event["seq"] > after_seq],
+            }
         with session.lock:
             oldest = session.events[0]["seq"] if session.events else session.next_event_seq
             return {
@@ -651,6 +737,8 @@ class CodexBridge:
                 "data": data,
             })
             session.next_event_seq += 1
+            if event_type != "message.delta":
+                self._persist_event_journal(session)
 
     def _on_message(self, session: _TeamSession, message: dict[str, Any]) -> None:
         if "id" in message and ("result" in message or "error" in message):
@@ -842,6 +930,9 @@ class CodexBridge:
             return
         if item_type == "collabAgentToolCall":
             receivers, states = item.get("receiverThreadIds"), item.get("agentsStates")
+            tool = item.get("tool")
+            collab_prompt = _safe_text(item.get("prompt", ""), 4000)
+            collab_status = item.get("status") or phase
             if isinstance(receivers, list):
                 for child_id in receivers:
                     if not isinstance(child_id, str):
@@ -856,12 +947,37 @@ class CodexBridge:
                         "threadId": child_id,
                         "state": child_state,
                         "source": "collabAgentToolCall",
+                        "lastTool": tool,
+                        "lastStatus": collab_status,
+                        "lastPrompt": collab_prompt,
+                        "updatedAtMs": _now_ms(),
                     }
                     with session.lock:
                         session.children[child_id] = child
                     self._event(session, "child.updated", {
                         "text": "Native child agent updated", **child,
                     }, item_id=item_id)
+                    if tool in {"sendMessage", "sendInput", "followupTask", "resumeAgent"}:
+                        with session.lock:
+                            pending = [
+                                value
+                                for value in session.worker_messages.values()
+                                if value.get("threadId") == child_id
+                                and value.get("status") in {"requested", "sending"}
+                                and f"[HQ-MSG:{value.get('requestId')}]" in collab_prompt
+                            ]
+                            for value in pending:
+                                value["status"] = (
+                                    "delivered"
+                                    if phase == "completed" and collab_status == "completed"
+                                    else "sending"
+                                )
+                                value["updatedAtMs"] = _now_ms()
+                                snapshot = dict(value)
+                                self._event(session, "worker.message.updated", {
+                                    "text": "Native worker message " + snapshot["status"],
+                                    **snapshot,
+                                }, item_id=item_id)
             return
         if item_type == "subAgentActivity":
             child_id = item.get("agentThreadId")
