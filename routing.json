@@ -1,13 +1,13 @@
 {
-  "schema": 1,
-  "reviewed_on": "2026-09-13",
-  "supervisor_policy": "best_reviewed_available",
+  "schema": 2,
+  "reviewed_on": "2026-09-20",
+  "supervisor_policy": "smallest_capable_reviewed",
   "preferred_supervisors": [
     {
       "provider": "codex",
-      "model": "gpt-6-astra",
-      "effort": "high",
-      "reason": "Current runtime describes this as its most capable model; user requests a top-model supervisor."
+      "model": "auto",
+      "effort": "adaptive",
+      "reason": "Auto routing uses the smallest reviewed model tier that fits the task and current native catalog. Flagship use is escalation/manual, not the default."
     }
   ],
   "reviewed_codex_models": [
@@ -18,22 +18,48 @@
     "gpt-5.5",
     "gpt-5.3-codex-spark"
   ],
+  "economy": {
+    "classifier": "deterministic_token_free",
+    "tiers": {
+      "small": [
+        "gpt-5.6-luna",
+        "gpt-5.6-terra",
+        "gpt-5.6-sol",
+        "gpt-6-astra"
+      ],
+      "standard": [
+        "gpt-5.6-terra",
+        "gpt-5.6-sol",
+        "gpt-6-astra"
+      ],
+      "complex": [
+        "gpt-5.6-sol",
+        "gpt-6-astra"
+      ]
+    },
+    "flagship_policy": "Use gpt-6-astra automatically only as the next reviewed capability tier when smaller reviewed complex models are unavailable; otherwise require explicit selection or a later evidence-driven escalation path.",
+    "retry_policy": "Do not loop model retries automatically. Re-plan or ask before repeated expensive escalation."
+  },
+  "usage": {
+    "default_reported_token_limit": 100000,
+    "warning_ratio": 0.8,
+    "note": "A reported-token checkpoint is a context/usage guard, not a dollar or subscription-billing estimate. Cached input is displayed separately and is not added again to totalTokens."
+  },
   "workers": {
     "default": "gpt-5.6-terra",
     "scout": "gpt-5.6-luna",
     "reviewer": "gpt-5.6-sol",
-    "max_concurrent": 3
+    "max_concurrent": 3,
+    "policy": "Spawn only when parallel work is useful; no static roster. Prefer Luna for bounded scans, Terra for normal implementation, Sol for difficult review/architecture/security. Escalate only with evidence."
   },
-  "follow_official_upgrade_hint": true,
+  "follow_official_upgrade_hint": false,
   "unknown_models": "review_current_official_capabilities_before_ranking",
   "automatic_updates": "review_stage_test_activate_relevant_tools_with_rollback",
   "scope": "all_projects",
-  "provider_note": "Codex execution is enabled. Other clients are discovered but need a verified integration and their own authorized login before use. Never put a third-party model ID into Codex's OpenAI-only model selector.",
+  "provider_note": "Codex execution is currently verified. Other clients may be detected but need a reviewed official integration and their own authorized login before use. Never extract subscription credentials or put third-party model IDs into Codex's OpenAI-only model selector.",
   "organization": {
-    "structure": "overall_head -> department_supervisors -> specialists",
-    "department_supervisor_default": "gpt-5.6-sol",
-    "department_supervisor_effort": "high",
+    "structure": "overall_head -> bounded on-demand workers",
     "staffing": "goal_and_dependency_driven",
-    "concurrency_note": "Current worker limit schedules departments and specialists; it does not cap total project responsibilities."
+    "concurrency_note": "Maximum three concurrent support workers by policy; the UI must not imply workers are alive unless native runtime evidence says so."
   }
 }
