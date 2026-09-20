@@ -42,20 +42,36 @@ class DiscoveryTests(unittest.TestCase):
         self.rows[0]['upgrade']='reviewed'
         self.assertEqual(d.select_supervisor(self.policy,self.caps)['effort'],'medium')
 
+    def test_auto_policy_reports_per_task_routing_not_flagship(self):
+        policy = {
+            'supervisor_policy':'smallest_capable_reviewed',
+            'reviewed_codex_models':['reviewed'],
+            'reviewed_on':'2026-09-20',
+            'preferred_supervisors':[{'provider':'codex','model':'auto','effort':'adaptive'}],
+        }
+        result=d.select_supervisor(policy,self.caps)
+        self.assertEqual(result['model'],'auto')
+        self.assertEqual(result['basis'],'per-task deterministic smallest-capable router')
+
     def test_policy_change_updates_cached_selection_used_by_installer(self):
         with tempfile.TemporaryDirectory() as temporary:
             base=Path(temporary)
             policy=copy.deepcopy(self.policy)
             (base/'routing.json').write_text(json.dumps(policy))
             alternate=copy.deepcopy(self.rows[0]);alternate.update(id='other',model='other')
-            with mock.patch.object(d.shutil,'which',side_effect=lambda n:'/native/codex' if n=='codex' else None), mock.patch.object(d,'codex_models',return_value=[*self.rows,alternate]) as catalog:
+            cache=base/'capabilities.json'
+            with mock.patch.object(d.shutil,'which',side_effect=lambda n:'/native/codex' if n=='codex' else None), \
+                 mock.patch.object(d,'capabilities_path',return_value=cache), \
+                 mock.patch.object(d,'codex_executable',return_value=Path('/native/codex')), \
+                 mock.patch.object(Path,'is_file',return_value=False), \
+                 mock.patch.object(d,'codex_models',return_value=[*self.rows,alternate]) as catalog:
                 d.discover(base=base)
                 policy['preferred_supervisors'][0]['model']='other'
                 (base/'routing.json').write_text(json.dumps(policy))
                 value=d.discover(base=base)
                 self.assertTrue(value['cached'])
                 self.assertEqual(value['selection']['model'],'other')
-                self.assertEqual(json.loads((base/'capabilities.json').read_text())['selection']['model'],'other')
+                self.assertEqual(json.loads(cache.read_text())['selection']['model'],'other')
                 catalog.assert_called_once()
 
 
