@@ -95,7 +95,10 @@ def codebase_memory_launcher() -> Path:
 
 def python_executable() -> Path:
     raw = os.environ.get("COMPANY_HQ_PYTHON")
-    return _expand(raw) if raw else Path(sys.executable).resolve()
+    if raw:
+        return _expand(raw)
+    venv = REPO_ROOT / "clawteam" / "venv" / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+    return venv.resolve() if venv.is_file() else Path(sys.executable).resolve()
 
 
 def codex_executable() -> Path:
