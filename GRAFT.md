@@ -3,7 +3,6 @@
 Graft is installed only as a deterministic structural code graph helper. It is
 not initialized in any repository or coding-agent configuration, and its model,
 brain, MCP, upgrade, and background integration paths are not enabled.
-For Pinky work, load and follow the `pinky-ops` skill before using this helper.
 
 ## Installed package
 
@@ -11,9 +10,9 @@ For Pinky work, load and follow the `pinky-ops` skill before using this helper.
 - npm source commit: `de8456e892bad5aeee11403e47fb2227773eb27e`
 - npm integrity:
   `sha512-sNshNND1Q/qSXiuSh9nW8NniWyaD+m55oJZ6oCGJsLzxot52WSJrdThsQ3NZVTNT+lqivlYkkqN8b/nf22S/Xw==`
-- Install root: `/Users/uno/.local/share/agent-toolkit/graft-0.18.0`
-- Wrapper: `/Users/uno/.local/share/agent-toolkit/graft.py`
-- Graph state: `/Users/uno/.local/share/agent-toolkit/state/graft/projects/<sha256>/graph`
+- Install root: `<checkout>/graft-0.18.0`
+- Wrapper: `<checkout>/graft.py`
+- Graph state: `~/.local/state/company-hq/graft/projects/<sha256>/graph`
 - Node requirement: Node.js 20 or newer
 - npm lifecycle scripts were disabled with `--ignore-scripts`.
 
@@ -28,14 +27,14 @@ remains a separate read-only foreground process.
 Build a structural graph without a model or API key:
 
 ```bash
-/Users/uno/.local/share/agent-toolkit/graft.py build /absolute/path/to/repository
+<checkout>/graft.py build /absolute/path/to/repository
 ```
 
 Query the graph. A query refreshes stale structural data unless `--no-refresh`
 is supplied:
 
 ```bash
-/Users/uno/.local/share/agent-toolkit/graft.py query /absolute/path/to/repository "where is session authentication checked?"
+<checkout>/graft.py query /absolute/path/to/repository "where is session authentication checked?"
 ```
 
 Optional query flags are `--json`, `--source`, and `--no-refresh`.
@@ -44,7 +43,7 @@ The local visualization is never started automatically. An explicit invocation
 serves the existing graph in the foreground on loopback only:
 
 ```bash
-/Users/uno/.local/share/agent-toolkit/graft.py viz /absolute/path/to/repository --explicit --port 4400
+<checkout>/graft.py viz /absolute/path/to/repository --explicit --port 4400
 ```
 
 Stop it with Ctrl-C. Upstream binds to `127.0.0.1` and tries up to nine following
@@ -84,7 +83,7 @@ Graft state directory. No Pinky repository was indexed.
   `6460d181d0cd84cf4d36baa21ed19af344a00fea7a32354f8738910e475ba0a7`
   and `9e4861d3acd6f9fa8375aefb4cc97b79d2daf1ad24f2b842885797b67083ce2b`
 - No `.gitignore` or `.ignore` was created in the fixture
-- The expected `/Users/uno/.graft/update-check.json` was the only observed
+- The expected `~/.graft/update-check.json` was the only observed
   write outside the owned install, state, wrapper, and documentation paths
 - An eight-worker isolated regression observed at most one active writer,
   retained valid metadata with no temporary files, confirmed all three required
