@@ -12,6 +12,7 @@ This private repository preserves the shared toolkit source built on 13–14 Sep
 - [New upstream candidates: ECC, gstack, Superpowers and the 40-repo list](docs/UPSTREAM-REVIEW.md)
 - [Reviewer instructions](docs/REVIEWER.md)
 - [Portable setup and isolation](docs/PORTABILITY.md)
+- [Token-efficient tooling and routing strategy](docs/TOKEN-EFFICIENCY.md)
 - [Packaging provenance](docs/PACKAGING.md)
 
 For the current implementation sequence, changes are delivered as bounded PRs so the original Codex supervisor can review portable setup, onboarding, worker communication/visibility, and usage controls independently.
@@ -65,7 +66,7 @@ The original live installation remains a separate deployment target. Running thi
 
 ## Cost and data
 
-Opening the board does not start an agent. Pressing Start working does. Native work uses the existing account and may consume its allowance; the prototype has reported token counts, not a complete bill or enforced spending budget. Multiple agents are not automatically cheaper. Keep simple work with one agent, use bounded smaller workers, and retain concise shared decisions.
+Opening the board does not start an agent. The first supervisor conversation is read-only planning; execution still consumes the existing provider account allowance after explicit approval. Auto uses a deterministic, token-free classifier plus the native reviewed model catalog to choose the smallest capability tier and supported reasoning effort. Company HQ aggregates the latest provider-reported supervisor/child totals without double-counting repeated cumulative updates and applies a user-adjustable next-turn token checkpoint. This is not a dollar estimate or subscription-billing meter. Multiple agents are not automatically cheaper; use bounded smaller workers and concise shared decisions.
 
 No credentials, Codex conversations, runtime bindings, local task/message databases, user project lists, product files, downloaded binaries, virtual environments or dependency caches are intentionally included.
 
