@@ -5,10 +5,11 @@ description: Coordinate project teams from idea through product, engineering, QA
 
 # Shared agent toolkit
 
-This user's shared tooling lives outside product repositories at
-`/Users/uno/.local/share/agent-toolkit`. It applies to existing and future projects.
-Read `GUIDE.md` there for tool selection or account-continuity work; read
-`catalog.json` for reviewed upstream versions. Project-specific operating skills,
+This repository is the portable Company HQ/toolkit source. Per-machine runtime
+state lives outside both this checkout and product repositories (by default
+under the user's XDG state directory). Read `GUIDE.md` in the repository root
+for tool selection or account-continuity work; read `catalog.json` for reviewed
+upstream versions. Project-specific operating skills,
 instructions, tests and release rules remain the source of truth.
 
 For a new idea or whole-product effort, read `OPERATING-MODEL.md` in the toolkit.
@@ -84,7 +85,7 @@ project or use a graph where one quick file search answers the question.
 Use Company HQ for visible team workflows. It reuses the actual Agent Teams AI
 graph package with ClawTeam tasks and real inboxes, Ruflo shared decision memory,
 and native Codex supervisor execution. Read
-`/Users/uno/.local/share/agent-toolkit/clawteam/integration/README.md`.
+`clawteam/integration/README.md` in this repository.
 Use its guarded `clawteam-meta` CLI to register the actual project/run team,
 assign owners and update tasks. Pass each agent the same team ID, their inbox
 identity, project path and reporting supervisor. Record the actual reporting
@@ -111,7 +112,7 @@ disabled unless separately reviewed for a concrete need.
 ## Project kickoff and ongoing projects
 
 - At a genuinely new project's kickoff, run
-  `/opt/homebrew/bin/python3 -B /Users/uno/.local/share/agent-toolkit/kickoff.py --project <absolute-project> --refresh`.
+  `python3 -B kickoff.py --project <absolute-project> --refresh` from this repository.
 - On first adoption in an ongoing project, use the same command without
   `--refresh` (24-hour cache). Do not recheck every turn or let a failed metadata
   check block ordinary project work. Report unavailable checks honestly.
@@ -120,7 +121,7 @@ disabled unless separately reviewed for a concrete need.
   tasks; manual defaults are preserved. No product initialization or worker starts.
 - The user authorizes useful automatic updates: review source changes, stage
   outside product repos, test the enabled paths, keep rollback, then activate.
-  Read `/Users/uno/.local/share/agent-toolkit/MAINTENANCE.md` for this workflow.
+  Read `MAINTENANCE.md` in this repository for this workflow.
   Installing every new framework or blindly running newest installers is not
   the objective. Reuse working tools; keep the setup lean.
 - Use native Codex delegation by default. Add another runtime only for a
@@ -130,9 +131,8 @@ disabled unless separately reviewed for a concrete need.
 ## Tool use
 
 Graft 0.18.0 is installed and fixture-tested for deterministic code navigation.
-Read `/Users/uno/.local/share/agent-toolkit/GRAFT.md` when repeated cross-file
-dependency/caller questions would benefit from a structural graph. Use only
-`/Users/uno/.local/share/agent-toolkit/graft.py`, which places graphs outside the
+Read `GRAFT.md` when repeated cross-file
+dependency/caller questions would benefit from a structural graph. Use only the repository's `graft.py` wrapper, which places graphs outside the
 product checkout, disables telemetry and ignore-file edits, and serializes
 graph writes. It is optional; do not index every project or replace a quick
 `rg` search with a graph build. Its visualization shows code structure, while
