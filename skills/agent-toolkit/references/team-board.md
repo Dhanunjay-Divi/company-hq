@@ -1,14 +1,12 @@
 # Native team workflow
 
-The shared Agent Team Board at
-`/Users/uno/.local/share/agent-toolkit/teamboard/Agent Team Board.app` is a native
+The optional legacy Agent Team Board built from `teamboard/` is a native
 macOS viewer. It refreshes recorded activity every two seconds, makes no model
 calls and has no network server. Native Codex tools perform the actual work
 and communication. The board records concise workflow summaries, not every
 internal message. Recorded state is not proof that a process is still running.
 
-The executable is `/Users/uno/.local/bin/agent-team`; its source is
-`/Users/uno/.local/share/agent-toolkit/teamboard/agent_team.py`.
+Its source is `teamboard/agent_team.py`. Any convenience launcher is per-machine and is not required by Company HQ.
 
 ## Starting and recording
 
