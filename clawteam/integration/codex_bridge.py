@@ -296,6 +296,24 @@ class CodexBridge:
         os.chmod(temporary, 0o600)
         os.replace(temporary, path)
 
+    @staticmethod
+    def _restore_worker_messages(events: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+        restored: dict[str, dict[str, Any]] = {}
+        for event in events:
+            if not str(event.get("type", "")).startswith("worker.message."):
+                continue
+            data = event.get("data")
+            if not isinstance(data, dict):
+                continue
+            request_id = data.get("requestId")
+            if isinstance(request_id, str):
+                restored[request_id] = {
+                    key: value
+                    for key, value in data.items()
+                    if key in {"requestId", "threadId", "status", "createdAtMs", "updatedAtMs", "preview"}
+                }
+        return restored
+
     def _read_binding(self, team: str) -> dict[str, Any] | None:
         path = self._binding_path(team)
         if not path.exists():
@@ -366,6 +384,7 @@ class CodexBridge:
             mode=mode,
             connection=self.connection_factory(self.codex_path),
             events=deque(existing_events, maxlen=self.max_events),
+            worker_messages=self._restore_worker_messages(existing_events),
             next_event_seq=(existing_events[-1]["seq"] + 1 if existing_events else 1),
         )
         with self._sessions_lock:
@@ -657,6 +676,7 @@ class CodexBridge:
             session = self._sessions.get(team)
         if not session:
             binding = self._read_binding(team)
+            journal = self._read_event_journal(team)
             return {
                 "team": team,
                 "state": "offline",
@@ -666,10 +686,10 @@ class CodexBridge:
                 "mode": binding.get("mode") if binding else None,
                 "threadId": binding.get("threadId") if binding else None,
                 "turnId": None,
-                "lastEventSeq": 0,
+                "lastEventSeq": journal[-1]["seq"] if journal else 0,
                 "pendingApprovals": [],
                 "children": [],
-                "workerMessages": [],
+                "workerMessages": list(self._restore_worker_messages(journal).values())[-100:],
             }
         with session.lock:
             result = {
