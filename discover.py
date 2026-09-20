@@ -1,4 +1,4 @@
-#!/opt/homebrew/bin/python3
+#!/usr/bin/env python3
 """Discover installed clients and the native model catalog without launching model work."""
 import argparse
 import datetime as dt
@@ -10,8 +10,13 @@ import shutil
 import subprocess
 import tempfile
 import time
+import sys
 
 BASE = Path(__file__).resolve().parent
+INTEGRATION = BASE / "clawteam" / "integration"
+if str(INTEGRATION) not in sys.path:
+    sys.path.insert(0, str(INTEGRATION))
+from runtime_config import capabilities_path
 TTL = 24 * 60 * 60
 CLIENTS = {'codex': ('codex',), 'claude': ('claude',), 'cursor': ('cursor-agent', 'agent'),
            'kimi': ('kimi',), 'opencode': ('opencode',), 'grok': ('grok',), 'glm': ('glm',),
@@ -95,7 +100,7 @@ def discover(refresh=False, base=BASE):
     policy = json.loads((base / 'routing.json').read_text())
     paths = {provider: next((shutil.which(name) for name in names if shutil.which(name)), None)
              for provider, names in CLIENTS.items()}
-    cache = base / 'capabilities.json'; now = time.time()
+    cache = capabilities_path(); cache.parent.mkdir(parents=True, exist_ok=True, mode=0o700); now = time.time()
     if not refresh:
         try:
             value = json.loads(cache.read_text())
