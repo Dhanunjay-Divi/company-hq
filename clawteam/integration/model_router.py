@@ -145,6 +145,30 @@ def _candidate_order(policy: dict[str, Any], tier: str) -> list[str]:
     return ordered
 
 
+def _choose_effort(row: dict[str, Any], tier: str) -> str | None:
+    supported_raw = row.get("supportedReasoningEfforts") or []
+    supported = [
+        item.get("reasoningEffort") if isinstance(item, dict) else item
+        for item in supported_raw
+    ]
+    supported = [item for item in supported if isinstance(item, str) and item]
+    default = row.get("defaultReasoningEffort")
+    desired = {"small": "low", "standard": "medium", "complex": "high"}.get(tier)
+    if desired in supported:
+        return desired
+    if isinstance(default, str) and (not supported or default in supported):
+        return default
+    order = ["low", "medium", "high", "xhigh"]
+    ranked = [item for item in order if item in supported]
+    if ranked:
+        if tier == "complex":
+            return ranked[-1]
+        if tier == "small":
+            return ranked[0]
+        return ranked[min(1, len(ranked) - 1)]
+    return supported[0] if supported else None
+
+
 def choose_model(prompt: str, mode: str = "execute", requested: str = "auto") -> dict[str, Any]:
     policy = _policy()
     reviewed = set(policy.get("reviewed_codex_models", []))
@@ -157,12 +181,14 @@ def choose_model(prompt: str, mode: str = "execute", requested: str = "auto") ->
             available = {row["model"] for row in catalog["models"]}
             if requested not in available:
                 raise RoutingError("requested reviewed model is not currently exposed by the native account")
+        row = next((item for item in catalog.get("models", []) if item.get("model") == requested), {})
         return {
             "provider": "codex",
             "model": requested,
+            "effort": _choose_effort(row, "standard") if row else None,
             "tier": "manual",
             "score": None,
-            "reason": "explicit user model selection",
+            "reason": "explicit user model selection; provider default/medium effort where supported",
             "catalogVerified": catalog["verified"],
         }
 
@@ -174,12 +200,14 @@ def choose_model(prompt: str, mode: str = "execute", requested: str = "auto") ->
 
     score, reasons = complexity_score(prompt, mode)
     tier = _tier_for(score)
-    available = {row["model"] for row in catalog["models"]}
+    rows = {row["model"]: row for row in catalog["models"]}
+    available = set(rows)
     for model in _candidate_order(policy, tier):
         if model in available:
             return {
                 "provider": "codex",
                 "model": model,
+                "effort": _choose_effort(rows[model], tier),
                 "tier": tier,
                 "score": score,
                 "reason": "; ".join(reasons),
