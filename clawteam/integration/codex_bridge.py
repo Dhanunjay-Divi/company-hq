@@ -622,6 +622,7 @@ class CodexBridge:
             "input": [{"type": "text", "text": prompt}],
             "cwd": str(session.project),
             "model": session.model,
+            "effort": session.route.get("effort"),
             "approvalPolicy": "on-request",
             "approvalsReviewer": "user",
             "sandboxPolicy": (
