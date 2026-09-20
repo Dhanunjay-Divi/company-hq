@@ -1,11 +1,31 @@
 #!/bin/sh
 set -eu
 umask 077
+
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+HOME_DIR=${HOME:?HOME is required to choose external state}
+STATE_BASE=${XDG_STATE_HOME:-"$HOME_DIR/.local/state"}
+STATE_ROOT=${COMPANY_HQ_RUFLO_STATE_ROOT:-"$STATE_BASE/company-hq/ruflo"}
+NODE=${COMPANY_HQ_NODE:-$(command -v node || true)}
+SANDBOX_EXEC=${COMPANY_HQ_SANDBOX_EXEC:-/usr/bin/sandbox-exec}
+
+if [ -z "$NODE" ] || [ ! -x "$NODE" ]; then
+  echo "ruflo-mcp: Node.js is unavailable; set COMPANY_HQ_NODE" >&2
+  exit 1
+fi
+if [ ! -x "$SANDBOX_EXEC" ]; then
+  echo "ruflo-mcp: macOS sandbox-exec is unavailable; refusing an unsandboxed Ruflo launch" >&2
+  exit 1
+fi
+mkdir -p "$STATE_ROOT"
+chmod 700 "$STATE_ROOT"
+
 exec /usr/bin/env -i \
-  PATH=/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin \
-  LANG=en_US.UTF-8 USER=uno LOGNAME=uno \
-  /usr/bin/sandbox-exec \
-  -D STATE_ROOT=/Users/uno/.local/share/agent-toolkit/ruflo-integration/state \
-  -f /Users/uno/.local/share/agent-toolkit/ruflo-integration/sandbox.sb \
-  /opt/homebrew/bin/node \
-  /Users/uno/.local/share/agent-toolkit/ruflo-integration/ruflo-memory-mcp.mjs
+  PATH=/usr/bin:/bin:/usr/sbin:/sbin \
+  LANG=${LANG:-C.UTF-8} USER=${USER:-local} LOGNAME=${LOGNAME:-${USER:-local}} \
+  RUFLO_INTEGRATION_STATE_ROOT="$STATE_ROOT" \
+  "$SANDBOX_EXEC" \
+  -D STATE_ROOT="$STATE_ROOT" \
+  -f "$SCRIPT_DIR/sandbox.sb" \
+  "$NODE" \
+  "$SCRIPT_DIR/ruflo-memory-mcp.mjs"
