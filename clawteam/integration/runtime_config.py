@@ -98,7 +98,7 @@ def python_executable() -> Path:
     if raw:
         return _expand(raw)
     venv = REPO_ROOT / "clawteam" / "venv" / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
-    return venv.resolve() if venv.is_file() else Path(sys.executable).resolve()
+    return venv.absolute() if venv.is_file() else Path(sys.executable).absolute()
 
 
 def codex_executable() -> Path:
