@@ -11,17 +11,25 @@ Baseline source captured 2026-09-14 UTC. Historical verification documents are e
 - Reviewed model catalog supplied to UI; kickoff/discovery utilities and update review procedure.
 - Existing UI acceptance: isolated workspace, one Luna response through Start working, task moved to Done, Ruflo note round trip. Prior combined suite: 16 passing HTTP/bridge tests. This is evidence of these flows, not full autonomous-company validation.
 
-## Not finished
+## Implemented in the current PR stack, pending reviewer acceptance
 
-1. **Portable setup.** Source was built around an existing Mac installation. Hard-coded toolkit/account-user paths remain in multiple wrappers, API adapters, sandbox profiles and docs. Fresh-clone startup must be made isolated and configurable before being called portable. Frontend production builds and pure tests are independently reproducible.
-2. **Automatic worker visibility.** Live supervisor state is mapped; other nodes reflect registered metadata. Full native child lifecycle, cross-team communication and inbox wake/delivery acknowledgements are not synchronized end to end.
-3. **Durable execution feed.** Native bindings resume a thread, but in-memory event history disappears after server restart. Bounded durable replay and retention are needed.
-4. **Economy controls.** Reported token counts exist. No enforced project budget, comprehensive child usage aggregation, monetary bill or proven before/after savings exists. A tiny live acceptance reply still had 16,950 input tokens, of which 11,008 were cached, plus 21 output tokens. Short prompts do not imply low context overhead.
-5. **Onboarding and UX.** User still does not clearly understand “talk to the supervisor, then follow the work.” Narrow board columns require horizontal scrolling, empty states can look inactive, and the graph needs stronger readable layout and clearer active/recorded states. Build a guided first-run example and test comprehension.
-6. **Full company execution.** Research/product/design/engineering/QA/marketing/operations is the intended operating model; a complete idea-to-launch campaign has not been exercised. Do not create fake departments just to fill the graph.
-7. **Provider independence.** Current execution is native Codex. Other vendors' subscriptions, CLIs, quotas and compatibility are not established by the model catalog.
-8. **Automatic updates.** Metadata checks and a reviewed maintenance process exist in the original environment. No repository CI workflow or scheduler here installs updates automatically. The original local recurring automation is not transferred by this source snapshot.
-9. **Separate Agent Teams AI app.** Its full opaque runtime remains disabled because of account-home/auth handling. Reusing its graph does not enable or endorse that runtime.
+- **Portable source/runtime split (PR #1):** configurable external Company HQ state, one-command setup/demo, capability health and active-source portability checks. The original live installation is not migrated by these source changes.
+- **Plan-first onboarding (PR #2):** the first supervisor turn is read-only and project writes begin only after explicit user approval.
+- **Observed worker communication (PR #3):** native child thread IDs/states are shown only from provider collaboration events; direct worker delivery has requested/sending/delivered evidence; bounded non-delta runtime evidence replays after restart.
+- **Economy controls (PR #4):** Auto routes deterministically to the smallest reviewed available Codex tier and supported reasoning effort; provider-reported supervisor/child token totals are aggregated by latest thread totals; a warning/checkpoint blocks new model input after the user-selected threshold without killing the active turn.
+
+These items are **implemented source, not fresh-clone/live acceptance claims**. The original Codex supervisor still needs to run the documented model-free suite, frontend build, restart tests and justified native acceptance before marking them verified.
+
+## Remaining limitations
+
+1. **Cross-platform acceptance.** Model-free setup is designed to be portable, but native Codex and Ruflo sandbox acceptance remains macOS-specific. Ruflo deliberately fails closed without its reviewed sandbox.
+2. **Measured savings.** The prior tiny live acceptance reply still recorded 16,950 input tokens, 11,008 cached input and 21 output. The new controls avoid double-counting and stop new input at a checkpoint, but no before/after percentage or dollar savings is claimed until matched tasks are measured.
+3. **Full worker lifecycle coverage.** Observed Codex children and correlated delivery are implemented, but cross-team wake/orphan/retry behavior still needs broader live acceptance. No synthetic liveness is shown.
+4. **Full company execution.** Research/product/design/engineering/QA/marketing/operations remains the intended operating model; a complete idea-to-launch scenario has not been exercised. Do not create idle departments just to fill the graph.
+5. **Provider independence.** Current execution is native Codex. Claude, Kimi, GLM, Grok and other subscriptions need separate reviewed official adapters that preserve their own account/auth boundaries and expose live catalogs/usage before Auto can route to them.
+6. **Automatic updates.** Metadata checks and reviewed maintenance exist, but no repository CI/scheduler installs upstream updates automatically.
+7. **Agent Teams AI runtime.** Its graph/UI assets are reused; its separate opaque runtime remains disabled because Company HQ owns the current account/project/permission boundary.
+8. **Optional code/skill tools.** Graft, codebase-memory, Agency Agents and candidate skill packs remain on-demand. OpenMontage, Diagram Design, Scientific Agent Skills and extra graph/memory systems should not become startup context without a task-specific reason and review.
 
 No production deployment or cross-platform runtime acceptance is claimed. Live task/message state and native receipts are intentionally not in this repository.
 
