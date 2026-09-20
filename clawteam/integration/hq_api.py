@@ -138,7 +138,7 @@ def handle_post(handler,state,path,body):
             handler._serve_json({'updated':True});return True
         if parts[1]!='runtime' or len(parts)!=4: raise ValueError('Unknown action')
         client=bridge(state);action=parts[3]
-        if demo_mode() and action in ('start','send','approve'):
+        if demo_mode() and action in ('start','send','execute','approve'):
             raise ValueError('Model execution is disabled in model-free demo mode')
         if action in ('start','send'):
             prompt=body.get('prompt','')
@@ -147,8 +147,13 @@ def handle_post(handler,state,path,body):
                 routing=json.loads(routing_path().read_text());model=body.get('model','auto')
                 if model=='auto':model=routing['preferred_supervisors'][0]['model']
                 if model not in routing['reviewed_codex_models']: raise ValueError('Choose a reviewed available Codex model')
-                result=client.start(name,project,prompt.strip(),model)
+                mode=body.get('mode','plan')
+                if mode not in ('plan','execute'): raise ValueError('Mode must be plan or execute')
+                result=client.start(name,project,prompt.strip(),model,mode)
             else:result=client.send(name,prompt.strip())
+        elif action=='execute':
+            prompt=body.get('prompt') or 'The user approved the current plan. Begin bounded execution now. Reuse relevant context, prefer economical capable workers, and report progress and blockers.'
+            result=client.begin_execution(name,prompt)
         elif action=='stop':result=client.stop(name)
         elif action=='approve':result=client.approve(name,body.get('requestId'),body.get('decision'))
         else:raise ValueError('Unknown runtime action')
