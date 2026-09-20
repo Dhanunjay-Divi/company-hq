@@ -1,4 +1,4 @@
-#!/Users/uno/.local/share/agent-toolkit/clawteam/venv/bin/python
+#!/usr/bin/env python3
 """Allowlisted ClawTeam CLI facade for metadata coordination only."""
 
 from __future__ import annotations
@@ -9,10 +9,13 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
+from runtime_config import clawteam_data_dir, python_executable
 os.umask(0o077)
-testing = os.environ.get("CLAWTEAM_INTEGRATION_TESTING") == "1"
-override = os.environ.get("CLAWTEAM_INTEGRATION_TEST_DATA_DIR") if testing else None
-data_dir = Path(override).resolve() if override else (ROOT.parent / "state").resolve()
+desired_python = python_executable()
+if Path(sys.executable).resolve() != desired_python and os.environ.get("COMPANY_HQ_REEXEC") != "1":
+    env = os.environ.copy(); env["COMPANY_HQ_REEXEC"] = "1"
+    os.execve(str(desired_python), [str(desired_python), str(Path(__file__).resolve()), *sys.argv[1:]], env)
+data_dir = clawteam_data_dir().resolve()
 data_dir.mkdir(parents=True, exist_ok=True)
 os.environ["CLAWTEAM_DATA_DIR"] = str(data_dir)
 os.environ["CLAWTEAM_TRANSPORT"] = "file"
