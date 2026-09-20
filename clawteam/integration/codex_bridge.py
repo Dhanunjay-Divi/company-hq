@@ -19,8 +19,9 @@ from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
+from runtime_config import REPO_ROOT, codex_executable
 
-CODEX_PATH = Path("/Applications/ChatGPT.app/Contents/Resources/codex")
+CODEX_PATH = codex_executable()
 DEFAULT_STATE_DIR = Path(__file__).resolve().parent.parent / "state" / "runtime"
 SUPPORTED_MODELS = frozenset({
     "gpt-6-astra", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna",
@@ -100,9 +101,9 @@ def _numeric_tree(value: object) -> object:
 def _supervisor_instructions(team: str, project: Path) -> str:
     return f"""You are the native Codex supervisor for Company HQ team {team!r}.
 The approved project root is {str(project)!r}. Keep project writes inside that root.
-Read shared operating resources from /Users/uno/.local/share/agent-toolkit when useful.
-Use the existing globally registered Ruflo and codebase memory MCP servers; do not
-replace the user's Codex configuration. Treat ClawTeam team IDs, task IDs, member IDs,
+Read the repository operating resources under {str(REPO_ROOT)!r} when useful.
+Use registered Ruflo and codebase-memory tools when available; do not replace the
+user's Codex configuration or account environment. Treat ClawTeam team IDs, task IDs, member IDs,
 inboxes, and events as canonical coordination state. Delegate useful independent work
 through native Codex collaboration tools, preferring gpt-5.6-luna for small bounded
 tasks and escalating only when complexity requires it. Report actual child thread IDs
