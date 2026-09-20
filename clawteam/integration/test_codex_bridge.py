@@ -350,7 +350,17 @@ class CodexBridgeTest(unittest.TestCase):
                 "threadId": "thr-1",
                 "turnId": "turn-1-1",
                 "tokenUsage": {
-                    "total": {"inputTokens": 7, "outputTokens": 3},
+                    "last": {
+                        "inputTokens": 7, "cachedInputTokens": 5, "outputTokens": 3,
+                        "reasoningOutputTokens": 1, "totalTokens": 10,
+                        "cacheWriteInputTokens": 0,
+                    },
+                    "total": {
+                        "inputTokens": 7, "cachedInputTokens": 5, "outputTokens": 3,
+                        "reasoningOutputTokens": 1, "totalTokens": 10,
+                        "cacheWriteInputTokens": 0,
+                    },
+                    "modelContextWindow": 1000000,
                     "accountEmail": "must-not-leak@example.com",
                 },
             },
@@ -375,6 +385,75 @@ class CodexBridgeTest(unittest.TestCase):
         self.assertEqual(len(events["events"]), 20)
         self.assertTrue(events["truncated"])
         self.assertNotIn("accountEmail", json.dumps(events))
+
+    def test_usage_uses_latest_per_thread_and_blocks_only_new_input_at_checkpoint(self):
+        self.start()
+        connection = self.factory.connections[0]
+        self.bridge.set_usage_limit("team-one", 10_000)
+        connection.emit({
+            "method": "item/completed",
+            "params": {
+                "threadId": "thr-1",
+                "turnId": "turn-1-1",
+                "item": {
+                    "id": "spawn-usage",
+                    "type": "collabAgentToolCall",
+                    "tool": "spawnAgent",
+                    "receiverThreadIds": ["child-usage"],
+                    "agentsStates": {"child-usage": {"status": "running"}},
+                    "status": "completed",
+                },
+            },
+        })
+
+        def usage(thread_id, total, cached=0):
+            connection.emit({
+                "method": "thread/tokenUsage/updated",
+                "params": {
+                    "threadId": thread_id,
+                    "turnId": "turn-1-1",
+                    "tokenUsage": {
+                        "last": {
+                            "inputTokens": total - 1000,
+                            "cachedInputTokens": cached,
+                            "outputTokens": 1000,
+                            "reasoningOutputTokens": 0,
+                            "totalTokens": total,
+                            "cacheWriteInputTokens": 0,
+                        },
+                        "total": {
+                            "inputTokens": total - 1000,
+                            "cachedInputTokens": cached,
+                            "outputTokens": 1000,
+                            "reasoningOutputTokens": 0,
+                            "totalTokens": total,
+                            "cacheWriteInputTokens": 0,
+                        },
+                    },
+                },
+            })
+
+        usage("thr-1", 7_000, 3_000)
+        usage("thr-1", 8_000, 4_000)  # cumulative replacement, not another 8k
+        usage("child-usage", 1_000, 500)
+        summary = self.bridge.status("team-one")["usage"]
+        self.assertEqual(summary["totalTokens"], 9_000)
+        self.assertEqual(summary["cachedInputTokens"], 4_500)
+        self.assertEqual(summary["threadCount"], 2)
+        self.assertTrue(summary["warning"])
+        self.assertFalse(summary["blocked"])
+
+        usage("child-usage", 2_000, 800)
+        summary = self.bridge.status("team-one")["usage"]
+        self.assertEqual(summary["totalTokens"], 10_000)
+        self.assertTrue(summary["blocked"])
+        with self.assertRaisesRegex(BridgeError, "reported token checkpoint reached"):
+            self.bridge.send("team-one", "This must not create more model input.")
+
+        disabled = self.bridge.set_usage_limit("team-one", 0)
+        self.assertFalse(disabled["usage"]["blocked"])
+        response = self.bridge.send("team-one", "Continue after explicit checkpoint change.")
+        self.assertTrue(response["accepted"])
 
     def test_worker_delivery_has_observed_ack_and_restart_replay(self):
         self.start()
