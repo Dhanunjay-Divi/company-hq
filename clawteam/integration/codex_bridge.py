@@ -19,10 +19,10 @@ from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
-from runtime_config import REPO_ROOT, codex_executable
+from runtime_config import REPO_ROOT, codex_executable, runtime_dir
 
 CODEX_PATH = codex_executable()
-DEFAULT_STATE_DIR = Path(__file__).resolve().parent.parent / "state" / "runtime"
+DEFAULT_STATE_DIR = runtime_dir()
 SUPPORTED_MODELS = frozenset({
     "gpt-6-astra", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna",
     "gpt-5.5", "gpt-5.3-codex-spark",
