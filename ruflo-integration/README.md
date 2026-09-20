@@ -8,7 +8,7 @@ or initialize product repositories through this wrapper.
 The wrapper binds a project identity from the first tool call's absolute
 `project_root` argument (or an explicit `RUFLO_PROJECT_ROOT` fixed for a
 per-project launch), then changes to an external runtime
-directory under `ruflo-integration/state/projects/<sha256>/`. Task and
+directory under the external Company HQ state root under `ruflo/projects/<sha256>/`. Task and
 coordination files, memory databases, and relative Ruflo state stay there. It
 does not replace `HOME` or `CODEX_HOME`, read authentication, install hooks,
 start a daemon, or register itself globally. `allowed-tools.json` is an exact
@@ -23,12 +23,10 @@ not execute agents or prove liveness. Record actual native Codex IDs and states.
 The server command for an MCP client is:
 
 ```text
-/Users/uno/.local/share/agent-toolkit/ruflo-integration/ruflo-mcp
+<checkout>/ruflo-integration/ruflo-mcp
 ```
 
-The installed launcher strips inherited provider credentials, uses the local
-Node executable and applies `sandbox.sb`: no network, and writes only below
-the integration's external state directory. It does not change HOME/CODEX_HOME.
+The launcher strips inherited provider credentials, discovers or accepts an explicit Node executable, and applies `sandbox.sb`: no network, with writes only below the configured external Ruflo state directory. It fails closed when the reviewed macOS sandbox is unavailable. It does not change HOME/CODEX_HOME.
 Tool descriptions omit upstream's repeated general-CLI guidance so this MCP
 surface stays concise and describes the actual external-state behavior.
 
