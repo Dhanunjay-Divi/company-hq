@@ -1,13 +1,14 @@
 # Shared coding-agent toolkit
 
-Applies to ongoing and future projects on this Mac, not just Pinky/Bluey.
-Setup is outside project repositories. Native subagents for useful independent
+Applies to ongoing and future projects. Runtime state is outside product repositories and the Company HQ source checkout. Native subagents for useful independent
 parts of authorized project tasks are enabled by the user's team preference.
 Installation alone does not authorize product initialization, deployments,
 authentication changes, hooks, schedulers, external model runtimes or services.
 For Pinky work, also use the `pinky-ops` skill and canonical project runbooks.
 
 ## Your reusable team setup
+
+For a clean Company HQ source checkout, use `python3 scripts/hq.py bootstrap --demo` for a model-free first run or `python3 scripts/hq.py bootstrap` for normal local use. These commands keep Company HQ state external and preserve provider account homes.
 
 For a product idea, the overall head owns a shared customer-focused plan through
 research, design, engineering, QA, marketing and launch. Each functional team
@@ -52,7 +53,7 @@ agent-team work --project /absolute/project "Build the requested feature"
 This launches native Codex using its existing login and permissions. That task
 can edit the selected project as instructed; the toolkit installation itself
 does not. `agent-team start` only creates an external activity journal.
-Recorder instructions: `~/.codex/skills/agent-toolkit/references/team-board.md`.
+Recorder instructions: `skills/agent-toolkit/references/team-board.md`.
 
 Model defaults are GPT-6 Astra / high as the supervising lead, Terra / medium for
 supporting agents, with at most three concurrent supporting agents. Personal
@@ -112,14 +113,14 @@ installation receipt; there is no claim the full framework is security-cleared.
 
 ## Upstream checks
 
-Run `/opt/homebrew/bin/python3 -B /Users/uno/.local/share/agent-toolkit/check_updates.py`.
+Run `python3 -B check_updates.py`.
 It queries public GitHub metadata for the fixed catalog repositories and
 caches the result for 24 hours. `--refresh` checks again at a new project kickoff
 or on explicit request. It does not download/execute upstream code, install
 updates, touch project files or use a model. A missing/network-limited result is
 reported as unavailable, not up to date.
 
-The global `agent-toolkit` skill and `/Users/uno/.codex/AGENTS.md` tell future
+The global `agent-toolkit` skill and `the current provider's user instructions` tell future
 agents to do this at project kickoff and first adoption in ongoing projects.
 This is instruction-driven at task start, with a weekly Codex maintenance
 heartbeat; there is no OS daemon or guarantee that
@@ -161,7 +162,7 @@ subscription, production promotion or GitHub Actions run is part of this setup.
 ## Files, rebuild and rollback
 
 Board files live under `teamboard/`, with a command symlink at
-`~/.local/bin/agent-team`. The app reads local run JSON, has no network server
+the optional legacy `agent-team` launcher. The app reads local run JSON, has no network server
 and does not read login files. Run files are private, writes are serialized and
 atomic, and each run retains its latest 500 events with an explicit trim count.
 
