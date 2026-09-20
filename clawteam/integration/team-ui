@@ -12,11 +12,10 @@ import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
-PYTHON = ROOT.parent / "venv" / "bin" / "python"
+from runtime_config import clawteam_data_dir, python_executable
+PYTHON = python_executable()
 SERVER = ROOT / "secure_board.py"
-testing = os.environ.get("CLAWTEAM_INTEGRATION_TESTING") == "1"
-override = os.environ.get("CLAWTEAM_INTEGRATION_TEST_DATA_DIR") if testing else None
-STATE = Path(override).resolve() if override else (ROOT.parent / "state").resolve()
+STATE = clawteam_data_dir().resolve()
 CONTROL = STATE / ".board"
 PID_FILE = CONTROL / "pid"
 URL_FILE = CONTROL / "url"
