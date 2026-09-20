@@ -71,6 +71,11 @@ def saved_projects_path() -> Path:
     return _expand(raw) if raw else state_root() / "saved-projects.json"
 
 
+def capabilities_path() -> Path:
+    raw = os.environ.get("COMPANY_HQ_CAPABILITIES_PATH")
+    return _expand(raw) if raw else state_root() / "capabilities.json"
+
+
 def ruflo_launcher() -> Path:
     raw = os.environ.get("COMPANY_HQ_RUFLO_LAUNCHER")
     return _expand(raw) if raw else REPO_ROOT / "ruflo-integration" / "ruflo-mcp"
