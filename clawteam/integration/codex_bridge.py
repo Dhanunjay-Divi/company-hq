@@ -19,7 +19,7 @@ from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
-from runtime_config import REPO_ROOT, codex_executable, runtime_dir
+from runtime_config import REPO_ROOT, codex_executable, runtime_dir, routing_path
 
 CODEX_PATH = codex_executable()
 DEFAULT_STATE_DIR = runtime_dir()
@@ -86,6 +86,26 @@ def _validate_mode(mode: str) -> str:
     if mode not in {"plan", "execute"}:
         raise BridgeError("mode must be plan or execute")
     return mode
+
+
+def _usage_policy() -> tuple[int, float]:
+    try:
+        policy = json.loads(routing_path().read_text(encoding="utf-8")).get("usage", {})
+        limit = int(policy.get("default_reported_token_limit", 100_000))
+        warning_ratio = float(policy.get("warning_ratio", 0.8))
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        limit, warning_ratio = 100_000, 0.8
+    return max(0, limit), min(0.95, max(0.5, warning_ratio))
+
+
+def _validate_token_limit(value: object) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise BridgeError("reported token checkpoint must be an integer")
+    if value == 0:
+        return 0
+    if not 10_000 <= value <= 10_000_000:
+        raise BridgeError("reported token checkpoint must be 0 (off) or 10,000 to 10,000,000")
+    return value
 
 
 def _numeric_tree(value: object) -> object:
@@ -227,6 +247,10 @@ class _TeamSession:
     approvals: dict[str, _Approval] = field(default_factory=dict)
     children: dict[str, dict[str, Any]] = field(default_factory=dict)
     worker_messages: dict[str, dict[str, Any]] = field(default_factory=dict)
+    route: dict[str, Any] = field(default_factory=dict)
+    usage_by_thread: dict[str, dict[str, Any]] = field(default_factory=dict)
+    token_limit: int = 0
+    usage_level: str = "ok"
     completed_turns: set[str] = field(default_factory=set)
     lock: threading.RLock = field(default_factory=threading.RLock)
     operation_lock: threading.Lock = field(default_factory=threading.Lock)
@@ -297,6 +321,54 @@ class CodexBridge:
         os.replace(temporary, path)
 
     @staticmethod
+    def _restore_usage(events: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+        restored: dict[str, dict[str, Any]] = {}
+        for event in events:
+            if event.get("type") != "usage":
+                continue
+            thread_id = event.get("threadId")
+            data = event.get("data")
+            counts = data.get("counts") if isinstance(data, dict) else None
+            if isinstance(thread_id, str) and isinstance(counts, dict):
+                restored[thread_id] = counts
+        return restored
+
+    @staticmethod
+    def _usage_summary(
+        usage_by_thread: dict[str, dict[str, Any]],
+        token_limit: int,
+    ) -> dict[str, Any]:
+        totals = {
+            "inputTokens": 0,
+            "cachedInputTokens": 0,
+            "outputTokens": 0,
+            "reasoningOutputTokens": 0,
+            "cacheWriteInputTokens": 0,
+            "totalTokens": 0,
+        }
+        for usage in usage_by_thread.values():
+            total = usage.get("total") if isinstance(usage, dict) else None
+            if not isinstance(total, dict):
+                continue
+            for key in totals:
+                value = total.get(key, 0)
+                if isinstance(value, (int, float)) and not isinstance(value, bool):
+                    totals[key] += int(value)
+        limit = max(0, int(token_limit))
+        ratio = (totals["totalTokens"] / limit) if limit else 0.0
+        _, warning_ratio = _usage_policy()
+        return {
+            **totals,
+            "threadCount": len(usage_by_thread),
+            "limitTokens": limit,
+            "warningRatio": warning_ratio,
+            "ratio": ratio,
+            "warning": bool(limit and ratio >= warning_ratio),
+            "blocked": bool(limit and totals["totalTokens"] >= limit),
+            "note": "Provider-reported totalTokens; cached input is shown separately and is not added again.",
+        }
+
+    @staticmethod
     def _restore_worker_messages(events: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
         restored: dict[str, dict[str, Any]] = {}
         for event in events:
@@ -339,6 +411,8 @@ class CodexBridge:
         thread_id: str | None = None,
         model: str | None = None,
         mode: str | None = None,
+        route: dict[str, Any] | None = None,
+        token_limit: int | None = None,
     ) -> None:
         path = self._binding_path(team)
         previous = self._read_binding(team) or {}
@@ -348,6 +422,8 @@ class CodexBridge:
             "threadId": thread_id if thread_id is not None else previous.get("threadId"),
             "model": model if model is not None else previous.get("model"),
             "mode": mode if mode is not None else previous.get("mode"),
+            "route": route if route is not None else previous.get("route"),
+            "tokenLimit": token_limit if token_limit is not None else previous.get("tokenLimit"),
             "updatedAtMs": _now_ms(),
         }
         temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
@@ -375,8 +451,25 @@ class CodexBridge:
                 self._write_binding(team, resolved)
         return resolved, binding
 
-    def _new_session(self, team: str, project: Path, model: str, mode: str) -> _TeamSession:
+    def _new_session(
+        self,
+        team: str,
+        project: Path,
+        model: str,
+        mode: str,
+        binding: dict[str, Any] | None,
+        route: dict[str, Any] | None,
+    ) -> _TeamSession:
         existing_events = self._read_event_journal(team)
+        default_limit, _ = _usage_policy()
+        bound_limit = binding.get("tokenLimit") if binding else None
+        token_limit = (
+            _validate_token_limit(bound_limit)
+            if isinstance(bound_limit, int) and not isinstance(bound_limit, bool)
+            else default_limit
+        )
+        usage_by_thread = self._restore_usage(existing_events)
+        route_value = dict(route or (binding.get("route") if binding and isinstance(binding.get("route"), dict) else {}) or {})
         session = _TeamSession(
             team=team,
             project=project,
@@ -385,6 +478,16 @@ class CodexBridge:
             connection=self.connection_factory(self.codex_path),
             events=deque(existing_events, maxlen=self.max_events),
             worker_messages=self._restore_worker_messages(existing_events),
+            route=route_value,
+            usage_by_thread=usage_by_thread,
+            token_limit=token_limit,
+            usage_level=(
+                "blocked"
+                if self._usage_summary(usage_by_thread, token_limit)["blocked"]
+                else "warning"
+                if self._usage_summary(usage_by_thread, token_limit)["warning"]
+                else "ok"
+            ),
             next_event_seq=(existing_events[-1]["seq"] + 1 if existing_events else 1),
         )
         with self._sessions_lock:
@@ -434,13 +537,14 @@ class CodexBridge:
         prompt: str,
         model: str,
         mode: str = "execute",
+        route: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         team = _validate_team(team)
         prompt = _validate_prompt(prompt)
         model = _validate_model(model)
         mode = _validate_mode(mode)
         project_path, binding = self._bind_project(team, Path(project))
-        session = self._new_session(team, project_path, model, mode)
+        session = self._new_session(team, project_path, model, mode, binding, route)
         try:
             self._rpc(session, "initialize", {
                 "clientInfo": {
@@ -478,10 +582,14 @@ class CodexBridge:
                 session.thread_id = thread_id
                 session.state = "idle"
             with self._binding_lock:
-                self._write_binding(team, project_path, thread_id, model, mode)
+                self._write_binding(
+                    team, project_path, thread_id, model, mode,
+                    session.route, session.token_limit,
+                )
             self._event(session, "thread.started", {
                 "text": "Native supervisor connected",
                 "mode": mode,
+                "route": session.route,
             })
             self._start_turn(session, prompt)
             return self.status(team)
@@ -493,9 +601,17 @@ class CodexBridge:
             session.connection.close()
             raise
 
+    def _enforce_usage_checkpoint(self, session: _TeamSession) -> None:
+        summary = self._usage_summary(session.usage_by_thread, session.token_limit)
+        if summary["blocked"]:
+            raise BridgeError(
+                "reported token checkpoint reached; raise or disable the checkpoint before sending another model turn"
+            )
+
     def _start_turn(self, session: _TeamSession, prompt: str) -> str:
         if not session.thread_id:
             raise BridgeError("team has no native Codex thread")
+        self._enforce_usage_checkpoint(session)
         result = self._rpc(session, "turn/start", {
             "threadId": session.thread_id,
             "input": [{"type": "text", "text": prompt}],
@@ -538,10 +654,14 @@ class CodexBridge:
             with session.lock:
                 if session.state != "idle" or not session.thread_id:
                     raise BridgeError("wait for the planning turn to finish before approving execution")
+                self._enforce_usage_checkpoint(session)
                 session.mode = "execute"
                 thread_id = session.thread_id
             with self._binding_lock:
-                self._write_binding(team, session.project, session.thread_id, session.model, "execute")
+                self._write_binding(
+                    team, session.project, session.thread_id, session.model, "execute",
+                    session.route, session.token_limit,
+                )
             self._event(session, "mode.changed", {
                 "text": "User approved execution",
                 "mode": "execute",
@@ -562,6 +682,7 @@ class CodexBridge:
                 state, thread_id, turn_id = session.state, session.thread_id, session.turn_id
             if not thread_id or state in {"starting", "stopping", "error", "offline"}:
                 raise BridgeError(f"team supervisor cannot accept input while {state}")
+            self._enforce_usage_checkpoint(session)
             if state in {"running", "awaiting_approval"} and turn_id:
                 result = self._rpc(session, "turn/steer", {
                     "threadId": thread_id,
@@ -621,6 +742,27 @@ class CodexBridge:
             })
             raise
         return {"accepted": True, "requestId": request_id, "worker": child_thread_id, "delivery": delivery}
+
+    def set_usage_limit(self, team: str, limit_tokens: int) -> dict[str, Any]:
+        session = self._require_session(_validate_team(team))
+        limit = _validate_token_limit(limit_tokens)
+        with session.operation_lock:
+            with session.lock:
+                session.token_limit = limit
+                summary = self._usage_summary(session.usage_by_thread, limit)
+                session.usage_level = "blocked" if summary["blocked"] else "warning" if summary["warning"] else "ok"
+            with self._binding_lock:
+                self._write_binding(
+                    team, session.project, session.thread_id, session.model,
+                    session.mode, session.route, limit,
+                )
+            self._event(session, "usage.policy", {
+                "text": "Reported token checkpoint updated",
+                "limitTokens": limit,
+                "blocked": summary["blocked"],
+                "warning": summary["warning"],
+            })
+        return {"accepted": True, "usage": summary}
 
     def stop(self, team: str) -> dict[str, Any]:
         session = self._require_session(_validate_team(team))
@@ -684,12 +826,21 @@ class CodexBridge:
                 "project": binding.get("projectRoot") if binding else None,
                 "model": binding.get("model") if binding else None,
                 "mode": binding.get("mode") if binding else None,
+                "route": binding.get("route") if binding else None,
                 "threadId": binding.get("threadId") if binding else None,
                 "turnId": None,
                 "lastEventSeq": journal[-1]["seq"] if journal else 0,
                 "pendingApprovals": [],
                 "children": [],
                 "workerMessages": list(self._restore_worker_messages(journal).values())[-100:],
+                "usage": self._usage_summary(
+                    self._restore_usage(journal),
+                    (
+                        binding.get("tokenLimit")
+                        if binding and isinstance(binding.get("tokenLimit"), int)
+                        else _usage_policy()[0]
+                    ),
+                ),
             }
         with session.lock:
             result = {
@@ -699,12 +850,14 @@ class CodexBridge:
                 "project": str(session.project),
                 "model": session.model,
                 "mode": session.mode,
+                "route": dict(session.route),
                 "threadId": session.thread_id,
                 "turnId": session.turn_id,
                 "lastEventSeq": session.next_event_seq - 1,
                 "pendingApprovals": [dict(item.data) for item in session.approvals.values()],
                 "children": [dict(value) for value in session.children.values()],
                 "workerMessages": [dict(value) for value in session.worker_messages.values()][-100:],
+                "usage": self._usage_summary(session.usage_by_thread, session.token_limit),
             }
             if session.error:
                 result["error"] = session.error
@@ -855,6 +1008,44 @@ class CodexBridge:
         params: dict[str, Any],
     ) -> None:
         thread_id, turn_id = params.get("threadId"), params.get("turnId")
+        if method == "thread/tokenUsage/updated":
+            if not isinstance(thread_id, str):
+                return
+            with session.lock:
+                known_thread = thread_id == session.thread_id or thread_id in session.children
+            if not known_thread:
+                return
+            counts = _numeric_tree(params.get("tokenUsage")) or {}
+            if not isinstance(counts, dict):
+                return
+            with session.lock:
+                session.usage_by_thread[thread_id] = counts
+                summary = self._usage_summary(session.usage_by_thread, session.token_limit)
+                next_level = "blocked" if summary["blocked"] else "warning" if summary["warning"] else "ok"
+                previous_level = session.usage_level
+                session.usage_level = next_level
+            self._event(
+                session,
+                "usage",
+                {
+                    "text": "Token usage updated",
+                    "counts": counts,
+                    "aggregate": summary,
+                    "scope": "supervisor" if thread_id == session.thread_id else "worker",
+                },
+                thread_id,
+                turn_id,
+            )
+            if next_level != previous_level and next_level in {"warning", "blocked"}:
+                self._event(session, f"usage.{next_level}", {
+                    "text": (
+                        "Reported token checkpoint reached"
+                        if next_level == "blocked"
+                        else "Reported token checkpoint is approaching"
+                    ),
+                    "aggregate": summary,
+                }, thread_id, turn_id)
+            return
         if isinstance(thread_id, str) and session.thread_id and thread_id != session.thread_id:
             return
         if method == "turn/started":
@@ -892,15 +1083,6 @@ class CodexBridge:
             return
         if method in {"item/started", "item/completed"}:
             self._handle_item(session, method, params)
-            return
-        if method == "thread/tokenUsage/updated":
-            self._event(
-                session,
-                "usage",
-                {"text": "Token usage updated", "counts": _numeric_tree(params.get("tokenUsage")) or {}},
-                thread_id,
-                turn_id,
-            )
             return
         if method == "thread/status/changed":
             self._event(session, "status", {
