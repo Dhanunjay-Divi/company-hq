@@ -14,18 +14,20 @@ in this directory is derived from its shipped board UI.
 
 ## Launch
 
+From the repository root:
+
 ```sh
-team-ui
-team-ui status
+python3 scripts/hq.py bootstrap --demo   # model-free first run
+python3 scripts/hq.py bootstrap          # normal local workspace
 ```
+
+After setup, `clawteam/integration/team-ui start|status|stop` controls only this checkout's local board.
 
 Port `0` selects an available non-default loopback port and prints the URL. The
 server accepts only exact localhost Host headers, requires a matching Origin on
-POST requests, omits broad CORS, and disables upstream's GitHub proxy. State is
-fixed at `/Users/uno/.local/share/agent-toolkit/clawteam/state`.
+POST requests, omits broad CORS, and disables upstream's GitHub proxy. State defaults to `~/.local/state/company-hq/clawteam` (or `$XDG_STATE_HOME/company-hq/clawteam`) and can be redirected with `COMPANY_HQ_STATE_ROOT`.
 
-`~/.local/bin/team-ui` points to the owner-private launcher. Repeated starts
-reuse a healthy tracked server. `team-ui stop` only signals a process whose
+Repeated starts reuse a healthy tracked server in the configured Company HQ state. `team-ui stop` only signals a process whose
 command line matches this exact secure-board script.
 
 The served UI is the Company HQ build under `company-hq/dist`. Its graph source
