@@ -6,7 +6,13 @@ from company_profile import load_profile, validate_profile, profile_path
 from clawteam.team.manager import TeamManager
 from clawteam.team.tasks import TaskStore
 from clawteam.team.models import TaskStatus
-ROOT = Path('/Users/uno/.local/share/agent-toolkit')
+from runtime_config import (
+    demo_mode,
+    health_snapshot,
+    routing_path,
+    ruflo_launcher,
+    saved_projects_path,
+)
 _memory_cache = {}
 _memory_lock = threading.Lock()
 
@@ -35,7 +41,7 @@ def save_profile(state, name, profile, names):
 
 
 def memory_call(project, operations):
-    proc = subprocess.Popen([str(ROOT/'ruflo-integration/ruflo-mcp')], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+    proc = subprocess.Popen([str(ruflo_launcher())], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
     seq = 0
     def rpc(method, params):
         nonlocal seq
@@ -81,12 +87,14 @@ def bridge(state):
 
 def handle_get(handler, state):
     path = urlparse(handler.path).path
+    if path == '/api/health':
+        handler._serve_json(health_snapshot(state));return True
     if not path.startswith(('/api/runtime/','/api/knowledge/','/api/workspaces')): return False
     try:
         if path == '/api/workspaces':
-            config = ROOT/'company-hq/saved-projects.json'
-            routing=json.loads((ROOT/'routing.json').read_text())
-            handler._serve_json({'projects':json.loads(config.read_text()) if config.exists() else [],'models':routing.get('reviewed_codex_models',[])});return True
+            config = saved_projects_path()
+            routing=json.loads(routing_path().read_text())
+            handler._serve_json({'projects':json.loads(config.read_text()) if config.exists() else [],'models':routing.get('reviewed_codex_models',[]),'demo':demo_mode()});return True
         if path.startswith('/api/knowledge/'):
             name=unquote(path[len('/api/knowledge/'):]);handler._serve_json(knowledge(project_for(state,name)));return True
         parts=path.strip('/').split('/')
@@ -130,11 +138,13 @@ def handle_post(handler,state,path,body):
             handler._serve_json({'updated':True});return True
         if parts[1]!='runtime' or len(parts)!=4: raise ValueError('Unknown action')
         client=bridge(state);action=parts[3]
+        if demo_mode() and action in ('start','send','approve'):
+            raise ValueError('Model execution is disabled in model-free demo mode')
         if action in ('start','send'):
             prompt=body.get('prompt','')
             if not isinstance(prompt,str) or not prompt.strip() or len(prompt)>24000: raise ValueError('Enter a message of at most 24000 characters')
             if action=='start':
-                routing=json.loads((ROOT/'routing.json').read_text());model=body.get('model','auto')
+                routing=json.loads(routing_path().read_text());model=body.get('model','auto')
                 if model=='auto':model=routing['preferred_supervisors'][0]['model']
                 if model not in routing['reviewed_codex_models']: raise ValueError('Choose a reviewed available Codex model')
                 result=client.start(name,project,prompt.strip(),model)
