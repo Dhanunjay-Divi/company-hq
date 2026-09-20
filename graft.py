@@ -15,10 +15,11 @@ import sys
 import tempfile
 
 
-TOOLKIT = Path("/Users/uno/.local/share/agent-toolkit")
-INSTALL = TOOLKIT / "graft-0.18.0"
-GRAFT = INSTALL / "node_modules" / ".bin" / "graft"
-STATE = TOOLKIT / "state" / "graft"
+REPO_ROOT = Path(__file__).resolve().parent
+INSTALL = Path(os.environ.get("COMPANY_HQ_GRAFT_INSTALL", REPO_ROOT / "graft-0.18.0")).expanduser().resolve()
+GRAFT = INSTALL / "node_modules" / ".bin" / ("graft.cmd" if os.name == "nt" else "graft")
+_state_base = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local" / "state")).expanduser()
+STATE = Path(os.environ.get("COMPANY_HQ_GRAFT_STATE_ROOT", _state_base / "company-hq" / "graft")).resolve()
 
 # These variables are irrelevant to the reviewed structural command paths.
 # Removing them is defense in depth; it is not a network sandbox.
