@@ -16,7 +16,7 @@ BASE = Path(__file__).resolve().parent
 INTEGRATION = BASE / "clawteam" / "integration"
 if str(INTEGRATION) not in sys.path:
     sys.path.insert(0, str(INTEGRATION))
-from runtime_config import capabilities_path
+from runtime_config import capabilities_path, codex_executable
 TTL = 24 * 60 * 60
 CLIENTS = {'codex': ('codex',), 'claude': ('claude',), 'cursor': ('cursor-agent', 'agent'),
            'kimi': ('kimi',), 'opencode': ('opencode',), 'grok': ('grok',), 'glm': ('glm',),
@@ -100,6 +100,9 @@ def discover(refresh=False, base=BASE):
     policy = json.loads((base / 'routing.json').read_text())
     paths = {provider: next((shutil.which(name) for name in names if shutil.which(name)), None)
              for provider, names in CLIENTS.items()}
+    native_codex = codex_executable()
+    if native_codex.is_file() and os.access(native_codex, os.X_OK):
+        paths['codex'] = str(native_codex)
     cache = capabilities_path(); cache.parent.mkdir(parents=True, exist_ok=True, mode=0o700); now = time.time()
     if not refresh:
         try:
