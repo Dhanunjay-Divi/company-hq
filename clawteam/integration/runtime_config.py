@@ -130,6 +130,24 @@ def _availability(path: Path, *, executable: bool = False) -> dict[str, Any]:
     }
 
 
+def _compound_availability(
+    launcher: Path,
+    required: list[tuple[Path, bool]],
+) -> dict[str, Any]:
+    launcher_status = _availability(launcher, executable=True)
+    if not launcher_status["available"]:
+        return launcher_status
+    for required_path, executable in required:
+        status = _availability(required_path, executable=executable)
+        if not status["available"]:
+            return {
+                "available": False,
+                "path": str(launcher),
+                "reason": f"dependency unavailable: {required_path}",
+            }
+    return {"available": True, "path": str(launcher), "reason": None}
+
+
 def health_snapshot(data_dir: Path | None = None) -> dict[str, Any]:
     """Return truthful local capability status without starting providers."""
     state = Path(data_dir).resolve() if data_dir else clawteam_data_dir().resolve()
@@ -139,6 +157,9 @@ def health_snapshot(data_dir: Path | None = None) -> dict[str, Any]:
         "graft.cmd" if os.name == "nt" else "graft"
     )
     cbm = codebase_memory_launcher()
+    cbm_binary = cbm.parent / "codebase-memory-mcp"
+    cbm_guard = cbm.parent / "mcp_guard.py"
+    ruflo_handler = REPO_ROOT / "ruflo-3.41.2" / "node_modules" / "@claude-flow" / "cli" / "dist" / "src" / "mcp-tools" / "memory-tools.js"
     codex = codex_executable()
     return {
         "schema": 1,
@@ -152,8 +173,10 @@ def health_snapshot(data_dir: Path | None = None) -> dict[str, Any]:
             "frontend": _availability(frontend_dist() / "index.html"),
             "routing": _availability(routing),
             "codex": _availability(codex, executable=True),
-            "rufloMemory": _availability(ruflo, executable=True),
+            "rufloMemory": _compound_availability(ruflo, [(ruflo_handler, False)]),
             "graft": _availability(graft_bin, executable=True),
-            "codebaseMemory": _availability(cbm, executable=True),
+            "codebaseMemory": _compound_availability(
+                cbm, [(cbm_binary, True), (cbm_guard, False)]
+            ),
         },
     }
