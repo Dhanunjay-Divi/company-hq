@@ -16,7 +16,7 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs';
-import { dirname, isAbsolute, join, resolve } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { homedir } from 'node:os';
 
@@ -45,12 +45,18 @@ function requireDirectory(path, label) {
   return physical;
 }
 
-let stateRoot = join(INTEGRATION_DIR, 'state');
-if (process.env.RUFLO_INTEGRATION_STATE_ROOT) {
-  if (process.env.RUFLO_INTEGRATION_TESTING !== '1') {
-    fail('state-root override is test-only');
-  }
-  stateRoot = resolve(process.env.RUFLO_INTEGRATION_STATE_ROOT);
+const stateBase = process.env.XDG_STATE_HOME
+  ? resolve(process.env.XDG_STATE_HOME)
+  : join(homedir(), '.local', 'state');
+let stateRoot = resolve(process.env.RUFLO_INTEGRATION_STATE_ROOT || join(stateBase, 'company-hq', 'ruflo'));
+const stateRelativeToSource = relative(TOOLKIT_DIR, stateRoot);
+if (
+  stateRoot === resolve('/') ||
+  stateRoot === realpathSync(homedir()) ||
+  stateRoot === TOOLKIT_DIR ||
+  (!stateRelativeToSource.startsWith('..') && !isAbsolute(stateRelativeToSource))
+) {
+  fail('state root must be an external private directory, not source checkout or account home');
 }
 mkdirSync(stateRoot, { recursive: true, mode: 0o700 });
 let projectRoot;
