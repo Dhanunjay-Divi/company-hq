@@ -75,6 +75,22 @@ def codex_models(executable):
 
 
 def select_supervisor(policy, capabilities):
+    if policy.get('supervisor_policy') == 'smallest_capable_reviewed':
+        provider = capabilities.get('providers', {}).get('codex', {})
+        if provider.get('status') == 'catalog_verified':
+            reviewed = set(policy.get('reviewed_codex_models', []))
+            available = [row.get('model') or row.get('id') for row in provider.get('models', [])]
+            if any(model in reviewed for model in available):
+                return {
+                    'provider': 'codex',
+                    'model': 'auto',
+                    'effort': 'adaptive',
+                    'basis': 'per-task deterministic smallest-capable router',
+                    'upgraded_from': [],
+                    'reviewed_on': policy.get('reviewed_on'),
+                }
+        return {'provider': None, 'model': None, 'effort': None,
+                'basis': 'No reviewed Codex catalog is currently available for per-task routing.'}
     for preferred in policy['preferred_supervisors']:
         provider = preferred['provider']
         client = capabilities['providers'].get(provider, {})
