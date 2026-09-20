@@ -1,4 +1,4 @@
-#!/opt/homebrew/bin/python3
+#!/usr/bin/env python3
 """Refresh shared tool/model metadata at project kickoff, without initializing the repo."""
 import argparse
 import json
