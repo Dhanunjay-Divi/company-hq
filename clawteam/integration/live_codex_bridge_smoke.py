@@ -2,27 +2,31 @@
 """One-turn live smoke test. Run manually; it consumes a small Codex turn."""
 from __future__ import annotations
 
+import argparse
 import json
 import time
 from pathlib import Path
 
 from codex_bridge import CodexBridge
 
-PROJECT = Path(
-    "/Users/uno/.local/share/agent-toolkit/fixtures/codex-bridge-luna-20260913"
-)
-STATE = Path(
-    "/Users/uno/.local/share/agent-toolkit/clawteam/verification/"
-    "codex-bridge-luna-runtime"
-)
-TEAM = "bridge-luna-verification-20260913"
-RECEIPT = Path(
-    "/Users/uno/.local/share/agent-toolkit/clawteam/verification/"
-    "codex-bridge-luna-receipt.json"
-)
+TEAM = "bridge-luna-manual-verification"
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--project", required=True, help="explicit synthetic/approved fixture project")
+    parser.add_argument("--state", required=True, help="external runtime state directory")
+    parser.add_argument("--receipt", required=True, help="external one-run receipt path")
+    args = parser.parse_args()
+    PROJECT = Path(args.project).expanduser().resolve(strict=True)
+    STATE = Path(args.state).expanduser().resolve()
+    RECEIPT = Path(args.receipt).expanduser().resolve()
+    if not PROJECT.is_dir():
+        parser.error("--project must be a directory")
+    if PROJECT in {Path("/"), Path.home().resolve()}:
+        parser.error("refusing filesystem root or account home as the fixture project")
+    STATE.mkdir(parents=True, exist_ok=True)
+    RECEIPT.parent.mkdir(parents=True, exist_ok=True)
     if RECEIPT.exists():
         print(f"Live smoke already completed; refusing to run again: {RECEIPT}")
         return 64
