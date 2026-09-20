@@ -158,7 +158,8 @@ class CodexBridgeTest(unittest.TestCase):
         self.start()
         connection = self.factory.connections[0]
         response = self.bridge.send("team-one", "More detail.")
-        self.assertEqual(response["mode"], "turn/steer")
+        self.assertEqual(response["delivery"], "turn/steer")
+        self.assertEqual(response["mode"], "execute")
         self.assertEqual(response["turnId"], "turn-1-1")
         connection.emit({
             "method": "turn/completed",
@@ -168,8 +169,43 @@ class CodexBridgeTest(unittest.TestCase):
             },
         })
         response = self.bridge.send("team-one", "Next task.")
-        self.assertEqual(response["mode"], "turn/start")
+        self.assertEqual(response["delivery"], "turn/start")
+        self.assertEqual(response["mode"], "execute")
         self.assertEqual(response["turnId"], "turn-1-2")
+
+    def test_plan_mode_is_read_only_until_user_approves_execution(self):
+        status = self.bridge.start(
+            "plan-team",
+            self.project,
+            "Inspect the project and propose a concise plan.",
+            "gpt-5.6-luna",
+            "plan",
+        )
+        connection = self.factory.connections[0]
+        self.assertEqual(status["mode"], "plan")
+        self.assertEqual(connection.sent[2]["params"]["sandbox"], "read-only")
+        self.assertEqual(
+            connection.sent[3]["params"]["sandboxPolicy"],
+            {"type": "readOnly"},
+        )
+        connection.emit({
+            "method": "turn/completed",
+            "params": {
+                "threadId": status["threadId"],
+                "turn": {"id": status["turnId"], "status": "completed"},
+            },
+        })
+        approved = self.bridge.begin_execution("plan-team")
+        self.assertEqual(approved["mode"], "execute")
+        self.assertEqual(
+            connection.sent[-1]["params"]["sandboxPolicy"],
+            {
+                "type": "workspaceWrite",
+                "writableRoots": [str(self.project.resolve())],
+                "networkAccess": False,
+            },
+        )
+        self.assertEqual(self.bridge.status("plan-team")["mode"], "execute")
 
     def test_stop_interrupts_only_the_active_team_turn(self):
         self.start()
