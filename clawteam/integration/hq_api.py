@@ -13,6 +13,7 @@ from runtime_config import (
     ruflo_launcher,
     saved_projects_path,
 )
+from model_router import choose_model, reviewed_catalog, RoutingError
 _memory_cache = {}
 _memory_lock = threading.Lock()
 
@@ -94,7 +95,17 @@ def handle_get(handler, state):
         if path == '/api/workspaces':
             config = saved_projects_path()
             routing=json.loads(routing_path().read_text())
-            handler._serve_json({'projects':json.loads(config.read_text()) if config.exists() else [],'models':routing.get('reviewed_codex_models',[]),'demo':demo_mode()});return True
+            catalog=reviewed_catalog()
+            models=[row['model'] for row in catalog.get('models',[])] if catalog.get('verified') else routing.get('reviewed_codex_models',[])
+            handler._serve_json({
+                'projects':json.loads(config.read_text()) if config.exists() else [],
+                'models':models,
+                'demo':demo_mode(),
+                'catalogVerified':catalog.get('verified',False),
+                'catalogReason':catalog.get('reason'),
+                'economy':routing.get('economy',{}),
+                'usagePolicy':routing.get('usage',{}),
+            });return True
         if path.startswith('/api/knowledge/'):
             name=unquote(path[len('/api/knowledge/'):]);handler._serve_json(knowledge(project_for(state,name)));return True
         parts=path.strip('/').split('/')
@@ -144,12 +155,14 @@ def handle_post(handler,state,path,body):
             prompt=body.get('prompt','')
             if not isinstance(prompt,str) or not prompt.strip() or len(prompt)>24000: raise ValueError('Enter a message of at most 24000 characters')
             if action=='start':
-                routing=json.loads(routing_path().read_text());model=body.get('model','auto')
-                if model=='auto':model=routing['preferred_supervisors'][0]['model']
-                if model not in routing['reviewed_codex_models']: raise ValueError('Choose a reviewed available Codex model')
+                requested=body.get('model','auto')
                 mode=body.get('mode','plan')
                 if mode not in ('plan','execute'): raise ValueError('Mode must be plan or execute')
-                result=client.start(name,project,prompt.strip(),model,mode)
+                try:
+                    route=choose_model(prompt.strip(),mode,requested)
+                except RoutingError as exc:
+                    raise ValueError(str(exc)) from exc
+                result=client.start(name,project,prompt.strip(),route['model'],mode,route)
             else:result=client.send(name,prompt.strip())
         elif action=='execute':
             prompt=body.get('prompt') or 'The user approved the current plan. Begin bounded execution now. Reuse relevant context, prefer economical capable workers, and report progress and blockers.'
@@ -158,6 +171,8 @@ def handle_post(handler,state,path,body):
             worker=body.get('worker','');content=body.get('content','')
             if not isinstance(worker,str) or not worker or not isinstance(content,str) or not content.strip() or len(content)>12000: raise ValueError('Choose a live worker and enter a message of at most 12000 characters')
             result=client.message_worker(name,worker,content.strip())
+        elif action=='usage-limit':
+            result=client.set_usage_limit(name,body.get('limitTokens'))
         elif action=='stop':result=client.stop(name)
         elif action=='approve':result=client.approve(name,body.get('requestId'),body.get('decision'))
         else:raise ValueError('Unknown runtime action')
