@@ -495,6 +495,35 @@ class _EventStore:
     def _path(self, team: str) -> Path:
         return self.directory / f"{hashlib.sha256(team.encode('utf-8')).hexdigest()}.json"
 
+    def _cursor_path(self, team: str) -> Path:
+        return self.directory / f"{hashlib.sha256(team.encode('utf-8')).hexdigest()}.cursor.json"
+
+    def next_sequence(self, team: str, fallback: int) -> int:
+        if not self.available:
+            return fallback
+        path = self._cursor_path(team)
+        try:
+            if not path.exists() or path.is_symlink() or not path.is_file() or path.stat().st_size > 1024:
+                return fallback
+            value = json.loads(path.read_text(encoding="utf-8"))
+            next_seq = value.get("nextSeq") if isinstance(value, dict) and value.get("team") == team else None
+            if isinstance(next_seq, int) and not isinstance(next_seq, bool) and next_seq >= fallback:
+                return next_seq
+        except (OSError, json.JSONDecodeError):
+            pass
+        return fallback
+
+    def record_next_sequence(self, team: str, next_seq: int) -> None:
+        if not self.available:
+            return
+        try:
+            temporary = self.directory / f".{self._cursor_path(team).name}.{uuid.uuid4().hex}.tmp"
+            temporary.write_text(json.dumps({"team": team, "nextSeq": next_seq}, separators=(",", ":")), encoding="utf-8")
+            os.chmod(temporary, 0o600)
+            os.replace(temporary, self._cursor_path(team))
+        except OSError:
+            return
+
     def load(self, team: str) -> list[dict[str, Any]]:
         if not self.available:
             return []
@@ -697,6 +726,9 @@ class CodexBridge:
         plan_ready: bool = False,
     ) -> _TeamSession:
         restored = self._event_store.load(team)
+        next_event_seq = self._event_store.next_sequence(
+            team, (restored[-1]["seq"] + 1) if restored else 1,
+        )
         session = _TeamSession(
             team=team,
             project=project,
@@ -705,7 +737,7 @@ class CodexBridge:
             plan_ready=plan_ready,
             connection=self.connection_factory(self.codex_path),
             events=deque(restored, maxlen=self.max_events),
-            next_event_seq=(restored[-1]["seq"] + 1) if restored else 1,
+            next_event_seq=next_event_seq,
         )
         with self._sessions_lock:
             current = self._sessions.get(team)
@@ -1088,7 +1120,8 @@ class CodexBridge:
         if not session:
             restored = self._event_store.load(team)
             oldest = restored[0]["seq"] if restored else after_seq + 1
-            next_seq = restored[-1]["seq"] if restored else after_seq
+            saved_next = (restored[-1]["seq"] + 1) if restored else 1
+            next_seq = max(after_seq, self._event_store.next_sequence(team, saved_next) - 1)
             return {
                 "team": team,
                 "afterSeq": after_seq,
@@ -1126,6 +1159,7 @@ class CodexBridge:
                 "data": data,
             })
             session.next_event_seq += 1
+            self._event_store.record_next_sequence(session.team, session.next_event_seq)
             snapshot = [event for event in session.events if event["type"] != "message.delta"]
             if event_type != "message.delta":
                 self._event_store.save(session.team, snapshot)

@@ -739,6 +739,30 @@ class CodexBridgeTest(unittest.TestCase):
         self.addCleanup(corrupt.shutdown_all)
         self.assertEqual(corrupt.events("team-one", 0)["events"], [])
 
+    def test_delta_tail_cursor_never_reuses_sequence_after_restart(self):
+        self.start()
+        connection = self.factory.connections[0]
+        for text in ("partial one", "partial two", "partial three"):
+            connection.emit({
+                "method": "item/agentMessage/delta",
+                "params": {"threadId": "thr-1", "turnId": "turn-1-1", "delta": text},
+            })
+        tail_seq = self.bridge.events("team-one", 0)["nextSeq"]
+        self.bridge.shutdown_all()
+        restarted_factory = FakeFactory()
+        restarted = CodexBridge(
+            state_dir=self.root / "runtime", connection_factory=restarted_factory,
+            request_timeout=0.2, max_events=20,
+        )
+        self.addCleanup(restarted.shutdown_all)
+        offline = restarted.events("team-one", tail_seq)
+        self.assertEqual(offline["events"], [])
+        self.assertGreaterEqual(offline["nextSeq"], tail_seq)
+        restarted.start("team-one", self.project, "Continue after restart.", "gpt-5.6-luna")
+        continued = restarted.events("team-one", tail_seq)
+        self.assertTrue(continued["events"])
+        self.assertTrue(all(event["seq"] > tail_seq for event in continued["events"]))
+
     def test_singleton_factory_is_keyed_by_resolved_state_directory(self):
         one = get_codex_bridge(self.root / "singleton")
         two = get_codex_bridge(self.root / "singleton" / ".")
