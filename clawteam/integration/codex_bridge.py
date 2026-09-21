@@ -178,9 +178,12 @@ Read the repository operating resources under {str(REPO_ROOT)!r} when useful.
 Use registered Ruflo and codebase-memory tools when available; do not replace the
 user's Codex configuration or account environment. Treat ClawTeam team IDs, task IDs, member IDs,
 inboxes, and events as canonical coordination state. Delegate useful independent work
-through native Codex collaboration tools, preferring gpt-5.6-luna for small bounded
-tasks and escalating only when complexity requires it. Report actual child thread IDs
-and observed states. Never invent workers, liveness, completion, or tool results.
+through native Codex collaboration tools. Company HQ's controlled routing selects the
+overall supervisor model (currently gpt-6-astra). When nested delegation is useful,
+prefer gpt-5.6-terra or gpt-5.6-sol for department leads and reserve gpt-5.6-luna for
+small bounded leaf tasks. Do not promote Luna to a department lead without verified
+nested-delegation capability. Report actual child thread IDs and observed states.
+Never invent workers, liveness, completion, or tool results.
 Never bypass approvals or sandbox protections."""
 
 
@@ -1151,7 +1154,8 @@ class CodexBridge:
             if event["seq"] > after_seq and event["seq"] not in durable_ids
         ]
         remaining = max(0, self.max_events - len(durable))
-        return [dict(event) for event in sorted([*durable, *tail[-remaining:]], key=lambda event: event["seq"])]
+        selected_tail = tail[-remaining:] if remaining else []
+        return [dict(event) for event in sorted([*durable, *selected_tail], key=lambda event: event["seq"])]
 
     def _event(
         self,

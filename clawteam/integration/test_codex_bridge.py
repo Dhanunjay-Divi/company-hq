@@ -211,6 +211,9 @@ class CodexBridgeTest(unittest.TestCase):
         self.assertNotIn("config", thread_params)
         self.assertIn("Use registered Ruflo", thread_params["developerInstructions"])
         self.assertIn("read-only planning mode", thread_params["developerInstructions"])
+        self.assertIn("gpt-6-astra", thread_params["developerInstructions"])
+        self.assertIn("gpt-5.6-terra or gpt-5.6-sol", thread_params["developerInstructions"])
+        self.assertIn("small bounded leaf tasks", thread_params["developerInstructions"])
 
         goal_params = connection.sent[3]["params"]
         self.assertEqual(goal_params["tokenBudget"], 200000)
@@ -797,6 +800,25 @@ class CodexBridgeTest(unittest.TestCase):
         replay = restarted.events("long-stream", 0)["events"]
         self.assertIn(("message.user", "Keep this user message"), [(event["type"], event["data"].get("text")) for event in replay])
         self.assertIn(("message.completed", "Final answer survives."), [(event["type"], event["data"].get("text")) for event in replay])
+
+    def test_full_durable_history_does_not_append_live_delta_tail_past_event_cap(self):
+        factory = FakeFactory()
+        bridge = CodexBridge(
+            state_dir=self.root / "full-durable-runtime", connection_factory=factory,
+            request_timeout=0.2, max_events=20,
+        )
+        self.addCleanup(bridge.shutdown_all)
+        bridge.start("full-durable", self.project, "start", "gpt-5.6-luna")
+        with bridge._sessions_lock:
+            session = bridge._sessions["full-durable"]
+        for number in range(25):
+            bridge._event(session, "message.completed", {"text": f"durable-{number}"})
+        for number in range(30):
+            bridge._event(session, "message.delta", {"text": f"delta-{number}"})
+        visible = bridge.events("full-durable", 0)["events"]
+        self.assertEqual(len(session.replay_events), 20)
+        self.assertLessEqual(len(visible), 20)
+        self.assertTrue(all(event["type"] != "message.delta" for event in visible))
 
     def test_singleton_factory_is_keyed_by_resolved_state_directory(self):
         one = get_codex_bridge(self.root / "singleton")
