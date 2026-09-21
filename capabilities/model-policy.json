@@ -36,44 +36,38 @@
       {
         "provider_family": "anthropic",
         "model": "claude-fable-5",
-        "role": "apex-candidate",
-        "status": "external-candidate"
+        "role": "high-risk-cross-family-reviewer-and-apex-challenger",
+        "status": "official-active-alias-reviewed-2026-09-20"
       },
       {
         "provider_family": "anthropic",
         "model": "claude-opus-5",
-        "role": "efficient-frontier-reviewer",
-        "status": "external-candidate"
+        "role": "expert-reviewer-candidate",
+        "status": "official-active-reviewed-2026-09-20"
       },
       {
         "provider_family": "xai",
         "model": "grok-4.6",
-        "role": "apex-candidate",
-        "status": "external-candidate"
+        "role": "apex-challenger",
+        "status": "official-frontier-model-reviewed-2026-09-20"
       },
       {
         "provider_family": "moonshot",
-        "model": "k3",
-        "role": "apex-candidate",
-        "status": "external-candidate"
-      },
-      {
-        "provider_family": "moonshot",
-        "model": "kimi-for-coding",
-        "role": "efficient-coding-candidate",
-        "status": "external-candidate"
+        "model": "kimi-k3",
+        "role": "long-horizon-coding-challenger",
+        "status": "official-most-capable-kimi-reviewed-2026-09-20"
       },
       {
         "provider_family": "zai",
         "model": "glm-5.3",
-        "role": "apex-candidate",
-        "status": "external-candidate"
+        "role": "agentic-coding-challenger",
+        "status": "official-current-flagship-reviewed-2026-09-20"
       },
       {
         "provider_family": "zai",
         "model": "glm-5.3-flash",
-        "role": "efficient-worker-candidate",
-        "status": "external-candidate"
+        "role": "efficient-worker-challenger",
+        "status": "official-efficient-model-reviewed-2026-09-20"
       }
     ],
     "evaluation": {
@@ -129,7 +123,20 @@
       "reviewer says block",
       "unknown high-risk permission boundary",
       "review packet cannot be parsed twice"
-    ]
+    ],
+    "anthropic_tiers": {
+      "low": [
+        "sonnet"
+      ],
+      "medium": [
+        "opus",
+        "sonnet"
+      ],
+      "high": [
+        "claude-fable-5",
+        "opus"
+      ]
+    }
   },
   "execution_review": {
     "changed_code": true,
