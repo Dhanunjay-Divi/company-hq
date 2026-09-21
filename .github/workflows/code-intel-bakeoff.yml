@@ -47,6 +47,16 @@ jobs:
           npm install --prefix "$RUNNER_TEMP/codegraph-pkg" --ignore-scripts --no-audit --no-fund "@colbymchenry/codegraph@1.6.0"
           echo "BAKEOFF_CODEGRAPH=$RUNNER_TEMP/codegraph-pkg/node_modules/.bin/codegraph" >> "$GITHUB_ENV"
 
+          cbm_archive="$RUNNER_TEMP/codebase-memory-mcp.tar.gz"
+          curl -fsSL "https://github.com/DeusData/codebase-memory-mcp/releases/download/v0.10.8/codebase-memory-mcp-linux-amd64-portable.tar.gz" -o "$cbm_archive"
+          echo "6eef49652bc0c7820f43114125044d40bf7f4d97c11b2592f6b0f6a307702325  $cbm_archive" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/cbm-bin"
+          tar -xzf "$cbm_archive" -C "$RUNNER_TEMP/cbm-bin"
+          cbm_bin="$(find "$RUNNER_TEMP/cbm-bin" -type f -name codebase-memory-mcp -print -quit)"
+          test -n "$cbm_bin"
+          chmod +x "$cbm_bin"
+          echo "BAKEOFF_CODEBASE_MEMORY=$cbm_bin" >> "$GITHUB_ENV"
+
           mkdir -p "$RUNNER_TEMP/graft-pkg"
           npm install --prefix "$RUNNER_TEMP/graft-pkg" --ignore-scripts --no-audit --no-fund "@nanonets/graft@0.18.0"
           echo "BAKEOFF_GRAFT_INSTALL=$RUNNER_TEMP/graft-pkg" >> "$GITHUB_ENV"
