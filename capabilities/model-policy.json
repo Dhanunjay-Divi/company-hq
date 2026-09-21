@@ -1,0 +1,139 @@
+{
+  "schema": 1,
+  "reviewed_on": "2026-09-20",
+  "rule": "No permanent global winner. Choose the highest-scoring authorized model for the task family; reserve apex models for hard/high-risk coordination.",
+  "tiers": {
+    "scout": {
+      "purpose": "narrow discovery, extraction, small checks",
+      "target_cost": "lowest capable",
+      "codex_default": "gpt-5.6-luna"
+    },
+    "worker": {
+      "purpose": "normal implementation",
+      "target_cost": "balanced",
+      "codex_default": "gpt-5.6-terra"
+    },
+    "expert": {
+      "purpose": "complex implementation, architecture, review",
+      "target_cost": "high when justified",
+      "codex_default": "gpt-5.6-sol"
+    },
+    "apex": {
+      "purpose": "highest-risk or hardest coordination only",
+      "target_cost": "reserved",
+      "codex_default": "gpt-6-astra"
+    }
+  },
+  "apex": {
+    "initial_coordinator": {
+      "provider_family": "openai",
+      "runtime": "codex",
+      "model": "gpt-6-astra",
+      "status": "verified-in-current-codex-policy",
+      "reason": "Current verified Codex catalog and current OpenAI release material describe Astra as the highest-capability OpenAI model. This seeds the apex slot; it is not a permanent cross-vendor winner."
+    },
+    "challengers": [
+      {
+        "provider_family": "anthropic",
+        "model": "claude-fable-5",
+        "role": "apex-candidate",
+        "status": "external-candidate"
+      },
+      {
+        "provider_family": "anthropic",
+        "model": "claude-opus-5",
+        "role": "efficient-frontier-reviewer",
+        "status": "external-candidate"
+      },
+      {
+        "provider_family": "xai",
+        "model": "grok-4.6",
+        "role": "apex-candidate",
+        "status": "external-candidate"
+      },
+      {
+        "provider_family": "moonshot",
+        "model": "k3",
+        "role": "apex-candidate",
+        "status": "external-candidate"
+      },
+      {
+        "provider_family": "moonshot",
+        "model": "kimi-for-coding",
+        "role": "efficient-coding-candidate",
+        "status": "external-candidate"
+      },
+      {
+        "provider_family": "zai",
+        "model": "glm-5.3",
+        "role": "apex-candidate",
+        "status": "external-candidate"
+      },
+      {
+        "provider_family": "zai",
+        "model": "glm-5.3-flash",
+        "role": "efficient-worker-candidate",
+        "status": "external-candidate"
+      }
+    ],
+    "evaluation": {
+      "minimum_completed_runs": 10,
+      "weights": {
+        "acceptance_correctness": 0.3,
+        "tool_task_completion": 0.2,
+        "independent_review_catch_rate": 0.15,
+        "rework_rate": 0.1,
+        "token_efficiency": 0.15,
+        "latency": 0.05,
+        "runtime_stability": 0.05
+      },
+      "tie_breaker": "Prefer the lower-token/lower-latency model when quality is statistically indistinguishable.",
+      "refresh": "Re-evaluate after a model/catalog upgrade or 30 days, whichever comes first."
+    }
+  },
+  "supervisor_auto_selection": {
+    "low": {
+      "tier": "worker",
+      "reason": "Do not burn apex allowance on ordinary work."
+    },
+    "medium": {
+      "tier": "expert",
+      "reason": "Use stronger reasoning when multiple components or uncertainty are material."
+    },
+    "high": {
+      "tier": "apex",
+      "reason": "Reserve apex for architecture, security, migrations, high blast radius or repeated failure."
+    }
+  },
+  "preflight_review": {
+    "required_for_build_requests": true,
+    "preferred_provider_family": "different-from-planner",
+    "low_risk": {
+      "tier": "worker",
+      "cross_family": "preferred"
+    },
+    "medium_risk": {
+      "tier": "expert",
+      "cross_family": "required-when-available"
+    },
+    "high_risk": {
+      "tier": "apex",
+      "cross_family": "required-when-available"
+    },
+    "native_subscription_first": [
+      "claude-code",
+      "codex"
+    ],
+    "fallback": "Independent same-family reviewer in an isolated context; label reduced diversity.",
+    "block_conditions": [
+      "reviewer says block",
+      "unknown high-risk permission boundary",
+      "review packet cannot be parsed twice"
+    ]
+  },
+  "execution_review": {
+    "changed_code": true,
+    "prefer_different_provider_family": true,
+    "high_risk_requires_apex_or_expert": true
+  }
+}
