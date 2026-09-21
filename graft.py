@@ -119,23 +119,36 @@ def project_write_lock(state_dir: Path):
     state_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
     lock_path = state_dir / ".structural.lock"
     descriptor = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
+    acquired = False
     try:
         if os.name == "nt":
             if os.fstat(descriptor).st_size == 0:
                 os.write(descriptor, b"\0")
                 os.fsync(descriptor)
-            os.lseek(descriptor, 0, os.SEEK_SET)
-            msvcrt.locking(descriptor, msvcrt.LK_LOCK, 1)
+            while True:
+                os.lseek(descriptor, 0, os.SEEK_SET)
+                try:
+                    msvcrt.locking(descriptor, msvcrt.LK_NBLCK, 1)
+                    acquired = True
+                    break
+                except OSError:
+                    # LK_LOCK gives up after a bounded retry window. Poll the
+                    # non-blocking primitive instead so long graph builds are
+                    # serialized just like POSIX flock without a false timeout.
+                    import time
+                    time.sleep(0.1)
         else:
             fcntl.flock(descriptor, fcntl.LOCK_EX)
+            acquired = True
         yield
     finally:
         try:
-            if os.name == "nt":
-                os.lseek(descriptor, 0, os.SEEK_SET)
-                msvcrt.locking(descriptor, msvcrt.LK_UNLCK, 1)
-            else:
-                fcntl.flock(descriptor, fcntl.LOCK_UN)
+            if acquired:
+                if os.name == "nt":
+                    os.lseek(descriptor, 0, os.SEEK_SET)
+                    msvcrt.locking(descriptor, msvcrt.LK_UNLCK, 1)
+                else:
+                    fcntl.flock(descriptor, fcntl.LOCK_UN)
         finally:
             os.close(descriptor)
 
