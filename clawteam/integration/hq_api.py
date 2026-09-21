@@ -138,7 +138,7 @@ def handle_post(handler,state,path,body):
             handler._serve_json({'updated':True});return True
         if parts[1]!='runtime' or len(parts)!=4: raise ValueError('Unknown action')
         client=bridge(state);action=parts[3]
-        if demo_mode() and action in ('start','send','execute','approve'):
+        if demo_mode() and action in ('start','send','execute','worker-message','approve'):
             raise ValueError('Model execution is disabled in model-free demo mode')
         if action in ('start','send'):
             prompt=body.get('prompt','')
@@ -154,6 +154,10 @@ def handle_post(handler,state,path,body):
         elif action=='execute':
             prompt=body.get('prompt') or 'The user approved the current plan. Begin bounded execution now. Reuse relevant context, prefer economical capable workers, and report progress and blockers.'
             result=client.begin_execution(name,prompt)
+        elif action=='worker-message':
+            worker=body.get('worker','');content=body.get('content','')
+            if not isinstance(worker,str) or not worker or not isinstance(content,str) or not content.strip() or len(content)>12000: raise ValueError('Choose a live worker and enter a message of at most 12000 characters')
+            result=client.message_worker(name,worker,content.strip())
         elif action=='stop':result=client.stop(name)
         elif action=='approve':result=client.approve(name,body.get('requestId'),body.get('decision'))
         else:raise ValueError('Unknown runtime action')

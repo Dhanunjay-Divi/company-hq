@@ -366,15 +366,77 @@ class CodexBridgeTest(unittest.TestCase):
                 },
             })
         status = self.bridge.status("team-one")
-        self.assertEqual(status["children"], [{
-            "threadId": "child-real-1",
-            "state": "running",
-            "source": "collabAgentToolCall",
-        }])
+        self.assertEqual(len(status["children"]), 1)
+        self.assertEqual(status["children"][0]["threadId"], "child-real-1")
+        self.assertEqual(status["children"][0]["state"], "running")
+        self.assertEqual(status["children"][0]["source"], "collabAgentToolCall")
+        self.assertEqual(status["children"][0]["lastStatus"], "completed")
         events = self.bridge.events("team-one", 0)
         self.assertEqual(len(events["events"]), 20)
         self.assertTrue(events["truncated"])
         self.assertNotIn("accountEmail", json.dumps(events))
+
+    def test_worker_delivery_has_observed_ack_and_restart_replay(self):
+        self.start()
+        connection = self.factory.connections[0]
+        connection.emit({
+            "method": "item/completed",
+            "params": {
+                "threadId": "thr-1",
+                "turnId": "turn-1-1",
+                "item": {
+                    "id": "spawn-1",
+                    "type": "collabAgentToolCall",
+                    "tool": "spawnAgent",
+                    "prompt": "bounded worker",
+                    "receiverThreadIds": ["child-real-7"],
+                    "agentsStates": {"child-real-7": {"status": "running"}},
+                    "status": "completed",
+                },
+            },
+        })
+        requested = self.bridge.message_worker(
+            "team-one", "child-real-7", "Check the failing unit test only."
+        )
+        request_id = requested["requestId"]
+        steer = connection.sent[-1]
+        self.assertEqual(steer["method"], "turn/steer")
+        instruction = steer["params"]["input"][0]["text"]
+        marker = f"[HQ-MSG:{request_id}]"
+        self.assertIn(marker, instruction)
+
+        connection.emit({
+            "method": "item/completed",
+            "params": {
+                "threadId": "thr-1",
+                "turnId": "turn-1-1",
+                "item": {
+                    "id": "message-7",
+                    "type": "collabAgentToolCall",
+                    "tool": "sendMessage",
+                    "prompt": marker + " Check the failing unit test only.",
+                    "receiverThreadIds": ["child-real-7"],
+                    "agentsStates": {"child-real-7": {"status": "running"}},
+                    "status": "completed",
+                },
+            },
+        })
+        messages = self.bridge.status("team-one")["workerMessages"]
+        self.assertEqual(messages[-1]["status"], "delivered")
+        self.assertEqual(messages[-1]["threadId"], "child-real-7")
+
+        self.bridge.shutdown_all()
+        second = CodexBridge(
+            state_dir=self.root / "runtime",
+            connection_factory=FakeFactory(),
+            request_timeout=0.2,
+            max_events=20,
+        )
+        self.addCleanup(second.shutdown_all)
+        replay = second.events("team-one", 0)
+        self.assertTrue(any(event["type"] == "worker.message.updated" for event in replay["events"]))
+        offline = second.status("team-one")
+        self.assertEqual(offline["workerMessages"][-1]["status"], "delivered")
 
     def test_concurrent_second_start_is_rejected(self):
         self.start()
