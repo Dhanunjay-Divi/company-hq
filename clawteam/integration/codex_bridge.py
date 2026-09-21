@@ -283,6 +283,7 @@ class _TeamSession:
     model: str
     connection: Any
     events: deque[dict[str, Any]]
+    replay_events: deque[dict[str, Any]]
     mode: str = "plan"
     state: str = "starting"
     thread_id: str | None = None
@@ -737,6 +738,7 @@ class CodexBridge:
             plan_ready=plan_ready,
             connection=self.connection_factory(self.codex_path),
             events=deque(restored, maxlen=self.max_events),
+            replay_events=deque(restored, maxlen=self.max_events),
             next_event_seq=next_event_seq,
         )
         with self._sessions_lock:
@@ -1130,14 +1132,26 @@ class CodexBridge:
                 "events": [dict(event) for event in restored if event["seq"] > after_seq],
             }
         with session.lock:
+            visible = self._visible_events(session, after_seq)
             oldest = session.events[0]["seq"] if session.events else session.next_event_seq
             return {
                 "team": team,
                 "afterSeq": after_seq,
                 "nextSeq": session.next_event_seq - 1,
                 "truncated": after_seq + 1 < oldest,
-                "events": [dict(event) for event in session.events if event["seq"] > after_seq],
+                "events": visible,
             }
+
+    def _visible_events(self, session: _TeamSession, after_seq: int) -> list[dict[str, Any]]:
+        """Keep completed conversation history when streaming traffic fills the ring."""
+        durable = [event for event in session.replay_events if event["seq"] > after_seq]
+        durable_ids = {event["seq"] for event in durable}
+        tail = [
+            event for event in session.events
+            if event["seq"] > after_seq and event["seq"] not in durable_ids
+        ]
+        remaining = max(0, self.max_events - len(durable))
+        return [dict(event) for event in sorted([*durable, *tail[-remaining:]], key=lambda event: event["seq"])]
 
     def _event(
         self,
@@ -1149,7 +1163,7 @@ class CodexBridge:
         item_id: str | None = None,
     ) -> None:
         with session.lock:
-            session.events.append({
+            event = {
                 "seq": session.next_event_seq,
                 "time": _now_ms(),
                 "type": event_type,
@@ -1157,10 +1171,13 @@ class CodexBridge:
                 "turnId": turn_id or session.turn_id,
                 "itemId": item_id,
                 "data": data,
-            })
+            }
+            session.events.append(event)
+            if event_type != "message.delta":
+                session.replay_events.append(event)
             session.next_event_seq += 1
             self._event_store.record_next_sequence(session.team, session.next_event_seq)
-            snapshot = [event for event in session.events if event["type"] != "message.delta"]
+            snapshot = list(session.replay_events)
             if event_type != "message.delta":
                 self._event_store.save(session.team, snapshot)
 

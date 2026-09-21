@@ -763,6 +763,41 @@ class CodexBridgeTest(unittest.TestCase):
         self.assertTrue(continued["events"])
         self.assertTrue(all(event["seq"] > tail_seq for event in continued["events"]))
 
+    def test_streaming_delta_flood_retains_user_and_final_reply_in_live_and_restarted_replay(self):
+        factory = FakeFactory()
+        bridge = CodexBridge(
+            state_dir=self.root / "long-stream-runtime", connection_factory=factory,
+            request_timeout=0.2, max_events=500,
+        )
+        self.addCleanup(bridge.shutdown_all)
+        bridge.start("long-stream", self.project, "Keep this user message", "gpt-5.6-luna")
+        connection = factory.connections[0]
+        for number in range(600):
+            connection.emit({
+                "method": "item/agentMessage/delta",
+                "params": {"threadId": "thr-1", "turnId": "turn-1-1", "delta": f"chunk-{number}"},
+            })
+        connection.emit({
+            "method": "item/completed",
+            "params": {
+                "threadId": "thr-1", "turnId": "turn-1-1",
+                "item": {"id": "long-final", "type": "agentMessage", "text": "Final answer survives."},
+            },
+        })
+        live = bridge.events("long-stream", 0)["events"]
+        self.assertLessEqual(len(live), 500)
+        self.assertIn(("message.user", "Keep this user message"), [(event["type"], event["data"].get("text")) for event in live])
+        self.assertIn(("message.completed", "Final answer survives."), [(event["type"], event["data"].get("text")) for event in live])
+        bridge.shutdown_all()
+        restarted = CodexBridge(
+            state_dir=self.root / "long-stream-runtime", connection_factory=FakeFactory(),
+            request_timeout=0.2, max_events=500,
+        )
+        self.addCleanup(restarted.shutdown_all)
+        replay = restarted.events("long-stream", 0)["events"]
+        self.assertIn(("message.user", "Keep this user message"), [(event["type"], event["data"].get("text")) for event in replay])
+        self.assertIn(("message.completed", "Final answer survives."), [(event["type"], event["data"].get("text")) for event in replay])
+
     def test_singleton_factory_is_keyed_by_resolved_state_directory(self):
         one = get_codex_bridge(self.root / "singleton")
         two = get_codex_bridge(self.root / "singleton" / ".")
