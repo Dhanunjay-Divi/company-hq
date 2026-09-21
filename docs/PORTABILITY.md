@@ -32,9 +32,16 @@ Runtime state defaults to:
 - `$XDG_STATE_HOME/company-hq` when `XDG_STATE_HOME` is set.
 - otherwise `~/.local/state/company-hq`.
 
-`COMPANY_HQ_STATE_ROOT` can select another private state location. The runtime
-rejects the filesystem root, the account home itself, and the Company HQ source
-checkout as a state root.
+Ruflo and Graft derive their component state beneath that root. On macOS,
+codebase-memory uses an owner-specific directory under `/Users/Shared` by
+default because the reviewed upstream binary rejected state beneath this
+account's home ACL; an explicit external Company HQ/component state root can
+override that default.
+
+`COMPANY_HQ_STATE_ROOT` can select another private state location. Component
+overrides are validated before any directory creation. The resolver rejects the
+filesystem root, the account home itself, the Company HQ source checkout, and
+paths inside Git working trees.
 
 ## Optional configuration
 
@@ -68,7 +75,8 @@ continues to belong to the provider's supported runtime.
   reviewed macOS `sandbox-exec` path. If that sandbox is unavailable, Ruflo is
   reported unavailable rather than launched unsandboxed.
 - codebase-memory reports unavailable unless both its reviewed wrapper/guard and
-  pinned executable are present.
+  pinned executable are present, and its state path satisfies upstream privacy
+  requirements.
 - Graft graphs are external to product repositories and its structural wrapper
   strips common provider model/API variables.
 
@@ -102,3 +110,10 @@ need a platform-specific build.
 
 No live installation is changed by these source changes. Deployment or migration
 of an existing installation remains a separate reviewed action.
+
+## Public CI
+
+The repository is public. `.github/workflows/model-free-ci.yml` uses only
+standard `ubuntu-latest` GitHub-hosted runners and does not receive provider
+credentials. It builds the UI, installs pinned development dependencies and runs
+the model-free regression suite. No model/API call is part of CI.
