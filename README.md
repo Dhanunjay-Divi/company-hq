@@ -27,7 +27,7 @@ The user talks primarily to the overall supervisor. Useful functional leads and 
 | `company-hq/` | React/Vite interface, upstream graph and avatars, source archive builder |
 | `clawteam/integration/` | Transitional loopback HTTP API, native Codex bridge, compatibility task/inbox adapter, tests, native protocol schemas |
 | `ruflo-integration/` | Narrow project-scoped MCP adapter, allowlist and macOS sandbox |
-| `codebase-memory-mcp-0.10.8/` | MCP guard/launcher and installation provenance; no binary or indexes |
+| `codebase-memory-mcp-0.10.8/` | MCP guard/launcher and installation provenance; setup downloads the ignored verified binary; no indexes |
 | `teamboard/` | Earlier Swift/macOS audit board and configuration/test utilities |
 | root Python files | Transitional model/client discovery, kickoff, reviewed update checks, compatibility wrappers |
 | `skills/`, `roles/` | Reusable operating guidance and native role templates when applicable |
@@ -37,7 +37,7 @@ The user talks primarily to the overall supervisor. Useful functional leads and 
 
 ## Build and checks
 
-Node 24+ and Python 3.10+ are the starting prerequisites. Native Codex execution and the Ruflo OS sandbox have been verified only on macOS; unavailable capabilities are shown honestly in **System status**.
+Node 24+ and Python 3.10+ are the starting prerequisites. Setup installs Ruflo's pinned dependency tree with lifecycle scripts disabled and downloads the pinned codebase-memory executable after checksum verification so the reviewed memory/code-intelligence adapters are reproducible. Native Codex execution and the Ruflo OS sandbox have been verified only on macOS; unavailable capabilities are shown honestly in **System status**.
 
 For a clean model-free first run:
 

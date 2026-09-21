@@ -8,12 +8,17 @@ No account files, HOME/CODEX_HOME, provider auth, or product repositories are ch
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
+import platform
 import subprocess
 import sys
+import tarfile
+import tempfile
 import urllib.request
+import zipfile
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -21,6 +26,9 @@ INTEGRATION = ROOT / "clawteam" / "integration"
 VENV = ROOT / "clawteam" / "venv"
 VENV_PYTHON = VENV / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
 TEAM_UI = INTEGRATION / "team-ui"
+CODEBASE_MEMORY = ROOT / "codebase-memory-mcp-0.10.8"
+CODEBASE_MEMORY_BIN = CODEBASE_MEMORY / "bin" / ("codebase-memory-mcp.exe" if os.name == "nt" else "codebase-memory-mcp")
+CODEBASE_MEMORY_RELEASE = "https://github.com/DeusData/codebase-memory-mcp/releases/download/v0.10.8"
 if str(INTEGRATION) not in sys.path:
     sys.path.insert(0, str(INTEGRATION))
 from runtime_config import demo_project_root, health_snapshot, python_executable  # noqa: E402
@@ -37,8 +45,94 @@ def ensure_integration_venv() -> None:
     run([str(VENV_PYTHON), "-m", "pip", "install", "--disable-pip-version-check", "-r", str(ROOT / "clawteam" / "requirements.txt")])
 
 
+def ensure_ruflo_dependencies() -> None:
+    # Installs only the pinned, ignored dependency tree needed by the reviewed
+    # project-scoped MCP facade. Lifecycle scripts stay disabled; this does not
+    # run Ruflo init, hooks, daemons, provider auth, or project rewrites.
+    run([
+        "npm",
+        "ci",
+        "--prefix",
+        str(ROOT / "ruflo-3.41.2"),
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund",
+    ])
+
+
+def _codebase_memory_asset_name() -> str:
+    system = platform.system().lower()
+    machine = platform.machine().lower()
+    arch = "arm64" if machine in {"arm64", "aarch64"} else "amd64"
+    if system == "darwin":
+        return f"codebase-memory-mcp-darwin-{arch}.tar.gz"
+    if system == "linux":
+        return f"codebase-memory-mcp-linux-{arch}-portable.tar.gz"
+    if system == "windows":
+        return f"codebase-memory-mcp-windows-{arch}.zip"
+    raise RuntimeError(f"unsupported codebase-memory platform: {platform.system()} {platform.machine()}")
+
+
+def _expected_checksum(asset_name: str) -> str:
+    checksum_path = CODEBASE_MEMORY / "download" / "checksums.txt"
+    for line in checksum_path.read_text(encoding="utf-8").splitlines():
+        parts = line.split()
+        if len(parts) >= 2 and parts[1] == asset_name:
+            return parts[0]
+    raise RuntimeError(f"missing checksum for {asset_name}")
+
+
+def ensure_codebase_memory_binary() -> None:
+    # The repository keeps provenance and the guard, not release binaries. Install
+    # the pinned executable into an ignored local path after archive verification.
+    if CODEBASE_MEMORY_BIN.is_file() and os.access(CODEBASE_MEMORY_BIN, os.X_OK):
+        return
+    asset = _codebase_memory_asset_name()
+    expected = _expected_checksum(asset)
+    url = f"{CODEBASE_MEMORY_RELEASE}/{asset}"
+    CODEBASE_MEMORY_BIN.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="company-hq-cbm-") as temp_name:
+        temp = Path(temp_name)
+        archive = temp / asset
+        print(f"+ download {url}", flush=True)
+        urllib.request.urlretrieve(url, archive)
+        actual = hashlib.sha256(archive.read_bytes()).hexdigest()
+        if actual != expected:
+            raise RuntimeError(f"checksum mismatch for {asset}: expected {expected}, got {actual}")
+        binary_name = CODEBASE_MEMORY_BIN.name
+        payload = None
+        if asset.endswith(".zip"):
+            with zipfile.ZipFile(archive) as package:
+                for member in package.infolist():
+                    member_path = Path(member.filename)
+                    if member_path.is_absolute() or ".." in member_path.parts:
+                        raise RuntimeError(f"unsafe path in {asset}: {member.filename}")
+                    if member_path.name == binary_name:
+                        payload = package.read(member)
+                        break
+        else:
+            with tarfile.open(archive, "r:gz") as package:
+                for member in package.getmembers():
+                    member_path = Path(member.name)
+                    if member_path.is_absolute() or ".." in member_path.parts:
+                        raise RuntimeError(f"unsafe path in {asset}: {member.name}")
+                    if member_path.name == binary_name and member.isfile():
+                        extracted = package.extractfile(member)
+                        if extracted is not None:
+                            payload = extracted.read()
+                        break
+        if payload is None:
+            raise RuntimeError(f"{asset} did not contain {binary_name}")
+        temporary = CODEBASE_MEMORY_BIN.with_name(f".{CODEBASE_MEMORY_BIN.name}.{os.getpid()}.tmp")
+        temporary.write_bytes(payload)
+        temporary.chmod(0o755)
+        temporary.replace(CODEBASE_MEMORY_BIN)
+
+
 def setup() -> None:
     ensure_integration_venv()
+    ensure_ruflo_dependencies()
+    ensure_codebase_memory_binary()
     run(["npm", "ci", "--ignore-scripts"], cwd=ROOT / "company-hq")
     run(["npm", "run", "build"], cwd=ROOT / "company-hq")
     run([sys.executable, str(ROOT / "company-hq" / "build-source.py")])
@@ -135,7 +229,7 @@ def health() -> int:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Portable Company HQ setup and launcher")
     sub = parser.add_subparsers(dest="command", required=True)
-    sub.add_parser("setup", help="install pinned Python/Node dependencies and build the UI")
+    sub.add_parser("setup", help="install pinned Python/Node/Ruflo/code-index dependencies and build the UI")
     sub.add_parser("start", help="start the normal local workspace")
     sub.add_parser("demo", help="start a model-free synthetic workspace")
     for lifecycle in ("status", "stop"):

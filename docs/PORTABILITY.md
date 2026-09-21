@@ -22,8 +22,10 @@ python3 scripts/hq.py bootstrap
 ```
 
 The bootstrap command creates the ignored `clawteam/venv`, installs the pinned
-ClawTeam requirements, runs `npm ci --ignore-scripts`, builds the frontend and
-starts the loopback-only board. Demo mode creates only a clearly labeled
+ClawTeam requirements, installs Ruflo's pinned ignored dependency tree with npm
+lifecycle scripts disabled, downloads the pinned codebase-memory executable after
+checksum verification, runs `npm ci --ignore-scripts` for the frontend, builds
+the frontend and starts the loopback-only board. Demo mode creates only a clearly labeled
 synthetic project beneath Company HQ state and disables model start/send/approve
 routes.
 
@@ -71,12 +73,14 @@ continues to belong to the provider's supported runtime.
   `HOME`, `CODEX_HOME` or auth overrides.
 - Native execution remains workspace-write with explicit user approvals and
   network disabled by the bridge policy.
-- Ruflo strips inherited provider credentials and currently requires the
+- Ruflo strips inherited provider credentials, installs through the pinned
+  dependency lock with lifecycle scripts disabled, and currently requires the
   reviewed macOS `sandbox-exec` path. If that sandbox is unavailable, Ruflo is
   reported unavailable rather than launched unsandboxed.
 - codebase-memory reports unavailable unless both its reviewed wrapper/guard and
-  pinned executable are present, and its state path satisfies upstream privacy
-  requirements.
+  checksum-verified pinned executable are present, and its state path satisfies
+  upstream privacy requirements. The executable is installed into an ignored
+  local path; indexes stay in external state.
 - Graft graphs are external to product repositories and its structural wrapper
   strips common provider model/API variables.
 

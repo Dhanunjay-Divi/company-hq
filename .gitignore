@@ -41,3 +41,5 @@ config.toml
 *.key
 *.sqlite*
 *.db
+codebase-memory-mcp-0.10.8/bin/codebase-memory-mcp
+codebase-memory-mcp-0.10.8/bin/codebase-memory-mcp.exe
