@@ -66,7 +66,7 @@ The original live installation remains a separate deployment target. Running thi
 
 ## Cost and data
 
-Opening the board does not start an agent. Native work uses the existing authorized provider account and may consume its allowance. The target policy is smallest-capable-model first with explicit escalation, one worker for simple work, bounded parallelism for independent work, RTK-first command evidence, and measured budget/account controls. Reported tokens, account allowance and billed money remain distinct.
+Opening the board does not start an agent. The first provider-backed turn is read-only planning, and project writes remain disabled until the plan completes successfully and the user presses **Approve plan & start execution**. Native work uses the existing authorized provider account and may consume its allowance. The target policy is smallest-capable-model first with explicit escalation, one worker for simple work, bounded parallelism for independent work, RTK-first command evidence, and measured budget/account controls. Reported tokens, account allowance and billed money remain distinct; the prototype does not yet enforce a complete spending budget.
 
 No credentials, Codex conversations, runtime bindings, local task/message databases, user project lists, product files, downloaded binaries, virtual environments or dependency caches are intentionally included.
 

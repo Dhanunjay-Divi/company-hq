@@ -26,9 +26,15 @@ servers.
 
 - 'status(team)' returns the current safe snapshot.
 - 'start(team, project, prompt, model)' binds the team to one resolved project,
-  starts or resumes its persisted native thread, and begins a turn.
+  starts or resumes its persisted native thread, restores any already-approved
+  execution mode, and begins a turn. A new binding always starts in read-only
+  planning mode; callers cannot request execution directly.
 - 'send(team, prompt)' uses 'turn/steer' while a turn is active and
-  'turn/start' while the thread is idle.
+  'turn/start' while the thread is idle. In planning mode, a new follow-up turn
+  clears the previous plan-ready flag until that exact turn completes.
+- 'begin_execution(team)' is the only plan-to-execute transition. It succeeds
+  only after the latest planning turn completed successfully, persists the
+  execution binding first, then starts a workspace-write turn.
 - 'stop(team)' sends 'turn/interrupt' for that team's exact thread and turn.
 - 'approve(team, request_id, decision)' accepts only 'approve' or 'reject'.
 - 'events(team, after_seq=0)' returns the bounded event history after a sequence
@@ -41,6 +47,8 @@ The intended HTTP adapter is:
 - 'GET /api/runtime/{team}/events?after=N'
 - 'POST /api/runtime/{team}/start' with '{ "prompt": "...", "model": "gpt-5.6-luna" }'
 - 'POST /api/runtime/{team}/send' with '{ "prompt": "..." }'
+- 'POST /api/runtime/{team}/execute' with an empty JSON object after a
+  successfully completed plan
 - 'POST /api/runtime/{team}/stop'
 - 'POST /api/runtime/{team}/approve' with
   '{ "requestId": "...", "decision": "approve" }'
@@ -58,6 +66,8 @@ Status:
       "connected": true,
       "project": "/approved/project",
       "model": "gpt-5.6-luna",
+      "mode": "plan",
+      "planReady": false,
       "threadId": "native-thread-id",
       "turnId": "native-turn-id",
       "lastEventSeq": 12,
@@ -119,11 +129,19 @@ same project. Each team has its own process, request IDs, thread, turn,
 approvals, children, and event deque. Concurrent starts and mismatched thread or
 turn approvals are rejected.
 
-Threads and turns always request 'approvalPolicy: "on-request"',
-'approvalsReviewer: "user"', and a workspace-write sandbox limited to the
-bound project with network disabled. Command and file-change approval requests
-remain pending until the UI approves or rejects them. The bridge never returns
-session-wide approval decisions. Cross-thread approvals are rejected
+Threads and turns always request 'approvalPolicy: "on-request"' and
+'approvalsReviewer: "user"'. New work starts with a read-only thread/turn
+sandbox. Command/file-change approval requests that arrive during planning are
+rejected by the bridge and are never surfaced as approvable UI actions. Only
+'begin_execution' can persist 'mode: execute'; after that, turns use a
+workspace-write sandbox limited to the bound project with network disabled and
+normal user-reviewed command/file approvals.
+
+The binding also persists 'planReady'. Only a successful planning-turn
+completion sets it true. An interrupted/failed plan stays locked. Starting a new
+planning follow-up clears it. Execution persistence occurs before the live
+session switches mode, so a binding write failure cannot leave the process more
+permissive than durable state. Cross-thread approvals are rejected
 automatically. Unsupported permission, elicitation, user-input, client-tool,
 token-refresh, attestation, and unknown server requests receive a deny, empty,
 decline, failure, or JSON-RPC unsupported response.
