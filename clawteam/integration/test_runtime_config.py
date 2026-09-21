@@ -52,6 +52,24 @@ class RuntimeConfigTest(unittest.TestCase):
                 with self.assertRaises(config.ConfigurationError):
                     config.capabilities_path()
 
+    def test_filesystem_root_detection_is_generic(self):
+        self.assertTrue(config._is_filesystem_root(Path(Path("/").anchor).resolve()))
+
+    def test_invalid_component_state_is_reported_unavailable(self):
+        with tempfile.TemporaryDirectory(prefix="company-hq-health-state-") as temp:
+            state = Path(temp) / "state"
+            product = Path(temp) / "product"
+            state.mkdir()
+            (product / ".git").mkdir(parents=True)
+            env = {
+                "COMPANY_HQ_STATE_ROOT": str(state),
+                "COMPANY_HQ_RUFLO_STATE_ROOT": str(product / "ruflo-state"),
+            }
+            with patch.dict(os.environ, env, clear=False):
+                health = config.health_snapshot(Path(temp) / "board")
+            self.assertFalse(health["capabilities"]["rufloMemory"]["available"])
+            self.assertIn("Git working tree", health["capabilities"]["rufloMemory"]["reason"])
+
     def test_fixture_override_remains_test_only_and_isolated(self):
         with tempfile.TemporaryDirectory(prefix="company-hq-fixture-") as temp:
             env = {
