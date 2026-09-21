@@ -14,7 +14,9 @@ Verified locally on 2026-09-21. This report separates deterministic tests, live 
 
 Synthetic UI screenshots: [desktop chat](assets/chat-first/chat-home.png), [mobile chat](assets/chat-first/chat-home-narrow.png), [settings](assets/chat-first/settings.png).
 
-`python3 scripts/hq.py check` passed 86 tests: 12 root, 28 evidence/frontend, 46 backend/integration, plus source bundle, portability and required capability checks. The frontend production build passed.
+The validated suites total 89 tests: 15 root, 28 evidence/frontend, 46 backend/integration, plus source bundle, portability and required capability checks. `python3 scripts/hq.py check` passed the initial 86-test set; the final schema-two discovery fix added three passing root regressions. The frontend production build passed. Both GitHub workflows passed the chat-first commit `0bb35c5`; follow-up discovery/documentation checks are tracked separately on their own commits.
+
+Discovery now accepts the checked-in schema-two routing policy and locates Codex inside the installed app when it is absent from PATH. It selects only configured reviewed candidates, preserving a clear unavailable result when none qualify.
 
 Browser acceptance uses the actual React UI and HTTP server with a synthetic JSONL provider, not real model outputs. It passed folderless first send, flagship selection, plan/execution/permission separation, fixture output, unchanged source files, cancellation, desktop/mobile layouts, reduced motion, saved-chat reload, server restart/resume, navigation during delayed creation, setup-check failure reporting, and retention during 600 streamed chunks. These are functional checks, not model-quality benchmarks.
 

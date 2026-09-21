@@ -1,5 +1,9 @@
 # Implementer handoff
 
+Latest verified checkpoint: [chat-first acceptance](CHAT-FIRST-ACCEPTANCE.md). The reusable operating guidance is [agent-toolkit](../skills/agent-toolkit/SKILL.md). Continue from the actual current source; do not repeat the completed first-screen rewrite. The user authorizes direct tested pushes for this first phase, without draft PRs.
+
+Next integration priorities are actual nested team graph/message synchronization and provider connection flows. A provider connection should preserve native sign-in, discover usable reviewed models/tools, and report unsupported features clearly. Codex works today; other providers are not connected. Do not add a successful-looking Connect button backed only by executable detection. Keep the existing account, approval, project-binding, and replay tests intact.
+
 ## Assignment
 
 Turn this existing prototype into a clear, reliable, economical workspace where a nontechnical founder can explain an idea, answer necessary questions, see a plan, and let an overall supervisor organize useful functional teams through a verified result. This is shared tooling for any project, not a Pinky feature. Reuse the existing code and useful upstream components. The original Codex supervisor is your reviewer.
