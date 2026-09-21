@@ -1,10 +1,11 @@
-name: Token efficiency bakeoff
+name: Output reduction evidence v2
 
 on:
   push:
-    branches: [arch/best-of-all-bakeoff]
+    branches: [fix/reproducible-bakeoff-evidence]
     paths:
       - "scripts/run_token_efficiency_bakeoff.py"
+      - "scripts/bakeoff_evidence.py"
       - ".github/workflows/token-efficiency-bakeoff.yml"
   workflow_dispatch:
 
@@ -12,49 +13,58 @@ permissions:
   contents: read
 
 concurrency:
-  group: token-efficiency-bakeoff-${{ github.ref }}
+  group: output-reduction-evidence-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   compare:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
-
-      - name: Install pinned Headroom and pytest
-        run: python -m pip install --disable-pip-version-check "headroom-ai==0.37.0" "pytest==8.4.2"
-
-      - name: Install verified RTK release
-        shell: bash
+      - name: Prepare external evidence directory
+        run: mkdir -p "$RUNNER_TEMP/hq-output-evidence" "$RUNNER_TEMP/token-cache"
+      - name: Install isolated pinned Headroom and test runtime
         run: |
-          set -euo pipefail
-          url="https://github.com/rtk-ai/rtk/releases/download/v0.49.0/rtk-x86_64-unknown-linux-musl.tar.gz"
+          python -m venv "$RUNNER_TEMP/reducers"
+          "$RUNNER_TEMP/reducers/bin/pip" install --disable-pip-version-check headroom-ai==0.37.0 pytest==8.4.2
+          "$RUNNER_TEMP/reducers/bin/pip" freeze > "$RUNNER_TEMP/hq-output-evidence/dependencies.txt"
+          TIKTOKEN_CACHE_DIR="$RUNNER_TEMP/token-cache" "$RUNNER_TEMP/reducers/bin/python" -c 'import tiktoken; tiktoken.encoding_for_model("gpt-4o"); tiktoken.get_encoding("cl100k_base")'
+          echo "BAKEOFF_TEST_PYTHON=$RUNNER_TEMP/reducers/bin/python" >> "$GITHUB_ENV"
+          echo "BAKEOFF_HEADROOM_PYTHON=$RUNNER_TEMP/reducers/bin/python" >> "$GITHUB_ENV"
+          echo "BAKEOFF_TOKEN_CACHE=$RUNNER_TEMP/token-cache" >> "$GITHUB_ENV"
+      - name: Install checksum-verified RTK without modifying agent hooks
+        run: |
           archive="$RUNNER_TEMP/rtk.tar.gz"
-          curl -fsSL "$url" -o "$archive"
+          curl -fsSL "https://github.com/rtk-ai/rtk/releases/download/v0.49.0/rtk-x86_64-unknown-linux-musl.tar.gz" -o "$archive"
           echo "7278231dfd7e6a730a4ab7f847b195bcf02289c2d57622b0dab75a6411100c8f  $archive" | sha256sum -c -
           mkdir -p "$RUNNER_TEMP/rtk-bin"
           tar -xzf "$archive" -C "$RUNNER_TEMP/rtk-bin"
-          rtk_bin="$(find "$RUNNER_TEMP/rtk-bin" -type f -name rtk -print -quit)"
-          test -n "$rtk_bin"
-          chmod +x "$rtk_bin"
-          echo "BAKEOFF_RTK=$rtk_bin" >> "$GITHUB_ENV"
-
-      - name: Run model-free token benchmark
-        run: python scripts/run_token_efficiency_bakeoff.py
-
-      - name: Publish result summary
+          binary="$(find "$RUNNER_TEMP/rtk-bin" -type f -name rtk -print -quit)"
+          test -n "$binary"
+          chmod +x "$binary"
+          echo "BAKEOFF_RTK=$binary" >> "$GITHUB_ENV"
+      - name: Validate gates and compare reducers with network disabled
         shell: bash
         run: |
-          echo '## Model-free token-efficiency bakeoff' >> "$GITHUB_STEP_SUMMARY"
-          cat benchmarks/token-efficiency-results.json >> "$GITHUB_STEP_SUMMARY"
-
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+          set -euo pipefail
+          python -m unittest discover -s tests -p 'test_bakeoff*.py' -v
+          sudo unshare --net -- setpriv --reuid="$(id -u)" --regid="$(id -g)" --init-groups \
+            env "PATH=$PATH" "LD_LIBRARY_PATH=${LD_LIBRARY_PATH:-}" \
+            "BAKEOFF_TEST_PYTHON=$BAKEOFF_TEST_PYTHON" "BAKEOFF_HEADROOM_PYTHON=$BAKEOFF_HEADROOM_PYTHON" \
+            "BAKEOFF_RTK=$BAKEOFF_RTK" "BAKEOFF_TOKEN_CACHE=$BAKEOFF_TOKEN_CACHE" \
+            "BENCHMARK_SOURCE_SHA=$GITHUB_SHA" "BENCHMARK_RUN_URL=https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            "$(command -v python)" scripts/run_token_efficiency_bakeoff.py --output-dir "$RUNNER_TEMP/hq-output-evidence"
+      - name: Preserve raw and reduced evidence on success or failure
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: token-efficiency-bakeoff
-          path: benchmarks/token-efficiency-results.json
-          if-no-files-found: error
+          name: output-reduction-evidence-v2
+          path: ${{ runner.temp }}/hq-output-evidence
+          if-no-files-found: warn
+          retention-days: 14
