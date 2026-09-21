@@ -227,6 +227,7 @@ class _TeamSession:
     approvals: dict[str, _Approval] = field(default_factory=dict)
     children: dict[str, dict[str, Any]] = field(default_factory=dict)
     completed_turns: set[str] = field(default_factory=set)
+    last_turn_status: str | None = None
     lock: threading.RLock = field(default_factory=threading.RLock)
     operation_lock: threading.Lock = field(default_factory=threading.Lock)
     closing: bool = False
@@ -323,7 +324,7 @@ class CodexBridge:
                 if bound != resolved:
                     raise BridgeError("team is already bound to a different project root")
             else:
-                self._write_binding(team, resolved)
+                self._write_binding(team, resolved, mode="plan")
         return resolved, binding
 
     def _new_session(
@@ -383,13 +384,20 @@ class CodexBridge:
         project: str | Path,
         prompt: str,
         model: str,
-        mode: str = "plan",
     ) -> dict[str, Any]:
         team = _validate_team(team)
         prompt = _validate_prompt(prompt)
         model = _validate_model(model)
-        mode = _validate_mode(mode)
         project_path, binding = self._bind_project(team, Path(project))
+        # New teams always begin in read-only planning. Existing approved
+        # sessions restore their persisted mode. Callers cannot opt directly
+        # into execution; begin_execution is the only plan -> execute gate.
+        mode = (
+            binding.get("mode") or "plan"
+            if binding and binding.get("threadId")
+            else "plan"
+        )
+        mode = _validate_mode(mode)
         session = self._new_session(team, project_path, model, mode)
         try:
             self._rpc(session, "initialize", {
@@ -472,6 +480,7 @@ class CodexBridge:
             raise BridgeProtocolError("native Codex did not return a turn ID")
         with session.lock:
             session.turn_id = turn_id
+            session.last_turn_status = None
             session.state = "idle" if turn_id in session.completed_turns else "running"
             session.error = None
         self._event(session, "turn.started", {
@@ -500,12 +509,22 @@ class CodexBridge:
                     )
                 if session.mode != "plan":
                     raise BridgeError("execution is already enabled for this session")
-                session.mode = "execute"
+                if session.last_turn_status != "completed":
+                    raise BridgeError(
+                        "the planning turn must complete successfully before execution"
+                    )
                 thread_id = session.thread_id
+                project = session.project
+                model = session.model
+            # Persist first. If this write fails, the live session remains in
+            # read-only planning mode rather than becoming less restrictive
+            # than the durable binding.
             with self._binding_lock:
                 self._write_binding(
-                    team, session.project, session.thread_id, session.model, "execute"
+                    team, project, thread_id, model, "execute"
                 )
+            with session.lock:
+                session.mode = "execute"
             self._event(session, "mode.changed", {
                 "text": "Plan approved; execution enabled",
                 "mode": "execute",
@@ -558,6 +577,8 @@ class CodexBridge:
             raise BridgeError("decision must be approve or reject")
         with session.operation_lock:
             with session.lock:
+                if session.mode != "execute":
+                    raise BridgeError("approvals cannot be granted during read-only planning")
                 if session.state != "awaiting_approval":
                     raise BridgeError("team is not awaiting an approval")
                 approval = session.approvals.get(request_id)
@@ -699,6 +720,19 @@ class CodexBridge:
             "applyPatchApproval",
         }
         if method in approval_methods:
+            with session.lock:
+                planning = session.mode == "plan"
+            if planning:
+                session.connection.send({
+                    "id": wire_id,
+                    "result": self._approval_response(method, "reject"),
+                })
+                self._event(session, "request.denied", {
+                    "text": "Write or command approval denied during read-only planning",
+                    "kind": method,
+                    "mode": "plan",
+                })
+                return
             thread_id = params.get("threadId") or params.get("conversationId")
             turn_id = params.get("turnId") or session.turn_id
             if thread_id != session.thread_id or turn_id != session.turn_id:
@@ -776,9 +810,11 @@ class CodexBridge:
             native_id = turn.get("id") if isinstance(turn, dict) else turn_id
             with session.lock:
                 session.approvals.clear()
+                session.last_turn_status = str(status)
                 if isinstance(native_id, str):
                     session.turn_id = native_id
-                    session.completed_turns.add(native_id)
+                    if status == "completed":
+                        session.completed_turns.add(native_id)
                 session.state = "error" if status == "failed" else "idle"
             self._event(session, "turn.completed", {
                 "text": f"Supervisor turn {status}", "status": status,
