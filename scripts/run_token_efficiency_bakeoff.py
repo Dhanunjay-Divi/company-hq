@@ -1,148 +1,128 @@
 #!/usr/bin/env python3
-"""Model-free token-efficiency benchmark for candidate compression layers."""
+"""Compare output reducers on the same synthetic evidence, without model calls."""
 from __future__ import annotations
 
+import argparse
 import json
 import os
 from pathlib import Path
-import subprocess
 import sys
 import tempfile
-import time
+
+from bakeoff_evidence import compression_gate, text
+from run_code_intel_bakeoff import environment, run
 
 ROOT = Path(__file__).resolve().parents[1]
-SENTINEL = "LEDGER_MISMATCH_SENTINEL"
+SENTINEL = 'LEDGER_MISMATCH_SENTINEL'
 
 
-def run(command, *, cwd, env, timeout=90):
-    started = time.perf_counter()
-    p = subprocess.run(
-        command,
-        cwd=cwd,
-        env=env,
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-        check=False,
-    )
-    text = (p.stdout or "") + (p.stderr or "")
-    return {
-        "ok": p.returncode == 0,
-        "returncode": p.returncode,
-        "seconds": round(time.perf_counter() - started, 3),
-        "bytes": len(text.encode()),
-        "sentinel_preserved": SENTINEL in text,
-        "text": text,
-    }
+def headroom_worker(input_file: Path, output_file: Path) -> int:
+    from headroom import compress
+    raw = input_file.read_text(encoding='utf-8')
+    result = compress([{'role': 'tool', 'content': raw}], model='gpt-4o',
+                      compress_user_messages=True, protect_recent=0, kompress_model='disabled')
+    value = '\n'.join(str(m.get('content', '')) for m in result.messages)
+    output_file.write_text(json.dumps({'text': value, 'token_estimate_before': result.tokens_before,
+        'token_estimate_after': result.tokens_after, 'transforms': result.transforms_applied}, default=str))
+    return 0
 
 
-def headroom_case():
-    try:
-        from headroom import compress
-    except Exception as exc:
-        return {"available": False, "reason": f"import failed: {exc}"}
-
-    rows = []
-    for i in range(250):
-        rows.append({
-            "id": i,
-            "status": "ok",
-            "service": "billing",
-            "message": "request completed successfully",
-            "latency_ms": 41 + (i % 4),
-            "metadata": {"region": "us-east-1", "retry": 0, "worker": "fixture"},
-        })
-    rows[173] = {
-        "id": 173,
-        "status": "fatal",
-        "service": "billing",
-        "message": SENTINEL,
-        "latency_ms": 9112,
-        "metadata": {"region": "us-east-1", "retry": 4, "worker": "fixture"},
-    }
-    raw = json.dumps(rows, separators=(",", ":"))
-    result = compress(
-        [{"role": "tool", "content": raw}],
-        model="gpt-4o",
-        compress_user_messages=True,
-        protect_recent=0,
-        kompress_model="disabled",
-    )
-    compressed = "\n".join(str(m.get("content", "")) for m in result.messages)
-    return {
-        "available": True,
-        "version": "0.37.0",
-        "raw_bytes": len(raw.encode()),
-        "compressed_bytes": len(compressed.encode()),
-        "byte_reduction_ratio": round(1 - len(compressed.encode()) / len(raw.encode()), 4),
-        "tokens_before": result.tokens_before,
-        "tokens_after": result.tokens_after,
-        "tokens_saved": result.tokens_saved,
-        "token_reduction_ratio": round(result.compression_ratio, 4),
-        "sentinel_preserved": SENTINEL in compressed,
-        "transforms": result.transforms_applied,
-        "excerpt": compressed[-2500:],
-    }
-
-
-def rtk_case(base: Path):
-    exe = os.environ.get("BAKEOFF_RTK")
-    if not exe:
-        return {"available": False, "reason": "BAKEOFF_RTK not configured"}
-    case = base / "rtk_case"
-    case.mkdir()
-    test_file = case / "test_many.py"
-    lines = [
-        "import pytest",
-        "",
-        "@pytest.mark.parametrize('i', range(200))",
-        "def test_many_pass(i):",
-        "    assert i >= 0",
-        "",
-        "def test_ledger_failure():",
-        f"    raise AssertionError('{SENTINEL}')",
-        "",
+def fixtures(root: Path):
+    normal = root / 'normal'; normal.mkdir()
+    source = 'import pytest\n@pytest.mark.parametrize("i", range(200))\ndef test_many_pass(i):\n    assert i >= 0\n'
+    (normal / 'test_pass.py').write_text(source)
+    (normal / 'test_failure.py').write_text(source + '\ndef test_ledger_failure():\n    raise AssertionError("' + SENTINEL + '")\n')
+    invalid = root / 'invalid'; invalid.mkdir()
+    (invalid / 'test_invalid.py').write_text('def test_invalid(:\n    pass\n')
+    return [
+        ('passing_tests', normal, 'test_pass.py', 0, ['200 passed']),
+        ('failing_test', normal, 'test_failure.py', 1, [SENTINEL, 'test_ledger_failure', 'test_failure.py', '1 failed']),
+        ('collection_error', invalid, 'test_invalid.py', 2, ['SyntaxError', 'test_invalid.py']),
     ]
-    test_file.write_text("\n".join(lines), encoding="utf-8")
-    env = os.environ.copy()
-    raw = run([sys.executable, "-m", "pytest", "-vv", str(test_file)], cwd=case, env=env)
-    compact = run([exe, "pytest", "-vv", str(test_file)], cwd=case, env=env)
-    return {
-        "available": True,
-        "version": "0.49.0",
-        "raw": {k: v for k, v in raw.items() if k != "text"},
-        "compact": {k: v for k, v in compact.items() if k != "text"},
-        "byte_reduction_ratio": round(1 - compact["bytes"] / raw["bytes"], 4) if raw["bytes"] else 0,
-        "sentinel_preserved": compact["sentinel_preserved"],
-        "raw_excerpt": raw["text"][-1800:],
-        "compact_excerpt": compact["text"][-1800:],
-    }
 
 
-def main() -> int:
-    for key in tuple(os.environ):
-        if key.endswith("_API_KEY") or key in {
-            "ANTHROPIC_AUTH_TOKEN", "OPENAI_API_KEY", "GEMINI_API_KEY",
-            "CODEX_HOME", "CLAUDE_CONFIG_DIR",
-        }:
-            os.environ.pop(key, None)
-    with tempfile.TemporaryDirectory(prefix="company-hq-token-bakeoff-") as td:
-        results = {
-            "schema": 1,
-            "sentinel": SENTINEL,
-            "headroom": headroom_case(),
-            "rtk": rtk_case(Path(td)),
-        }
-    out = ROOT / "benchmarks" / "token-efficiency-results.json"
-    out.write_text(json.dumps(results, indent=2) + "\n", encoding="utf-8")
-    print(json.dumps(results, indent=2))
-    failures = []
-    for name in ("headroom", "rtk"):
-        value = results[name]
-        if value.get("available") and not value.get("sentinel_preserved"):
-            failures.append(f"{name}: sentinel lost")
-    return 1 if failures else 0
+def capture(command, cwd, env):
+    result = run(command, cwd=cwd, env=env, timeout=90)
+    result['text'] = text(result.pop('stdout')) + text(result.pop('stderr'))
+    return result
 
 
-if __name__ == "__main__":
+def evaluate(root: Path, output: Path) -> dict:
+    pytest_python = os.environ.get('BAKEOFF_TEST_PYTHON')
+    rtk = os.environ.get('BAKEOFF_RTK')
+    headroom = os.environ.get('BAKEOFF_HEADROOM_PYTHON')
+    if not pytest_python:
+        return {'status': 'incomplete', 'reason': 'BAKEOFF_TEST_PYTHON not configured', 'cases': []}
+    env = environment(root)
+    env.update(PATH=str(Path(pytest_python).parent) + os.pathsep + env.get('PATH', ''),
+               PYTEST_DISABLE_PLUGIN_AUTOLOAD='1', NO_COLOR='1', HF_HUB_OFFLINE='1',
+               TRANSFORMERS_OFFLINE='1', TIKTOKEN_CACHE_DIR=os.environ.get('BAKEOFF_TOKEN_CACHE', str(root / 'token-cache')))
+    records = []
+    for name, cwd, file, expected_exit, required in fixtures(root):
+        args = ['-vv', '-p', 'no:cacheprovider', file]
+        raw = capture([pytest_python, '-m', 'pytest', *args], cwd, env)
+        item = {'case': name, 'required_evidence': required, 'raw': raw}
+        if rtk:
+            compact = capture([rtk, 'pytest', *args], cwd, env)
+            item['rtk'] = {'status': 'tested', 'result': compact,
+                           'gate': compression_gate(raw, compact, required, expected_exit)}
+        else:
+            item['rtk'] = {'status': 'not_run'}
+        if headroom:
+            input_path = root / (name + '-input.txt'); input_path.write_text(raw['text'])
+            output_path = root / (name + '-compressed.json')
+            invocation = capture([headroom, str(Path(__file__).resolve()), '--headroom-worker',
+                                  str(input_path), '--worker-output', str(output_path)], root, env)
+            if invocation['ok'] and output_path.exists():
+                payload = json.loads(output_path.read_text())
+                # Compression does not execute pytest; preserve the original process result as metadata.
+                compact = {'text': payload['text'], 'returncode': raw['returncode']}
+                item['headroom'] = {'status': 'tested', 'result': payload,
+                    'gate': compression_gate(raw, compact, required, expected_exit),
+                    'exit_source': 'original process metadata, not generated text'}
+            else:
+                item['headroom'] = {'status': 'execution_failed', 'diagnostic': invocation}
+        else:
+            item['headroom'] = {'status': 'not_run'}
+        records.append(item)
+    status = 'tested'
+    if any(c[n]['status'] != 'tested' for c in records for n in ('rtk', 'headroom')):
+        status = 'incomplete'
+    approved = [name for name in ('rtk', 'headroom') if all(c[name].get('gate', {}).get('passed') for c in records)]
+    report = {'schema': 2, 'status': status, 'passes_all_fixture_gates': approved, 'cases': records,
+        'pins': {'rtk': '0.49.0', 'headroom': '0.37.0', 'pytest': '8.4.2'},
+        'scope': 'three identical pytest outputs per reducer; not end-to-end agent quality or billed tokens',
+        'actual_model_tokens': None, 'billed_savings': None,
+        'source_sha': os.environ.get('BENCHMARK_SOURCE_SHA'), 'workflow_run': os.environ.get('BENCHMARK_RUN_URL')}
+    payload = json.dumps(report, indent=2).replace(str(root), '<synthetic-fixture>')
+    (output / 'token-evidence.json').write_text(payload + '\n')
+    return json.loads(payload)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--output-dir', type=Path)
+    parser.add_argument('--headroom-worker', type=Path)
+    parser.add_argument('--worker-output', type=Path)
+    args = parser.parse_args()
+    if args.headroom_worker:
+        if not args.worker_output:
+            parser.error('--worker-output is required')
+        return headroom_worker(args.headroom_worker, args.worker_output)
+    if not args.output_dir:
+        parser.error('--output-dir is required')
+    out = args.output_dir.resolve()
+    if out == ROOT or ROOT in out.parents:
+        parser.error('output must be outside source checkout')
+    out.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix='hq-reducer-evidence-') as temp:
+        result = evaluate(Path(temp), out)
+    summary = {key: val for key, val in result.items() if key != 'cases'}
+    summary['cases'] = [{key: value for key, value in case.items() if key not in ('raw', 'rtk', 'headroom')} |
+        {name: {key: value for key, value in case[name].items() if key != 'result'} for name in ('rtk', 'headroom')}
+        for case in result['cases']]
+    print(json.dumps(summary, indent=2))
+    return 0 if result['status'] == 'tested' and result['passes_all_fixture_gates'] else 1
+
+if __name__ == '__main__':
     raise SystemExit(main())
