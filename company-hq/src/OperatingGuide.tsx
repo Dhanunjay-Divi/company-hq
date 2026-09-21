@@ -12,8 +12,8 @@ interface Props {
 const steps = [
   ['1', 'Bring the idea', 'Describe the customer, outcome, constraints, and what “done” must prove. A vague idea is okay; the supervisor turns it into questions and a plan.'],
   ['2', 'Add a project when useful', 'You can chat without a folder. Add project starts a project conversation when you need to work on existing files.'],
-  ['3', 'Plan before writes', 'The first native supervisor turn is read-only. It should inspect, choose the smallest useful team, estimate risk, and define verification.'],
-  ['4', 'Approve execution', 'Only after the plan completes can you approve workspace-write execution. Permission prompts still show the exact action before it runs.'],
+  ['3', 'Choose how to work', 'Work automatically lets the supervisor plan, build and test in the workspace. Plan first keeps the first turn read-only. Full access explicitly permits broader machine and network access.'],
+  ['4', 'Follow the work', 'The supervisor creates useful teams and reports progress. Plan first asks before implementation; automatic workspace work can still request specific native permissions. Full access uses the native runtime’s broader access policy.'],
   ['5', 'Review evidence', 'Use the IDE, tests, run events, task board, and usage signal together. A task status is not proof; passing checks and reviewed diffs are proof.'],
 ];
 
@@ -50,10 +50,10 @@ export default function OperatingGuide({ demo, health, runtime }: Props) {
     <section className="guide-grid">
       <article><Code2 size={22}/><h3>How it fits with the IDE</h3><p>Keep coding tools open normally. Give Company HQ the repo folder, then let the supervisor produce a plan, spawn real Codex workers when useful, and surface approval requests. Use your IDE to inspect exact diffs, unresolved files, build output, and local behavior before shipping.</p></article>
       <article><Network size={22}/><h3>When a team is useful</h3><p>Simple changes should stay with one agent. A real team appears when work can split cleanly, such as product research, UI, backend, QA, launch copy, and review. Registered roles are planning records; only native runtime child IDs prove live workers.</p></article>
-      <article><Gauge size={22}/><h3>Usage discipline</h3><p>The run screen shows provider-reported token counts when the native runtime emits them, plus a per-workspace action gate. Account-wide quota, credits and billed money are separate. Use smaller models first, reuse code intelligence before broad reads, compress noisy command output only when evidence is preserved, and stop or raise the ceiling only after reviewing why the budget was reached.</p></article>
+      <article><Gauge size={22}/><h3>Usage discipline</h3><p>Activity shows this chat’s allowance percentage. Settings shows remaining 5-hour and weekly account percentages when reported; missing windows stay unknown. Raw tokens, account quota and billed money stay separate. Use smaller models first, reuse code intelligence before broad reads, compress noisy command output only when evidence is preserved, and stop or raise the ceiling only after reviewing why the budget was reached.</p></article>
       <article><GitBranch size={22}/><h3>How repos are reused</h3><p>The stack screen separates integrated, default-off, benchmarked, doc-reviewed and inventoried candidates. Useful code is adopted behind Company HQ contracts only after license, state, security, and acceptance checks. Bulk-installing every framework would create duplicate schedulers and hidden cost.</p></article>
       <article><Wrench size={22}/><h3>Python now, Rust where it wins</h3><p>Python is the current control plane because it integrates quickly with Codex, ClawTeam, browser tests and evidence scripts. Rust is a good target for a packaged process supervisor, file watcher, command runner, sandbox helper, or high-volume indexer once benchmarks show the Python path is the bottleneck.</p></article>
-      <article><BookOpenCheck size={22}/><h3>What to type first</h3><p>“We are building X for Y. The customer problem is Z. Please inspect read-only, ask only material questions, propose the smallest team, acceptance checks, risks, budget limits, and first implementation slice. Do not edit files yet.”</p></article>
+      <article><BookOpenCheck size={22}/><h3>What to type first</h3><p>“We are building X for Y. The customer problem is Z. Ask only material questions, use the smallest useful team, build the first useful version, and show the checks and results.”</p></article>
     </section>
 
     <section className="guide-policy">

@@ -86,8 +86,8 @@ def _validate_model(model: str) -> str:
 
 
 def _validate_mode(mode: str) -> str:
-    if mode not in {"plan", "execute"}:
-        raise BridgeError("mode must be plan or execute")
+    if mode not in {"plan", "execute", "full"}:
+        raise BridgeError("mode must be plan, execute or full")
     return mode
 
 
@@ -175,6 +175,10 @@ def _supervisor_instructions(team: str, project: Path) -> str:
     return f"""You are the native Codex supervisor for Company HQ team {team!r}.
 The approved project root is {str(project)!r}. Keep project writes inside that root.
 Read the repository operating resources under {str(REPO_ROOT)!r} when useful.
+For specialist work, consult agency-agents/USE.md under that repository and load
+only the relevant role from its pinned upstream library. Product, research, UX,
+marketing, engineering and QA guidance is selected as needed, never loaded as an
+entire roster. Native skills and MCP tools must be actually available to use them.
 Use registered Ruflo and codebase-memory tools when available; do not replace the
 user's Codex configuration or account environment. Treat ClawTeam team IDs, task IDs, member IDs,
 inboxes, and events as canonical coordination state. Delegate useful independent work
@@ -183,8 +187,28 @@ overall supervisor model (currently gpt-6-astra). When nested delegation is usef
 prefer gpt-5.6-terra or gpt-5.6-sol for department leads and reserve gpt-5.6-luna for
 small bounded leaf tasks. Do not promote Luna to a department lead without verified
 nested-delegation capability. Report actual child thread IDs and observed states.
+Keep task packets compact and use fork_turns="none" for delegated work. Do not
+re-read all operating documents in every worker or spawn a scout for a trivial
+lookup. During read-only planning, normally plan alone and create implementation
+workers only after execution is enabled. A worker created during planning keeps
+its original read-only permissions: do not ask it to bypass or escalate those
+permissions. Start a fresh execution worker with a concise handoff if needed.
 Never invent workers, liveness, completion, or tool results.
 Never bypass approvals or sandbox protections."""
+
+
+def _turn_input(prompt: str, attachments: list[dict] | None) -> list[dict]:
+    return [{"type": "text", "text": prompt}] + [
+        {"type": "localImage", "path": image["path"]} for image in (attachments or [])
+    ]
+
+
+def _user_message(prompt: str, attachments: list[dict] | None) -> dict:
+    value = {"text": _safe_text(prompt)}
+    if attachments:
+        # File paths and raw image content are not copied into chat events.
+        value['attachments'] = [{k: image[k] for k in ('id', 'name', 'url')} for image in attachments]
+    return value
 
 
 class _StdioConnection:
@@ -441,10 +465,12 @@ class _BudgetStore:
             "limitTokens": limit,
             "usedTokens": used,
             "remainingTokens": remaining,
+            "usedPercent": round(100 * used / limit, 1) if limit > 0 else None,
+            "remainingPercent": round(max(0, 100 * (limit - used) / limit), 1) if limit > 0 else None,
             "enforced": enforced,
             "blocked": blocked,
             "reason": (
-                f"Workspace token budget exhausted ({used:,}/{limit:,} reported native tokens). Increase the budget or start a new reviewed budget before continuing."
+                f"Chat budget exhausted: {100 * used / limit:.0f}% used, 0% remaining. Adjust this chat's allowance to continue. Account limits are separate."
                 if blocked else None
             ),
             "enforcement": "native-goal-best-effort + Company HQ action gate",
@@ -635,7 +661,7 @@ class CodexBridge:
             raise BridgeError("runtime binding is invalid")
         if value.get("threadId") is not None and not isinstance(value["threadId"], str):
             raise BridgeError("runtime binding is invalid")
-        if value.get("mode") not in {None, "plan", "execute"}:
+        if value.get("mode") not in {None, "plan", "execute", "full"}:
             raise BridgeError("runtime binding is invalid")
         if value.get("planReady") not in {None, True, False}:
             raise BridgeError("runtime binding is invalid")
@@ -790,19 +816,24 @@ class CodexBridge:
         project: str | Path,
         prompt: str,
         model: str,
+        *,
+        work_mode: str = "plan",
+        attachments: list[dict] | None = None,
     ) -> dict[str, Any]:
         team = _validate_team(team)
         prompt = _validate_prompt(prompt)
         model = _validate_model(model)
+        if work_mode not in {"plan", "auto", "full"}:
+            raise BridgeError("choose plan, auto or full work mode")
         self._budget.authorize(team)
         project_path, binding = self._bind_project(team, Path(project))
-        # New teams always begin in read-only planning. Existing approved
-        # sessions restore their persisted mode. Callers cannot opt directly
-        # into execution; begin_execution is the only plan -> execute gate.
+        # New chats may use the user's explicit automatic-work choice. A
+        # resumed chat keeps its persisted permission boundary; a new UI
+        # preference must not silently upgrade an existing planning chat.
         mode = (
             binding.get("mode") or "plan"
             if binding and binding.get("threadId")
-            else "plan"
+            else ("full" if work_mode == "full" else "execute" if work_mode == "auto" else "plan")
         )
         mode = _validate_mode(mode)
         plan_ready = bool(binding.get("planReady", False)) if binding else False
@@ -821,9 +852,9 @@ class CodexBridge:
             common = {
                 "cwd": str(project_path),
                 "model": model,
-                "approvalPolicy": "on-request",
+                "approvalPolicy": "never" if mode == "full" else "on-request",
                 "approvalsReviewer": "user",
-                "sandbox": "read-only" if mode == "plan" else "workspace-write",
+                "sandbox": "danger-full-access" if mode == "full" else "read-only" if mode == "plan" else "workspace-write",
                 "developerInstructions": _supervisor_instructions(team, project_path)
                 + (
                     "\nThis session begins in read-only planning mode. Clarify only material unknowns, "
@@ -831,7 +862,7 @@ class CodexBridge:
                     "model tier, verification, risks, and user decisions. Do not attempt project writes "
                     "until Company HQ explicitly changes the session to execution mode."
                     if mode == "plan"
-                    else ""
+                    else "\nThe user enabled automatic work in this workspace. Plan proportionately and proceed with the requested implementation and checks; do not wait for a separate plan approval. Native sandbox and permission requirements still apply."
                 ),
             }
             previous_thread = binding.get("threadId") if binding else None
@@ -862,7 +893,7 @@ class CodexBridge:
                 "text": "Native supervisor connected",
                 "mode": mode,
             })
-            self._start_turn(session, prompt)
+            self._start_turn(session, prompt, attachments=attachments)
             return self.status(team)
         except Exception as exc:
             with session.lock:
@@ -878,6 +909,7 @@ class CodexBridge:
         prompt: str,
         *,
         record_user_message: bool = True,
+        attachments: list[dict] | None = None,
     ) -> str:
         if not session.thread_id:
             raise BridgeError("team has no native Codex thread")
@@ -886,12 +918,13 @@ class CodexBridge:
         try:
             result = self._rpc(session, "turn/start", {
                 "threadId": session.thread_id,
-                "input": [{"type": "text", "text": prompt}],
+                "input": _turn_input(prompt, attachments),
                 "cwd": str(session.project),
                 "model": session.model,
-                "approvalPolicy": "on-request",
+                "approvalPolicy": "never" if session.mode == "full" else "on-request",
                 "approvalsReviewer": "user",
                 "sandboxPolicy": (
+                    {"type": "dangerFullAccess"} if session.mode == "full" else
                     {"type": "readOnly"}
                     if session.mode == "plan"
                     else {
@@ -925,7 +958,7 @@ class CodexBridge:
             # The native runtime accepted this exact input. Emit it only after
             # the response supplies a valid turn ID and before its output.
             if record_user_message:
-                self._event(session, "message.user", {"text": _safe_text(prompt)}, turn_id=turn_id)
+                self._event(session, "message.user", _user_message(prompt, attachments), turn_id=turn_id)
             self._event(session, "turn.started", {
                 "text": "Supervisor turn started",
                 "mode": session.mode,
@@ -939,9 +972,13 @@ class CodexBridge:
         team: str,
         prompt: str = (
             "The user approved the current plan. Begin bounded execution now. "
-            "Use the smallest capable authorized workers, reuse relevant indexed "
-            "context before broad file exploration, verify changes, and stop for "
-            "user approval when an action requires it."
+            "Do not repeat planning or ask for plan approval again. Existing workers "
+            "created in read-only planning retain read-only permissions. Do not resume "
+            "them for writes or ask them to escape their sandbox. If delegation is "
+            "useful, create a fresh execution worker now with fork_turns=none and a "
+            "compact task packet containing the approved scope and findings. Use the "
+            "smallest capable authorized worker; avoid extra management for simple "
+            "work. Verify changes and honor native permission requests."
         ),
     ) -> dict[str, Any]:
         session = self._require_session(_validate_team(team))
@@ -989,7 +1026,7 @@ class CodexBridge:
             "turnId": turn_id,
         }
 
-    def send(self, team: str, prompt: str) -> dict[str, Any]:
+    def send(self, team: str, prompt: str, *, attachments: list[dict] | None = None) -> dict[str, Any]:
         session = self._require_session(_validate_team(team))
         prompt = _validate_prompt(prompt)
         self._budget.authorize(team)
@@ -1005,18 +1042,27 @@ class CodexBridge:
                     result = self._rpc(session, "turn/steer", {
                         "threadId": thread_id,
                         "expectedTurnId": turn_id,
-                        "input": [{"type": "text", "text": prompt}],
+                        "input": _turn_input(prompt, attachments),
                     })
                     if result.get("turnId") != turn_id:
                         raise BridgeProtocolError("native Codex steered a different turn")
-                    self._event(session, "message.user", {"text": _safe_text(prompt)}, turn_id=turn_id)
+                    self._event(session, "message.user", _user_message(prompt, attachments), turn_id=turn_id)
                     mode = "turn/steer"
                 finally:
                     self._flush_turn_notification_buffer(session)
             else:
-                turn_id = self._start_turn(session, prompt)
+                turn_id = self._start_turn(session, prompt, attachments=attachments)
                 mode = "turn/start"
         return {"accepted": True, "mode": mode, "threadId": thread_id, "turnId": turn_id}
+
+    def tools(self, team: str) -> dict[str, Any]:
+        session = self._require_session(_validate_team(team))
+        with session.lock:
+            thread_id = session.thread_id
+        if not thread_id or not session.connection.running():
+            raise BridgeError('Connect this chat before checking its runtime tools')
+        from native_tools import inventory
+        return inventory(lambda method, params: self._rpc(session, method, params), thread_id, str(session.project), REPO_ROOT)
 
     def stop(self, team: str) -> dict[str, Any]:
         session = self._require_session(_validate_team(team))
@@ -1030,6 +1076,24 @@ class CodexBridge:
             self._rpc(session, "turn/interrupt", {"threadId": thread_id, "turnId": turn_id})
         return {"accepted": True, "threadId": thread_id, "turnId": turn_id}
 
+    def set_access(self, team: str, access: str) -> dict[str, Any]:
+        """Explicit per-chat selection; never changes global provider defaults."""
+        if access not in {'workspace', 'full'}:
+            raise BridgeError('Choose workspace or full access')
+        session = self._require_session(_validate_team(team))
+        with session.operation_lock:
+            with session.lock:
+                if session.state != 'idle' or not session.thread_id:
+                    raise BridgeError('Finish or stop the current turn before changing access')
+                if session.mode == 'plan':
+                    raise BridgeError('Approve the plan before changing execution access')
+                mode = 'full' if access == 'full' else 'execute'
+                with self._binding_lock:
+                    self._write_binding(team, session.project, session.thread_id, session.model, mode, plan_ready=False)
+                session.mode = mode
+            self._event(session, 'mode.changed', {'text': 'Full access selected for this chat' if access == 'full' else 'Workspace access selected for this chat', 'mode': 'execute', 'accessMode': access})
+        return self.status(team)
+
     def approve(self, team: str, request_id: str, decision: str) -> dict[str, Any]:
         session = self._require_session(_validate_team(team))
         if decision not in {"approve", "reject"}:
@@ -1037,7 +1101,7 @@ class CodexBridge:
         self._budget.authorize(team)
         with session.operation_lock:
             with session.lock:
-                if session.mode != "execute":
+                if session.mode == "plan":
                     raise BridgeError("approvals cannot be granted during read-only planning")
                 if session.state != "awaiting_approval":
                     raise BridgeError("team is not awaiting an approval")
@@ -1082,7 +1146,8 @@ class CodexBridge:
                 "connected": False,
                 "project": binding.get("projectRoot") if binding else None,
                 "model": binding.get("model") if binding else None,
-                "mode": binding.get("mode", "plan") if binding else "plan",
+                "mode": "execute" if binding and binding.get("mode") == "full" else binding.get("mode", "plan") if binding else "plan",
+                "accessMode": "full" if binding and binding.get("mode") == "full" else "workspace",
                 "planReady": bool(binding.get("planReady", False)) if binding else False,
                 "threadId": binding.get("threadId") if binding else None,
                 "turnId": None,
@@ -1101,7 +1166,8 @@ class CodexBridge:
                 "connected": bool(session.connection.running()),
                 "project": str(session.project),
                 "model": session.model,
-                "mode": session.mode,
+                "mode": "execute" if session.mode == "full" else session.mode,
+                "accessMode": "full" if session.mode == "full" else "workspace",
                 "planReady": session.plan_ready,
                 "threadId": session.thread_id,
                 "turnId": session.turn_id,

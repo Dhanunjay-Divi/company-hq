@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import socket
 import subprocess
 import tempfile
 import time
@@ -302,6 +303,24 @@ class TeamUILifecycleTest(unittest.TestCase):
                 self.assertIn("already running:", reused.stdout)
                 status = run("status")
                 self.assertIn("running http://127.0.0.1:", status.stdout)
+                first_url = started.stdout.strip().split()[-1]
+                run("stop")
+                deadline = time.monotonic() + 5
+                while run("status", check=False).returncode == 0 and time.monotonic() < deadline:
+                    time.sleep(0.05)
+                restarted = run("start")
+                self.assertEqual(restarted.stdout.strip().split()[-1], first_url)
+                run("stop")
+                deadline = time.monotonic() + 5
+                while run("status", check=False).returncode == 0 and time.monotonic() < deadline:
+                    time.sleep(0.05)
+                # A different local process owning the old port must remain untouched.
+                with socket.socket() as owner:
+                    owner.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                    owner.bind(("127.0.0.1", int(first_url.rsplit(":", 1)[1])))
+                    owner.listen()
+                    fallback = run("start")
+                    self.assertNotEqual(fallback.stdout.strip().split()[-1], first_url)
             finally:
                 stopped = run("stop", check=False)
             self.assertEqual(stopped.returncode, 0)

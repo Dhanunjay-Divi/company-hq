@@ -13,7 +13,7 @@ _PROVIDERS = (
     ("claude", "Claude", ("claude",), "Claude.app", "com.anthropic.claudefordesktop"),
     ("kimi", "Kimi Code", ("kimi",), "Kimi Code.app", "com.kimi.code.desktop"),
     ("zai", "Z Code", ("zai", "glm"), "ZCode.app", "dev.zcode.app"),
-    ("cursor", "Cursor", ("cursor-agent", "agent"), "Cursor.app", None),
+    ("cursor", "Cursor", ("cursor-agent",), "Cursor.app", None),
     ("grok", "Grok Bot", ("grok",), "Grok Bot.app", "com.anysphere.sand"),
     ("ollama", "Ollama", ("ollama",), "Ollama.app", None),
 )

@@ -208,7 +208,7 @@ def seed_demo(url: str) -> None:
 def checks() -> int:
     ensure_integration_venv()
     commands = [
-        [sys.executable, "-m", "unittest", "-v", "test_check_updates", "test_discover"],
+        [sys.executable, "-m", "unittest", "-v", "test_check_updates", "test_discover", "test_provider_registry"],
         [sys.executable, "-m", "unittest", "discover", "-s", "tests", "-p", "test_*.py", "-v"],
         [str(VENV_PYTHON), "-m", "unittest", "discover", "-s", "clawteam/integration", "-p", "test_*.py", "-v"],
         [sys.executable, "scripts/check_source_bundle.py"],

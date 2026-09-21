@@ -1,6 +1,6 @@
 # Verified baseline and current gaps
 
-Updated 2026-09-21 UTC.
+Updated 2026-09-21 UTC. Latest verification: [connections, images and access acceptance](CONNECTIONS-AND-ACCESS-ACCEPTANCE.md).
 
 ## Complete and merged
 
@@ -37,15 +37,15 @@ The resulting target architecture is in [BEST-STACK.md](BEST-STACK.md).
 ## Working today
 
 - Company HQ React/Vite control UI and Agent Teams graph adapter.
-- Folder-optional chats with isolated managed workspaces, optional project chats, and locked project binding.
-- Central Markdown conversation, native user/reply events, simplified settings/model picker, reduced-motion-aware visual depth, and lazy-loaded team views.
+- Folder-optional chats with isolated managed workspaces, optional project chats, locked project binding, and a native folder picker. Picker unit tests and mocked UI cancellation/selection pass; the real OS chooser is not browser-automation verified.
+- Central Markdown conversation with native user/reply events, PNG/JPEG/WebP upload, paste, and drop (four images up to 6 MiB each), simplified Connections/model picker, reduced-motion-aware visual depth, and lazy-loaded team views.
 - Private bounded event replay across server restarts with monotonic native resume; user/final replies persisted, up to 500 events / 4 MiB per chat.
-- Native Codex app-server start/resume/steer/stop/approval bridge.
+- Native Codex app-server start/resume/steer/stop/approval bridge; new chats default to automatic workspace access, with Plan first and explicit per-chat Full access modes.
 - Current task/inbox compatibility through ClawTeam.
 - Guarded project-scoped Ruflo memory path, installed by setup with lifecycle scripts disabled.
 - Guarded Codebase Memory capability path, installed by setup from checksum-verified pinned release binary into ignored local state.
 - Demo mode that blocks provider/model execution.
-- Health/status view that disables unavailable runtime actions.
+- Connections view that distinguishes installed desktop providers from a usable HQ adapter; Codex sign-in, catalog, and reported account windows are live.
 - Source/build/portability checks via the documented launcher.
 - Per-workspace reported-token action gate in the native Codex bridge and Run overview.
 - Chat-first app shell with an optional activity panel; duplicate window chrome and empty startup counters removed.
@@ -75,7 +75,7 @@ The resulting target architecture is in [BEST-STACK.md](BEST-STACK.md).
 
 1. **Desktop packaging.** Current source serves a loopback web UI; it is not yet
    packaged as the final Tauri-style desktop application.
-2. **Founder workflow.** Folderless chat, readable model/settings controls and central conversation now pass acceptance. Guided plan cards, rich file attachments, integrated editor/terminal and full desktop-plugin parity remain future work.
+2. **Founder workflow.** Folderless chat, readable model/settings controls, central conversation, folder picking, and bounded image attachments now pass acceptance. Guided plan cards, integrated editor/terminal, plugin management, voice, and full desktop-plugin parity remain future work.
 3. **Beads migration.** Current UI/API task routes still use ClawTeam. Beads has
    passed its external-state bakeoff but is not yet wired into Company HQ.
 4. **Provider-neutral runtime adapters.** Live execution is still Codex-only.

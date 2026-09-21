@@ -84,6 +84,27 @@ class HQAPIDemoTest(unittest.TestCase):
         self.assertEqual(fake_bridge.started[1], str(workspace.resolve()))
         self.assertEqual(fake_bridge.started[3], "gpt-6-astra")
 
+    def test_provider_actions_reject_credentials_and_only_dispatch_empty_body(self):
+        class Handler:
+            response = None
+            error = None
+            def _serve_json(self, value): self.response = value
+            def _json_error(self, status, message): self.error = (status, message)
+        from unittest.mock import Mock
+        service = Mock()
+        service.action.return_value = {'authentication': 'signed_in'}
+        for body in ({'apiKey': 'fixture-secret'}, {'path': '/tmp/arbitrary'}, [], None):
+            handler = Handler()
+            with patch('provider_connections.connections', return_value=service):
+                self.assertTrue(hq_api.handle_post(handler, Path('/tmp'), '/api/providers/codex/connect', body))
+            self.assertEqual(handler.error[0], 400)
+        service.action.assert_not_called()
+        handler = Handler()
+        with patch('provider_connections.connections', return_value=service):
+            hq_api.handle_post(handler, Path('/tmp'), '/api/providers/codex/check', {})
+        service.action.assert_called_once_with('codex', 'check')
+        self.assertEqual(handler.response, {'authentication': 'signed_in'})
+
     def test_schema_two_default_supervisor_uses_standard_when_no_explicit_tier_exists(self):
         self.assertEqual(hq_api._default_supervisor_model({
             "schema": 2,

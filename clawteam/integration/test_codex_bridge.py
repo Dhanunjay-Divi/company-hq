@@ -227,6 +227,67 @@ class CodexBridgeTest(unittest.TestCase):
         self.assertEqual(binding["mode"], "plan")
         self.assertFalse(binding["planReady"])
 
+    def test_automatic_new_chat_starts_in_workspace_without_plan_gate(self):
+        status = self.bridge.start('auto-chat', self.project, 'Implement the fix.', 'gpt-5.6-terra', work_mode='auto')
+        self.assertEqual(status['mode'], 'execute')
+        self.assertFalse(status['planReady'])
+        sent = self.factory.connections[0].sent
+        thread = next(m['params'] for m in sent if m.get('method') == 'thread/start')
+        turn = next(m['params'] for m in sent if m.get('method') == 'turn/start')
+        self.assertEqual(thread['sandbox'], 'workspace-write')
+        self.assertEqual(turn['sandboxPolicy'], {'type': 'workspaceWrite', 'writableRoots': [str(self.project.resolve())], 'networkAccess': False})
+        self.assertEqual(turn['approvalPolicy'], 'on-request')
+        self.assertEqual(turn['approvalsReviewer'], 'user')
+        self.assertIn('do not wait for a separate plan approval', thread['developerInstructions'])
+
+    def test_new_preference_cannot_upgrade_existing_readonly_chat(self):
+        self.start()
+        self.bridge.shutdown_all()
+        status = self.bridge.start('team-one', self.project, 'Continue', 'gpt-5.6-luna', work_mode='auto')
+        self.assertEqual(status['mode'], 'plan')
+        turn = next(m['params'] for m in self.factory.connections[-1].sent if m.get('method') == 'turn/start')
+        self.assertEqual(turn['sandboxPolicy'], {'type': 'readOnly'})
+
+    def test_invalid_work_mode_does_not_start_runtime(self):
+        with self.assertRaisesRegex(BridgeError, 'work mode'):
+            self.bridge.start('team-one', self.project, 'Continue', 'gpt-5.6-luna', work_mode='unrestricted')
+        self.assertEqual(self.factory.connections, [])
+
+    def test_full_access_is_explicit_and_resumes_without_global_config_changes(self):
+        status = self.bridge.start('full-chat', self.project, 'Implement.', 'gpt-5.6-terra', work_mode='full')
+        self.assertEqual(status['mode'], 'execute')
+        self.assertEqual(status['accessMode'], 'full')
+        connection = self.factory.connections[-1]
+        turn = next(m['params'] for m in connection.sent if m.get('method') == 'turn/start')
+        thread = next(m['params'] for m in connection.sent if m.get('method') == 'thread/start')
+        self.assertEqual(thread['sandbox'], 'danger-full-access')
+        self.assertEqual(turn['sandboxPolicy'], {'type': 'dangerFullAccess'})
+        self.assertEqual(turn['approvalPolicy'], 'never')
+        self.assertNotIn('config', thread)
+        with self.assertRaisesRegex(BridgeError, 'current turn'):
+            self.bridge.set_access('full-chat', 'workspace')
+        connection.emit({'method':'turn/completed','params':{'threadId':status['threadId'],'turn':{'id':status['turnId'],'status':'completed'}}})
+        self.assertEqual(self.bridge.set_access('full-chat', 'workspace')['accessMode'], 'workspace')
+        self.bridge.shutdown_all()
+        restored = self.bridge.start('full-chat', self.project, 'Continue', 'gpt-5.6-terra', work_mode='full')
+        self.assertEqual(restored['accessMode'], 'workspace')
+
+    def test_images_reach_native_start_and_steer_but_events_only_keep_references(self):
+        image = self.root / 'test.png'
+        image.write_bytes(b'fixture image')
+        attachment = {'id':'a'*32, 'name':'test.png', 'path':str(image), 'url':'/api/attachments/team-one/'+('a'*32)}
+        self.bridge.start('team-one', self.project, 'Inspect image', 'gpt-5.6-terra', attachments=[attachment])
+        connection = self.factory.connections[-1]
+        start = next(m['params'] for m in connection.sent if m.get('method') == 'turn/start')
+        self.assertEqual(start['input'][1], {'type':'localImage', 'path':str(image)})
+        self.bridge.send('team-one', 'Also this', attachments=[attachment])
+        steer = next(m['params'] for m in connection.sent if m.get('method') == 'turn/steer')
+        self.assertEqual(steer['input'][1], start['input'][1])
+        messages = [e for e in self.bridge.events('team-one')['events'] if e['type']=='message.user']
+        self.assertEqual(len(messages), 2)
+        self.assertNotIn(str(image), json.dumps(messages))
+        self.assertEqual(messages[0]['data']['attachments'][0]['name'], 'test.png')
+
     def test_plan_must_finish_before_execution_and_then_enables_workspace_write(self):
         self.start()
         connection = self.factory.connections[0]
@@ -259,6 +320,12 @@ class CodexBridgeTest(unittest.TestCase):
         binding = json.loads(binding_files[0].read_text())
         self.assertEqual(binding["mode"], "execute")
         self.assertFalse(binding["planReady"])
+
+        # Native children retain their original sandbox. The handoff must not
+        # instruct a read-only planning worker to escalate or write.
+        execution_prompt = turn_start['params']['input'][0]['text']
+        self.assertIn('Existing workers created in read-only planning retain read-only permissions', execution_prompt)
+        self.assertIn('fresh execution worker', execution_prompt)
 
     def test_interrupted_plan_does_not_unlock_execution(self):
         self.start()

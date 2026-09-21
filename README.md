@@ -16,7 +16,7 @@ This repository preserves the shared toolkit source built on 13–14 September 2
 - [Portable setup and isolation](docs/PORTABILITY.md)
 - [Packaging provenance](docs/PACKAGING.md)
 
-Portable setup is merged. The next bounded milestones are desktop onboarding/read-only planning, Beads task migration, provider-neutral worker communication, usage controls/context routing, and the Rust runtime boundary. Keep these reviewable independently.
+Portable setup and chat-first onboarding are merged. Remaining bounded milestones include Beads task migration, provider-neutral worker communication, usage controls/context routing, desktop packaging, and the Rust runtime boundary. Keep these reviewable independently.
 
 The user talks primarily to the overall supervisor. Useful functional leads and specialists should be allocated according to the actual goal, available account access, complexity and cost. A visible roster is not proof that those agents are running.
 
@@ -67,7 +67,7 @@ The original live installation remains a separate deployment target. Running thi
 
 ## Cost and data
 
-Opening the board does not start an agent. The first provider-backed turn is read-only planning, and project writes remain disabled until the plan completes successfully and the user presses **Approve plan & start execution**. Native work uses the existing authorized provider account and may consume its allowance. The target policy is smallest-capable-model first with explicit escalation, one worker for simple work, bounded parallelism for independent work, RTK-first command evidence, and measured budget/account controls. Company HQ now applies a per-workspace reported-token action gate, with a default 200,000-token ceiling that can be adjusted in the Run overview. Reported tokens, account allowance and billed money remain distinct; this is not a provider-side billing cap or account-wide quota.
+Opening the board does not start an agent. New chats default to **Work automatically**, which permits workspace work while native permission requests still require a decision. Choose **Plan first** for a read-only planning turn and then use **Approve plan & start execution**. Existing planning chats remain in planning until that approval. **Full access** is an explicit per-chat choice: it requests native `dangerFullAccess` with approval policy `never`; native administrator and account policies still apply. Native work uses the existing authorized provider account and may consume its allowance. Company HQ applies a per-workspace reported-token action gate, with a default 200,000-token ceiling adjustable in Activity. Reported tokens, account allowance and billed money remain distinct; this is not a provider-side billing cap or account-wide quota.
 
 No credentials, Codex conversations, runtime bindings, local task/message databases, user project lists, product files, downloaded binaries, virtual environments or dependency caches are intentionally included.
 

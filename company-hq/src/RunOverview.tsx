@@ -1,4 +1,5 @@
 import React from 'react';
+import UsagePanel from './UsagePanel';
 
 interface Worker { threadId: string; state?: string; source?: string; model?: string }
 interface Runtime {
@@ -18,9 +19,6 @@ const names: Record<string, string> = {
   offline: 'Not connected', starting: 'Connecting', running: 'Working', idle: 'Ready',
   awaiting_approval: 'Needs your permission', stopping: 'Stopping', error: 'Needs attention',
 };
-function formatNumber(value: unknown) {
-  return typeof value === 'number' ? value.toLocaleString() : 'Unknown';
-}
 
 /** A view of backend evidence, not another scheduler or a fabricated agent roster. */
 export default function RunOverview(p: Props) {
@@ -64,15 +62,8 @@ export default function RunOverview(p: Props) {
       <article><span>Recorded tasks</span><strong>{p.completedCount} / {p.taskCount}</strong><small>Task status is separate from test evidence</small></article>
     </div>
     <section className={`usage-section ${budget.blocked ? 'is-blocked' : ''}`} aria-label="Usage and budget signal"><div><h3>Usage and budget signal</h3>
-      <p>{budget.blocked ? budget.reason : usage.eventCount ? usage.coverage : 'No native runtime usage report has arrived yet. Account quota and billed cost are checked outside this local project dashboard.'}</p>
-      <button className="small-button" onClick={p.onBudget}>Set budget</button></div>
-      <div className="usage-grid">
-        <article><span>Input</span><strong>{formatNumber(usage.inputTokens)}</strong><small>runtime tokens</small></article>
-        <article><span>Cached</span><strong>{formatNumber(usage.cachedInputTokens)}</strong><small>reported cache</small></article>
-        <article><span>Output</span><strong>{formatNumber(usage.outputTokens)}</strong><small>runtime tokens</small></article>
-        <article><span>Run total</span><strong>{formatNumber(usage.totalTokens)}</strong><small>{usage.eventCount ? `${usage.eventCount} report${usage.eventCount === 1 ? '' : 's'}` : 'no report'}</small></article>
-        <article><span>Budget left</span><strong>{budget.limitTokens === 0 ? 'Off' : formatNumber(budget.remainingTokens)}</strong><small>{budget.enforced ? 'action gate on' : 'tracking only'}</small></article>
-      </div>
+      <p>{budget.blocked ? budget.reason : budget.enforced ? 'This workspace gate uses native reported tokens. Account allowance is shown in Settings when the provider reports it.' : 'This workspace gate is tracking only. Account allowance is shown in Settings when the provider reports it.'}</p>
+      <button className="small-button" onClick={p.onBudget}>Set budget</button></div><UsagePanel runtime={r} />
     </section>
     <section className="worker-section"><h3>Observed runtime workers</h3>
       <p>{p.registeredCount} registered team record{p.registeredCount === 1 ? '' : 's'}. Only provider-reported worker IDs appear below.</p>

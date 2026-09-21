@@ -1,12 +1,15 @@
 import React, {useEffect, useRef, useState} from 'react';
 import Markdown from 'react-markdown';
 import {ArrowDown, ArrowUpRight, Lightbulb, Code2, Telescope, Layers3} from 'lucide-react';
+import './images.css';
 type Data = Record<string, any>;
-type Message = {key:string;role:'user'|'assistant';text:string;complete:boolean};
+type Attachment = { id: string; name?: string; url: string };
+type Message = {key:string;role:'user'|'assistant';text:string;complete:boolean;attachments?:Attachment[]};
+function safeAttachmentUrl(value: unknown) { try { const url = new URL(String(value || ''), window.location.origin); return url.origin === window.location.origin && url.pathname.startsWith('/api/') ? url.href : ''; } catch { return ''; } }
 export function conversationMessages(events:Data[]):Message[] {
   const messages:Message[]=[]; const items=new Map<string,Message>();
   for(const e of events) {
-    if(e.type==='message.user') messages.push({key:`user-${e.seq}`,role:'user',text:e.data?.text||'',complete:true});
+    if(e.type==='message.user') messages.push({key:`user-${e.seq}`,role:'user',text:e.data?.text||'',complete:true,attachments:Array.isArray(e.data?.attachments)?e.data.attachments.filter((item:Attachment)=>safeAttachmentUrl(item?.url)):[]});
     else if(e.type==='message.delta'||e.type==='message.completed') {
       const key=e.itemId||`turn-${e.turnId||e.seq}`; let message=items.get(key);
       if(!message){message={key,role:'assistant',text:'',complete:false};items.set(key,message);messages.push(message);}
@@ -36,9 +39,9 @@ export default function ChatView({events,runtime,empty,composer,onDraft,busy,dem
       <div className="conversation-scroll" ref={scroll} onScroll={()=>{const el=scroll.current;if(el){follow.current=el.scrollHeight-el.scrollTop-el.clientHeight<100;setAtBottom(follow.current)}}}>
         <div className="message-list" role="log" aria-label="Conversation" aria-live="polite" aria-relevant="additions text">
           {demo&&<p className="fixture-notice">Synthetic demo · no provider calls</p>}
-          {messages.map(message=><article className={`chat-message ${message.role}`} key={message.key}>
-            {message.role==='assistant'&&<div className="message-byline"><span className="mini-mark"><Layers3 size={15}/></span>Company HQ<span>Supervisor</span></div>}
-            <div className="message-body">{message.role==='user'?message.text:<Markdown skipHtml components={{a:({children,...props})=><a {...props} target="_blank" rel="noopener noreferrer">{children}</a>,img:({alt})=><span>{alt?`[Image: ${alt}]`:'[Image]'}</span>}}>{message.text}</Markdown>}</div>
+          {messages.map((message,index)=><article className={`chat-message ${message.role}`} key={message.key}>
+            {message.role==='assistant'&&messages[index-1]?.role!=='assistant'&&<div className="message-byline"><span className="mini-mark"><Layers3 size={15}/></span>Supervisor<span>{runtime.model?.replace('gpt-','GPT ').replaceAll('-',' ') || 'Your team'}</span></div>}
+            <div className="message-body">{message.role==='user'?<>{message.text}{message.attachments?.length ? <div className="message-attachments">{message.attachments.map(attachment => <img key={attachment.id} src={safeAttachmentUrl(attachment.url)} alt={attachment.name || 'Attached image'} />)}</div> : null}</>:<Markdown skipHtml components={{a:({children,...props})=><a {...props} target="_blank" rel="noopener noreferrer">{children}</a>,img:({alt})=><span>{alt?`[Image: ${alt}]`:'[Image]'}</span>}}>{message.text}</Markdown>}</div>
           </article>)}
           {working&&<div className="thinking-indicator" role="status"><span/><span/><span/>{busy?'Sending your message…':runtime.state==='starting'?'Connecting to Codex…':runtime.state==='stopping'?'Stopping…':'Working on it…'}</div>}
           {(runtime.pendingApprovals||[]).map((a:Data)=><section className="approval-card" key={a.requestId}><h3>Permission requested</h3><p>{a.reason}</p><pre>{a.command}</pre><div><button className="small-button" disabled={busy} onClick={()=>onApproval(a.requestId,'reject')}>Decline</button><button className="primary-button" disabled={busy} onClick={()=>onApproval(a.requestId,'approve')}>Approve once</button></div></section>)}

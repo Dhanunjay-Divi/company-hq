@@ -30,3 +30,7 @@ Other role files are available on demand through a filename search.
 
 Updates are staged at a new commit, reviewed for changed instructions, and
 activated after validation. Never `git pull` this copy during an active task.
+
+The vendored copy normalizes trailing whitespace and replaces private-key header
+examples with descriptive placeholders. REFERENCE-MANIFEST.json records both
+upstream and vendored hashes; executable install scripts are not included.

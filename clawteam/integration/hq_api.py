@@ -405,6 +405,29 @@ def handle_get(handler, state):
         handler._serve_json(health_snapshot(state));return True
     if path == '/api/decisions':
         handler._serve_json(decisions());return True
+    if path.startswith('/api/attachments/'):
+        try:
+            parts = path.strip('/').split('/')
+            if len(parts) != 4: raise ValueError('Invalid image route')
+            name = unquote(parts[2]); project_for(state, name)
+            from image_attachments import read
+            meta, file_path = read(state, name, parts[3])
+            content = file_path.read_bytes()
+            handler.send_response(200)
+            handler.send_header('Content-Type', meta['mimeType'])
+            handler.send_header('Content-Length', str(len(content)))
+            handler.send_header('Cross-Origin-Resource-Policy', 'same-origin')
+            handler.end_headers(); handler.wfile.write(content)
+        except Exception:
+            handler._json_error(404, 'Image not found in this chat')
+        return True
+    if path == '/api/providers':
+        try:
+            from provider_connections import connections
+            handler._serve_json(connections().snapshot())
+        except Exception:
+            handler._json_error(503, 'Provider discovery is unavailable. Try again.')
+        return True
     if not path.startswith(('/api/runtime/','/api/knowledge/','/api/workspaces')): return False
     try:
         if path == '/api/workspaces':
@@ -417,6 +440,7 @@ def handle_get(handler, state):
         if len(parts)!=4: raise ValueError('Unknown runtime route')
         name=unquote(parts[2]); project_for(state,name)
         if parts[3]=='status': result=bridge(state).status(name)
+        elif parts[3]=='tools': result=bridge(state).tools(name)
         elif parts[3]=='events':
             after=int(parse_qs(urlparse(handler.path).query).get('after',['0'])[0]);result=bridge(state).events(name,max(0,after))
         else: raise ValueError('Unknown runtime route')
@@ -427,6 +451,36 @@ def handle_get(handler, state):
 
 
 def handle_post(handler,state,path,body):
+    if path.startswith('/api/attachments/'):
+        try:
+            parts = path.strip('/').split('/')
+            if len(parts) != 3: raise ValueError('Invalid upload route')
+            name = unquote(parts[2]); project_for(state, name)
+            if demo_mode(): raise ValueError('Image uploads are disabled in demo mode')
+            from image_attachments import upload
+            handler._serve_json(upload(state, name, body))
+        except Exception as exc:
+            handler._json_error(400, str(exc))
+        return True
+    if path == '/api/folders/pick':
+        try:
+            if not isinstance(body, dict) or body:
+                raise ValueError('Folder selection does not accept a path or command.')
+            if demo_mode(): raise ValueError('Native folder selection is disabled in demo mode.')
+            from folder_picker import choose_folder
+            handler._serve_json(choose_folder())
+        except Exception as exc:
+            handler._json_error(400, str(exc))
+        return True
+    if path.startswith('/api/providers/'):
+        try:
+            if not isinstance(body,dict) or body: raise ValueError('Provider actions do not accept credentials or file paths.')
+            parts=path.strip('/').split('/')
+            if len(parts)!=4: raise ValueError('Unknown provider action')
+            from provider_connections import connections
+            handler._serve_json(connections().action(parts[2],parts[3]))
+        except Exception as exc:handler._json_error(400,str(exc))
+        return True
     if not path.startswith(('/api/runtime/','/api/knowledge/','/api/workspaces','/api/task/','/api/budget/')): return False
     try:
         if not isinstance(body,dict): raise ValueError('Request must be a JSON object')
@@ -487,19 +541,29 @@ def handle_post(handler,state,path,body):
         if action in ('start','send'):
             prompt=body.get('prompt','')
             if not isinstance(prompt,str) or not prompt.strip() or len(prompt)>24000: raise ValueError('Enter a message of at most 24000 characters')
+            project_for(state, name)
+            from image_attachments import resolve
+            attachments = resolve(state, name, body.get('attachmentIds', []))
+            image_options = {'attachments': attachments} if attachments else {}
             if action=='start':
                 routing=json.loads(routing_path().read_text());model=body.get('model','auto')
                 if model=='auto':model=_default_supervisor_model(routing)
                 if model not in routing['reviewed_codex_models']: raise ValueError('Choose a reviewed available Codex model')
                 with workspace_operation_lock(name):
                     project=project_for(state,name)
-                    result=client.start(name,project,prompt.strip(),model)
+                    work_mode=body.get('workMode','plan')
+                    if work_mode not in ('plan','auto','full'):raise ValueError('Choose plan or automatic work')
+                    if work_mode in ('auto','full'): image_options['work_mode'] = work_mode
+                    result=client.start(name,project,prompt.strip(),model,**image_options)
             else:
                 project_for(state,name)
-                result=client.send(name,prompt.strip())
+                result=client.send(name,prompt.strip(),**image_options)
         elif action=='execute':
             project_for(state,name)
             result=client.begin_execution(name)
+        elif action=='access':
+            project_for(state,name)
+            result=client.set_access(name,body.get('accessMode'))
         elif action=='stop':
             project_for(state,name)
             result=client.stop(name)

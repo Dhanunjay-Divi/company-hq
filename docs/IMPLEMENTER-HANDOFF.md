@@ -2,7 +2,7 @@
 
 Latest verified checkpoint: [chat-first acceptance](CHAT-FIRST-ACCEPTANCE.md). The reusable operating guidance is [agent-toolkit](../skills/agent-toolkit/SKILL.md). Continue from the actual current source; do not repeat the completed first-screen rewrite. The user authorizes direct tested pushes for this first phase, without draft PRs.
 
-Next integration priorities are actual nested team graph/message synchronization and provider connection flows. A provider connection should preserve native sign-in, discover usable reviewed models/tools, and report unsupported features clearly. Codex works today; other providers are not connected. Do not add a successful-looking Connect button backed only by executable detection. Keep the existing account, approval, project-binding, and replay tests intact.
+Next integration priorities are actual nested team graph/message synchronization and provider connection flows. New chats now default to automatic workspace access; Plan first remains explicit and existing planning chats retain that boundary until approval. Full access is an explicit per-chat native `dangerFullAccess` / approval-policy `never` request, subject to native administrator and account policy. A provider connection should preserve native sign-in, discover usable reviewed models/tools, and report unsupported features clearly. Codex works today; other providers are not connected. Do not add a successful-looking Connect button backed only by executable detection. Keep the existing account, approval, project-binding, image attachment, and replay tests intact.
 
 ## Assignment
 

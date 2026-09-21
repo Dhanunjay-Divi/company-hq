@@ -20,7 +20,7 @@ cd /path/to/company-hq
 python3 scripts/hq.py bootstrap
 ```
 
-Open the printed URL, type in the central composer, and press Enter or the arrow. Shift+Enter adds a line. The first send creates a private app-managed workspace automatically. For existing code, use **Add project**. Adding a project after a chat is bound starts a separate project chat; the old conversation remains available. Execution starts after the plan finishes and you approve it.
+Open the printed URL, type in the central composer, and press Enter or the arrow. Shift+Enter adds a line. The first send creates a private app-managed workspace automatically. For existing code, use **Add project**. Adding a project after a chat is bound starts a separate project chat; the old conversation remains available. New chats default to **Work automatically**. Select **Plan first** when you want a read-only plan followed by **Approve plan & start execution**; existing planning chats keep that boundary until approved.
 
 To run the native desktop shell from the source checkout:
 
@@ -45,7 +45,7 @@ python3 scripts/hq.py check           # model-free validation
 
 ## Codex and Claude
 
-Codex is the live runtime wired today. Company HQ reuses your existing authorized Codex app/runtime, keeps its state outside product repos, starts with a read-only planning turn, then asks you before switching into execution. Opening Company HQ by itself does not consume model tokens; tokens are used only when you send work to a provider-backed supervisor or worker.
+Codex is the live runtime wired today. Company HQ reuses your existing authorized Codex app/runtime and keeps its state outside product repos. New chats default to workspace-scoped automatic work; **Plan first** remains available for a read-only turn followed by explicit execution approval. **Full access** is a per-chat selection that requests `dangerFullAccess` and native approval policy `never`; administrator and account policy still apply. Opening Company HQ by itself does not consume model tokens; tokens are used only when you send work to a provider-backed supervisor or worker.
 
 Claude can be reused the same way once a verified adapter exists for your authorized Claude runtime or CLI. The rule is the same: no copied credentials, no hidden account switching, no provider proxy unless you explicitly choose it, and no claim that Claude is running until Company HQ can show real started sessions, messages, approvals and usage evidence.
 
@@ -54,9 +54,9 @@ Automatic follows the configured supervisor tier: currently Astra, as requested 
 ## Everyday flow
 
 1. Start a New chat and send your idea. A project folder is optional; app-managed working space lives outside your repositories.
-2. Tell the overall supervisor what you want to build, who it is for, constraints, and what proof should count as done.
-3. The first native supervisor turn is read-only planning. It should choose the smallest useful team, reuse code intelligence where available, define acceptance checks, and call out risks.
-4. Approve execution only after the plan is acceptable. That separate approval switches the native session to workspace-write inside the approved project folder.
+2. **Work automatically** is the default. It runs with workspace access and still shows native permission requests.
+3. Select **Plan first** for a read-only planning turn. Existing planning chats stay read-only until you press **Approve plan & start execution**.
+4. Select **Full access** only when appropriate for that chat. It requests full machine and network access through native `dangerFullAccess` with approval policy `never`; native administrator and account policies still apply.
 5. Review work in your IDE and in Company HQ together. Passing tests, reviewed diffs, screenshots, and recorded runtime events are evidence; task status alone is not.
 
 A good first prompt is:
@@ -67,13 +67,7 @@ A good first prompt is:
 
 The Activity screen shows provider-reported token counts when the native runtime emits them: input, cached input, output, total, and report count. Each workspace also has a reported-token ceiling. The default is 200,000 tokens and the Activity view lets you raise, lower, disable, or switch it to tracking-only mode. Once reported native totalTokens reaches the enforced ceiling, Company HQ blocks the next start, send, execute, or approval action for that workspace. This is local run evidence and an action gate. It is not account-wide quota, billed money, or a savings claim, and it cannot guarantee a provider-side mid-turn hard stop.
 
-Company HQ stays frugal by default:
-
-- Use one agent for simple changes.
-- Use bounded teams only for independent work streams.
-- Use Astra for overall supervision as requested, Terra/Sol for useful department coordination, and smaller capable leaf workers. Escalate worker assignments only when complexity or evidence requires it.
-- Use code intelligence before broad repeated file reads.
-- Use output reduction only when raw evidence is retained and the reducer passes gates.
+Choose teams and models based on the task and verified runtime availability. A role library is available on demand, but does not imply idle agents are running. Use observed usage and runtime evidence when deciding whether to add workers; Company HQ makes no savings claim.
 
 ## Python, Rust, and C
 
@@ -93,6 +87,10 @@ The **Why this stack** screen separates integrated, default-off, benchmarked, do
 
 A role description is not a running agent. A bounded live Astra → Terra → Luna test completed, with parent links verified through the native API. The earlier Luna-lead attempt could not spawn its own worker. The current graph uses registered ClawTeam members; Activity shows observed immediate native child IDs. Nested worker messages, live graph synchronization, and provider-neutral routing still require further integration. One successful chat test does not establish that teams outperform one agent.
 
+## Images
+
+You can upload, paste, or drag PNG, JPEG, and WebP images into a chat. Each chat accepts up to four images, up to 6 MiB each. The attachment preview is retained with the user message and passed to native Codex as a local image; a live check confirmed a red test image was identified as red and reported 19,184 gross tokens.
+
 ## Where data lives
 
 Default app root: `~/.local/state/company-hq` (or `COMPANY_HQ_STATE_ROOT` / XDG override).
@@ -109,8 +107,8 @@ Streaming chunks no longer evict finalized messages from the replay budget. A pr
 
 ## Tools and settings
 
-Settings checks the local installation on app load and on **Check again**, with no model prompt. It shows the active engine, shared memory, and code understanding. File paths and internal checks are under Technical details. Graft is off the default path. Engine sign-in and tool permission are verified when connecting/using that engine.
+Settings shows Connections and allowance. It distinguishes an installed desktop application from a usable HQ execution adapter; only Codex has a live adapter today. It reuses native Codex sign-in, model catalog, and reported account windows without exposing account identity. The current native report shows the weekly window at 59% used / 41% remaining; the 5-hour window is not reported and is shown as unknown. Workspace tools inventory reports 9 MCP servers (6 connected), including CUA, Ruflo, and codebase capability paths; it also inventories 10 apps and 55 skills. Those inventories and the on-demand role library do not mean agents are running.
 
 The intended additional-provider flow is native sign-in, verified connection, model/tool discovery, then selection from reviewed available models. That flow is not implemented for other providers today. A connection must not silently import old chats, copy passwords, change billing routes, or make all desktop-hosted plugins available without their own integration.
 
-Codex app-server supports native tools and MCP events, but HQ has not verified every desktop capability. Desktop-hosted computer use, plugin management, rich attachments, voice, and all-provider parity are not claimed. [Official app-server event documentation](https://learn.chatgpt.com/docs/app-server#items).
+Codex app-server supports native tools and MCP events, but HQ has not verified every desktop capability. Plugin management, voice, editor integration, and full native desktop parity are not claimed. Other providers require their own verified adapters. [Official app-server event documentation](https://learn.chatgpt.com/docs/app-server#items).

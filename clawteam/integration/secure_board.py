@@ -63,7 +63,7 @@ class SecureBoardHandler(BoardHandler):
 
     def end_headers(self):
         self.send_header("Cache-Control", "no-store")
-        self.send_header("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self'")
+        self.send_header("Content-Security-Policy", "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self'")
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Referrer-Policy", "no-referrer")
         self.send_header("X-Frame-Options", "DENY")
@@ -139,12 +139,14 @@ class SecureBoardHandler(BoardHandler):
         except ValueError:
             self.send_error(400, "Invalid Content-Length")
             return
-        if length <= 0 or length > 65536:
-            self.send_error(413, "Request body must be 1..65536 bytes")
+        path = urlparse(self.path).path
+        max_body = 9 * 1024 * 1024 if path.startswith('/api/attachments/') else 65536
+        if length <= 0 or length > max_body:
+            self.send_error(413, "Request body exceeds the allowed size")
             return
 
         path = urlparse(self.path).path
-        if path.startswith(('/api/runtime/','/api/knowledge/','/api/workspaces','/api/task/','/api/budget/')):
+        if path.startswith(('/api/runtime/','/api/knowledge/','/api/workspaces','/api/task/','/api/budget/','/api/providers/','/api/folders/','/api/attachments/')):
             from hq_api import handle_post
             try:
                 payload = json.loads(self.rfile.read(length).decode('utf-8'))

@@ -33,6 +33,14 @@ INTEGRATION_FILES = (
     "CODEX-BRIDGE.md",
     "README.md",
     "codex_bridge.py",
+    "provider_connections.py",
+    "native_tools.py",
+    "folder_picker.py",
+    "image_attachments.py",
+    "test_provider_connections.py",
+    "test_native_tools.py",
+    "test_folder_picker.py",
+    "test_image_attachments.py",
     "company_profile.py",
     "hq_api.py",
     "runtime_config.py",
@@ -93,6 +101,11 @@ def _archive_entries() -> list[tuple[Path, PurePosixPath]]:
                 PurePosixPath("clawteam/integration") / path.relative_to(INTEGRATION_DIR),
             )
         )
+
+    for name in ("provider_registry.py", "discover.py", "routing.json", "THIRD_PARTY_NOTICES.md"):
+        entries.append((TOOLKIT_DIR / name, PurePosixPath(name)))
+    for path in _safe_files(TOOLKIT_DIR / "agency-agents", ("USE.md", "INSTALLATION.json", "REFERENCE-MANIFEST.json"), ("upstream",)):
+        entries.append((path, PurePosixPath("agency-agents") / path.relative_to(TOOLKIT_DIR / "agency-agents")))
 
     entries.sort(key=lambda item: item[1].as_posix())
     archive_names: set[str] = set()
