@@ -16,7 +16,7 @@ BASE = Path(__file__).resolve().parent
 INTEGRATION = BASE / "clawteam" / "integration"
 if str(INTEGRATION) not in sys.path:
     sys.path.insert(0, str(INTEGRATION))
-from runtime_config import capabilities_path
+from runtime_config import capabilities_path, codex_executable
 TTL = 24 * 60 * 60
 CLIENTS = {'codex': ('codex',), 'claude': ('claude',), 'cursor': ('cursor-agent', 'agent'),
            'kimi': ('kimi',), 'opencode': ('opencode',), 'grok': ('grok',), 'glm': ('glm',),
@@ -74,8 +74,34 @@ def codex_models(executable):
         except subprocess.TimeoutExpired: process.kill(); process.communicate()
 
 
+def _supervisor_preferences(policy):
+    legacy = policy.get('preferred_supervisors')
+    if isinstance(legacy, list):
+        return [item for item in legacy if isinstance(item, dict)]
+    reviewed = set(policy.get('reviewed_codex_models', []))
+    tiers = policy.get('tiers', {})
+    if not isinstance(tiers, dict):
+        return []
+    names = []
+    selected = policy.get('supervisor_tier')
+    fallback = policy.get('escalation', {}).get('start_tier') if isinstance(policy.get('escalation'), dict) else None
+    for name in (selected, fallback):
+        if isinstance(name, str) and name and name not in names:
+            names.append(name)
+    preferences = []
+    for name in names:
+        tier = tiers.get(name)
+        model = tier.get('codex_model') if isinstance(tier, dict) else None
+        if isinstance(model, str) and model in reviewed:
+            preferences.append({
+                'provider': 'codex', 'model': model,
+                'effort': tier.get('default_effort', 'high'),
+            })
+    return preferences
+
+
 def select_supervisor(policy, capabilities):
-    for preferred in policy['preferred_supervisors']:
+    for preferred in _supervisor_preferences(policy):
         provider = preferred['provider']
         client = capabilities['providers'].get(provider, {})
         if client.get('status') != 'catalog_verified': continue
@@ -96,10 +122,19 @@ def select_supervisor(policy, capabilities):
             'basis': 'No reviewed supervisor is currently available; review the catalog before launching.'}
 
 
-def discover(refresh=False, base=BASE):
-    policy = json.loads((base / 'routing.json').read_text())
+def _client_paths():
     paths = {provider: next((shutil.which(name) for name in names if shutil.which(name)), None)
              for provider, names in CLIENTS.items()}
+    if not paths['codex']:
+        candidate = codex_executable()
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            paths['codex'] = str(candidate)
+    return paths
+
+
+def discover(refresh=False, base=BASE):
+    policy = json.loads((base / 'routing.json').read_text())
+    paths = _client_paths()
     resolved_base = Path(base).resolve()
     cache = capabilities_path() if resolved_base == BASE.resolve() else resolved_base / "capabilities.json"
     cache.parent.mkdir(parents=True, exist_ok=True, mode=0o700); now = time.time()

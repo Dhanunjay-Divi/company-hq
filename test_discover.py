@@ -42,6 +42,48 @@ class DiscoveryTests(unittest.TestCase):
         self.rows[0]['upgrade']='reviewed'
         self.assertEqual(d.select_supervisor(self.policy,self.caps)['effort'],'medium')
 
+    def test_schema_two_selects_explicit_supervisor_tier_and_only_explicit_reviewed_fallback(self):
+        policy = {
+            'supervisor_tier': 'flagship',
+            'escalation': {'start_tier': 'standard'},
+            'tiers': {
+                'flagship': {'codex_model': 'astra', 'default_effort': 'high'},
+                'standard': {'codex_model': 'terra', 'default_effort': 'medium'},
+            },
+            'reviewed_codex_models': ['astra', 'terra'],
+        }
+        self.rows[:] = [
+            {'id': 'astra', 'model': 'astra', 'defaultReasoningEffort': 'high', 'supportedReasoningEfforts': [{'reasoningEffort': 'high'}]},
+            {'id': 'terra', 'model': 'terra', 'defaultReasoningEffort': 'medium', 'supportedReasoningEfforts': [{'reasoningEffort': 'medium'}]},
+            {'id': 'unreviewed', 'model': 'unreviewed', 'defaultReasoningEffort': 'high', 'supportedReasoningEfforts': [{'reasoningEffort': 'high'}]},
+        ]
+        self.assertEqual(d.select_supervisor(policy, self.caps)['model'], 'astra')
+        self.rows.pop(0)
+        self.assertEqual(d.select_supervisor(policy, self.caps)['model'], 'terra')
+        self.rows.pop(0)
+        self.assertIsNone(d.select_supervisor(policy, self.caps)['model'])
+
+    def test_codex_app_path_fallback_is_used_when_path_lookup_is_empty(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            app_codex = Path(temporary) / 'codex'
+            app_codex.write_text('fixture')
+            app_codex.chmod(0o700)
+            with mock.patch.object(d.shutil, 'which', return_value=None), mock.patch.object(d, 'codex_executable', return_value=app_codex):
+                self.assertEqual(d._client_paths()['codex'], str(app_codex))
+
+    def test_checked_in_schema_two_routing_selects_its_configured_tier_model(self):
+        policy = json.loads((d.BASE / 'routing.json').read_text())
+        tier_name = policy.get('supervisor_tier') or policy['escalation']['start_tier']
+        model = policy['tiers'][tier_name]['codex_model']
+        capabilities = {
+            'providers': {'codex': {'status': 'catalog_verified', 'models': [{
+                'id': model, 'model': model,
+                'defaultReasoningEffort': 'high',
+                'supportedReasoningEfforts': [{'reasoningEffort': 'high'}],
+            }]}},
+        }
+        self.assertEqual(d.select_supervisor(policy, capabilities)['model'], model)
+
     def test_policy_change_updates_cached_selection_used_by_installer(self):
         with tempfile.TemporaryDirectory() as temporary:
             base=Path(temporary)
