@@ -67,8 +67,8 @@ jobs:
           set -euo pipefail
           archive="$RUNNER_TEMP/codebase-memory-mcp.tar.gz"
           root="$RUNNER_TEMP/codebase-memory-mcp"
-          curl --fail --location --silent --show-error             "https://github.com/DeusData/codebase-memory-mcp/releases/download/v0.10.8/codebase-memory-mcp-linux-amd64-portable.tar.gz"             --output "$archive"
-          echo "6eef49652bc0c7820f43114125044d40bf7f4d97c11b2592f6b0f6a307702325  $archive" | sha256sum --check -
+          curl --fail --location --silent --show-error             "https://github.com/DeusData/codebase-memory-mcp/releases/download/v0.11.0/codebase-memory-mcp-linux-amd64-portable.tar.gz"             --output "$archive"
+          echo "1f9e8293eb2bc5c05cfa27a7e8fc033da6d729ffad525ccfcdaa3fd606306683  $archive" | sha256sum --check -
           mkdir -p "$root"
           tar -xzf "$archive" -C "$root"
           binary="$(find "$root" -type f -name codebase-memory-mcp -perm -u+x | head -n 1)"
