@@ -23,10 +23,10 @@ CATALOG = {
     "verified": True,
     "reason": None,
     "models": [
-        {"model": "gpt-5.6-luna"},
-        {"model": "gpt-5.6-terra"},
-        {"model": "gpt-5.6-sol"},
-        {"model": "gpt-6-astra"},
+        {"model": "gpt-5.6-luna", "defaultReasoningEffort": "low", "supportedReasoningEfforts": [{"reasoningEffort": "low"}, {"reasoningEffort": "medium"}]},
+        {"model": "gpt-5.6-terra", "defaultReasoningEffort": "medium", "supportedReasoningEfforts": [{"reasoningEffort": "low"}, {"reasoningEffort": "medium"}, {"reasoningEffort": "high"}]},
+        {"model": "gpt-5.6-sol", "defaultReasoningEffort": "medium", "supportedReasoningEfforts": [{"reasoningEffort": "medium"}, {"reasoningEffort": "high"}]},
+        {"model": "gpt-6-astra", "defaultReasoningEffort": "high", "supportedReasoningEfforts": [{"reasoningEffort": "high"}, {"reasoningEffort": "xhigh"}]},
     ],
 }
 
@@ -42,11 +42,13 @@ class ModelRouterTest(unittest.TestCase):
         result = self.route("Fix a typo in README documentation.", "plan")
         self.assertEqual(result["model"], "gpt-5.6-luna")
         self.assertEqual(result["tier"], "small")
+        self.assertEqual(result["effort"], "low")
 
     def test_normal_implementation_uses_standard_not_flagship(self):
         result = self.route("Implement the API endpoint and tests for the existing feature.")
         self.assertEqual(result["model"], "gpt-5.6-terra")
         self.assertEqual(result["tier"], "standard")
+        self.assertEqual(result["effort"], "medium")
 
     def test_complex_security_migration_uses_complex_tier_before_flagship(self):
         result = self.route(
@@ -54,6 +56,7 @@ class ModelRouterTest(unittest.TestCase):
         )
         self.assertEqual(result["model"], "gpt-5.6-sol")
         self.assertEqual(result["tier"], "complex")
+        self.assertEqual(result["effort"], "high")
 
     def test_flagship_is_fallback_when_smaller_complex_model_is_unavailable(self):
         catalog = {
