@@ -16,7 +16,8 @@ BASE = Path(__file__).resolve().parent
 INTEGRATION = BASE / "clawteam" / "integration"
 if str(INTEGRATION) not in sys.path:
     sys.path.insert(0, str(INTEGRATION))
-from runtime_config import capabilities_path, codex_executable
+from runtime_config import capabilities_path
+from provider_registry import inventory as provider_inventory
 TTL = 24 * 60 * 60
 CLIENTS = {'codex': ('codex',), 'claude': ('claude',), 'cursor': ('cursor-agent', 'agent'),
            'kimi': ('kimi',), 'opencode': ('opencode',), 'grok': ('grok',), 'glm': ('glm',),
@@ -125,23 +126,25 @@ def select_supervisor(policy, capabilities):
 def _client_paths():
     paths = {provider: next((shutil.which(name) for name in names if shutil.which(name)), None)
              for provider, names in CLIENTS.items()}
-    if not paths['codex']:
-        candidate = codex_executable()
-        if candidate.is_file() and os.access(candidate, os.X_OK):
-            paths['codex'] = str(candidate)
     return paths
 
 
 def discover(refresh=False, base=BASE):
     policy = json.loads((base / 'routing.json').read_text())
+    local_inventory = provider_inventory()
+    inventory_by_id = {entry['id']: entry for entry in local_inventory['providers']}
     paths = _client_paths()
+    for provider, entry in inventory_by_id.items():
+        if provider in paths:
+            paths[provider] = entry['cliPath']
     resolved_base = Path(base).resolve()
     cache = capabilities_path() if resolved_base == BASE.resolve() else resolved_base / "capabilities.json"
     cache.parent.mkdir(parents=True, exist_ok=True, mode=0o700); now = time.time()
     if not refresh:
         try:
             value = json.loads(cache.read_text())
-            if 0 <= now - value['checked_unix'] < TTL and value['client_paths'] == paths:
+            if (0 <= now - value['checked_unix'] < TTL and value['client_paths'] == paths
+                    and value.get('provider_inventory', {}).get('providers') == local_inventory['providers']):
                 selection = select_supervisor(policy, value)
                 known = set(policy.get('reviewed_codex_models', []))
                 unreviewed = [r.get('model') or r['id'] for r in value['providers']['codex']['models']
@@ -167,6 +170,7 @@ def discover(refresh=False, base=BASE):
         providers[provider] = entry
     value = {'schema': 1, 'checked_at': dt.datetime.now(dt.timezone.utc).isoformat(),
              'checked_unix': now, 'client_paths': paths, 'providers': providers,
+             'provider_inventory': local_inventory,
              'desktop_only': ['Grok Bot'] if Path('/Applications/Grok Bot.app').exists() else [], 'cached': False}
     known = set(policy.get('reviewed_codex_models', []))
     value['unreviewed_codex_models'] = [r.get('model') or r['id'] for r in providers['codex']['models']

@@ -63,13 +63,9 @@ class DiscoveryTests(unittest.TestCase):
         self.rows.pop(0)
         self.assertIsNone(d.select_supervisor(policy, self.caps)['model'])
 
-    def test_codex_app_path_fallback_is_used_when_path_lookup_is_empty(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            app_codex = Path(temporary) / 'codex'
-            app_codex.write_text('fixture')
-            app_codex.chmod(0o700)
-            with mock.patch.object(d.shutil, 'which', return_value=None), mock.patch.object(d, 'codex_executable', return_value=app_codex):
-                self.assertEqual(d._client_paths()['codex'], str(app_codex))
+    def test_desktop_presence_does_not_become_a_codex_cli_path(self):
+        with mock.patch.object(d.shutil, 'which', return_value=None):
+            self.assertIsNone(d._client_paths()['codex'])
 
     def test_checked_in_schema_two_routing_selects_its_configured_tier_model(self):
         policy = json.loads((d.BASE / 'routing.json').read_text())
@@ -90,7 +86,13 @@ class DiscoveryTests(unittest.TestCase):
             policy=copy.deepcopy(self.policy)
             (base/'routing.json').write_text(json.dumps(policy))
             alternate=copy.deepcopy(self.rows[0]);alternate.update(id='other',model='other')
-            with mock.patch.object(d.shutil,'which',side_effect=lambda n:'/native/codex' if n=='codex' else None), mock.patch.object(d,'codex_models',return_value=[*self.rows,alternate]) as catalog:
+            fixture_inventory = {'checkedAt': '2026-01-01T00:00:00+00:00', 'providers': [
+                {'id': provider, 'cliPath': '/native/codex' if provider == 'codex' else None,
+                 'desktopPath': None, 'installed': provider == 'codex', 'authentication': 'not_checked',
+                 'runtimeReady': provider == 'codex', 'reason': 'fixture'}
+                for provider in ('codex', 'claude', 'kimi', 'zai', 'cursor', 'grok', 'ollama')
+            ]}
+            with mock.patch.object(d.shutil,'which',side_effect=lambda n:'/native/codex' if n=='codex' else None), mock.patch.object(d,'provider_inventory',return_value=fixture_inventory), mock.patch.object(d,'codex_models',return_value=[*self.rows,alternate]) as catalog:
                 d.discover(base=base)
                 policy['preferred_supervisors'][0]['model']='other'
                 (base/'routing.json').write_text(json.dumps(policy))
@@ -99,6 +101,23 @@ class DiscoveryTests(unittest.TestCase):
                 self.assertEqual(value['selection']['model'],'other')
                 self.assertEqual(json.loads((base/'capabilities.json').read_text())['selection']['model'],'other')
                 catalog.assert_called_once()
+
+    def test_desktop_inventory_change_invalidates_cached_discovery(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            (base / 'routing.json').write_text(json.dumps(self.policy))
+            def inventory(desktop):
+                return {'checkedAt': '2026-01-01T00:00:00+00:00', 'providers': [
+                    {'id': provider, 'cliPath': '/native/codex' if provider == 'codex' else None,
+                     'desktopPath': desktop if provider == 'claude' else None,
+                     'installed': provider in {'codex', 'claude'} if desktop else provider == 'codex',
+                     'authentication': 'not_checked', 'runtimeReady': provider == 'codex', 'reason': 'fixture'}
+                    for provider in ('codex', 'claude', 'kimi', 'zai', 'cursor', 'grok', 'ollama')
+                ]}
+            with mock.patch.object(d.shutil, 'which', side_effect=lambda n: '/native/codex' if n == 'codex' else None), mock.patch.object(d, 'provider_inventory', side_effect=[inventory(None), inventory('/Applications/Claude.app')]), mock.patch.object(d, 'codex_models', return_value=self.rows) as catalog:
+                self.assertFalse(d.discover(base=base)['cached'])
+                self.assertFalse(d.discover(base=base)['cached'])
+                self.assertEqual(catalog.call_count, 2)
 
 
 if __name__=='__main__':unittest.main()
