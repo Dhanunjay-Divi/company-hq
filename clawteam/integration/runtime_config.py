@@ -71,6 +71,58 @@ def saved_projects_path() -> Path:
     return _expand(raw) if raw else state_root() / "saved-projects.json"
 
 
+_COMPONENT_ENV = {
+    "ruflo": "COMPANY_HQ_RUFLO_STATE_ROOT",
+    "graft": "COMPANY_HQ_GRAFT_STATE_ROOT",
+    "codebase-memory": "COMPANY_HQ_CODEBASE_MEMORY_STATE_ROOT",
+}
+
+
+def _inside_git_checkout(path: Path) -> bool:
+    probe = path
+    while not probe.exists() and probe.parent != probe:
+        probe = probe.parent
+    if probe.is_file():
+        probe = probe.parent
+    for parent in (probe, *probe.parents):
+        if (parent / ".git").exists():
+            return True
+    return False
+
+
+def validate_component_state_root(path: Path, component: str) -> Path:
+    resolved = path.expanduser().resolve()
+    source = REPO_ROOT.resolve()
+    home = Path.home().resolve()
+    if resolved in {Path("/").resolve(), home, source}:
+        raise ConfigurationError(f"{component} state root is unsafe: {resolved}")
+    if resolved.is_relative_to(source):
+        raise ConfigurationError(f"{component} state root must be outside the Company HQ checkout")
+    if _inside_git_checkout(resolved):
+        raise ConfigurationError(f"{component} state root must not be inside a Git working tree")
+    if component == "codebase-memory" and sys.platform == "darwin" and resolved.is_relative_to(home):
+        raise ConfigurationError(
+            "codebase-memory state must be outside the account home on macOS; "
+            "set COMPANY_HQ_CODEBASE_MEMORY_STATE_ROOT or COMPANY_HQ_STATE_ROOT to an external private path"
+        )
+    return resolved
+
+
+def component_state_root(component: str) -> Path:
+    if component not in _COMPONENT_ENV:
+        raise ConfigurationError(f"unknown component state: {component}")
+    component_override = os.environ.get(_COMPONENT_ENV[component])
+    if component_override:
+        candidate = _expand(component_override)
+    elif os.environ.get("COMPANY_HQ_STATE_ROOT"):
+        candidate = state_root() / component
+    elif component == "codebase-memory" and sys.platform == "darwin":
+        candidate = Path("/Users/Shared") / f"company-hq-codebase-memory-{os.getuid()}"
+    else:
+        candidate = state_root() / component
+    return validate_component_state_root(candidate, component)
+
+
 def capabilities_path() -> Path:
     raw = os.environ.get("COMPANY_HQ_CAPABILITIES_PATH")
     return _expand(raw) if raw else state_root() / "capabilities.json"
@@ -87,8 +139,7 @@ def graft_install_root() -> Path:
 
 
 def graft_state_root() -> Path:
-    raw = os.environ.get("COMPANY_HQ_GRAFT_STATE_ROOT")
-    return _expand(raw) if raw else state_root() / "graft"
+    return component_state_root("graft")
 
 
 def codebase_memory_launcher() -> Path:
@@ -125,7 +176,22 @@ def demo_project_root() -> Path:
     return state_root() / "demo" / "project"
 
 
-def _availability(path: Path, *, executable: bool = False) -> dict[str, Any]:
+def node_executable() -> Path | None:
+    raw = os.environ.get("COMPANY_HQ_NODE")
+    if raw:
+        return _expand(raw)
+    found = shutil.which("node")
+    return Path(found).resolve() if found else None
+
+
+def sandbox_executable() -> Path:
+    raw = os.environ.get("COMPANY_HQ_SANDBOX_EXEC")
+    return _expand(raw) if raw else Path("/usr/bin/sandbox-exec")
+
+
+def _availability(path: Path | None, *, executable: bool = False) -> dict[str, Any]:
+    if path is None:
+        return {"available": False, "path": "", "reason": "not found"}
     exists = path.is_file()
     available = exists and (not executable or os.access(path, os.X_OK))
     return {
@@ -165,6 +231,8 @@ def health_snapshot(data_dir: Path | None = None) -> dict[str, Any]:
     cbm_binary = cbm.parent / "codebase-memory-mcp"
     cbm_guard = cbm.parent / "mcp_guard.py"
     ruflo_handler = REPO_ROOT / "ruflo-3.41.2" / "node_modules" / "@claude-flow" / "cli" / "dist" / "src" / "mcp-tools" / "memory-tools.js"
+    node = node_executable()
+    sandbox = sandbox_executable()
     codex = codex_executable()
     return {
         "schema": 1,
@@ -178,7 +246,14 @@ def health_snapshot(data_dir: Path | None = None) -> dict[str, Any]:
             "frontend": _availability(frontend_dist() / "index.html"),
             "routing": _availability(routing),
             "codex": _availability(codex, executable=True),
-            "rufloMemory": _compound_availability(ruflo, [(ruflo_handler, False)]),
+            "rufloMemory": _compound_availability(
+                ruflo,
+                [
+                    (ruflo_handler, False),
+                    (node, True),
+                    (sandbox, True),
+                ],
+            ),
             "graft": _availability(graft_bin, executable=True),
             "codebaseMemory": _compound_availability(
                 cbm, [(cbm_binary, True), (cbm_guard, False)]
