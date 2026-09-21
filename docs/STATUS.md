@@ -1,28 +1,115 @@
-# Verified baseline and limitations
+# Verified baseline and current gaps
 
-Baseline source captured 2026-09-14 UTC. Historical verification documents are evidence from specific earlier iterations; this file is the current handoff summary.
+Updated 2026-09-21 UTC.
 
-## Working on the original Mac
+## Complete and merged
 
-- Actual Agent Teams AI canvas/React graph, avatars, hierarchy and click-through member/task details; custom responsive Company HQ shell and focus view.
-- ClawTeam task create/update, owners and real file inboxes; loopback Host/Origin protections and private state directory.
-- Project-scoped Ruflo note save/retrieve; codebase-memory MCP guard installed separately for structural queries.
-- Native Codex app-server initialize/start/resume/steer/stop/approval bridge, preserving the existing account environment and bound project.
-- Reviewed model catalog supplied to UI; kickoff/discovery utilities and update review procedure.
-- Existing UI acceptance: isolated workspace, one Luna response through Start working, task moved to Done, Ruflo note round trip. Prior combined suite: 16 passing HTTP/bridge tests. This is evidence of these flows, not full autonomous-company validation.
+### Portable isolated baseline
 
-## Not finished
+Milestone 1 is merged to main.
 
-1. **Portable setup.** Source was built around an existing Mac installation. Hard-coded toolkit/account-user paths remain in multiple wrappers, API adapters, sandbox profiles and docs. Fresh-clone startup must be made isolated and configurable before being called portable. Frontend production builds and pure tests are independently reproducible.
-2. **Automatic worker visibility.** Live supervisor state is mapped; other nodes reflect registered metadata. Full native child lifecycle, cross-team communication and inbox wake/delivery acknowledgements are not synchronized end to end.
-3. **Durable execution feed.** Native bindings resume a thread, but in-memory event history disappears after server restart. Bounded durable replay and retention are needed.
-4. **Economy controls.** Reported token counts exist. No enforced project budget, comprehensive child usage aggregation, monetary bill or proven before/after savings exists. A tiny live acceptance reply still had 16,950 input tokens, of which 11,008 were cached, plus 21 output tokens. Short prompts do not imply low context overhead.
-5. **Onboarding and UX.** User still does not clearly understand “talk to the supervisor, then follow the work.” Narrow board columns require horizontal scrolling, empty states can look inactive, and the graph needs stronger readable layout and clearer active/recorded states. Build a guided first-run example and test comprehension.
-6. **Full company execution.** Research/product/design/engineering/QA/marketing/operations is the intended operating model; a complete idea-to-launch campaign has not been exercised. Do not create fake departments just to fill the graph.
-7. **Provider independence.** Current execution is native Codex. Other vendors' subscriptions, CLIs, quotas and compatibility are not established by the model catalog.
-8. **Automatic updates.** Metadata checks and a reviewed maintenance process exist in the original environment. No repository CI workflow or scheduler here installs updates automatically. The original local recurring automation is not transferred by this source snapshot.
-9. **Separate Agent Teams AI app.** Its full opaque runtime remains disabled because of account-home/auth handling. Reusing its graph does not enable or endorse that runtime.
+- Portable external runtime state and account/project boundaries.
+- Model-free synthetic demo.
+- Truthful capability/status UI.
+- Public model-free CI on standard GitHub-hosted runners.
+- Loopback/Host/Origin protections.
+- Existing provider account home preserved.
+- Cross-platform state/root checks and Windows-safe integration paths.
 
-No production deployment or cross-platform runtime acceptance is claimed. Live task/message state and native receipts are intentionally not in this repository.
+Baseline merge:
+7c62305b27cd18ed49ce45399c0c6c85157e3ccd
 
-Additional portability findings from source inventory: the supervisor role template is preserved but the earlier configuration script installs only three other roles; Graft's arm64 Kotlin binding needed a manual build; generated Codex schemas are version-specific. These are implementation tasks, not finished installation features.
+Post-merge readiness fixes:
+c903e6ad569efb7aa6e4e959a25467736b8ec330
+
+The final post-merge reviewer reported no major issues on the reviewed head.
+
+### Best-of-all bakeoffs
+
+The architecture branch contains reproducible public model-free tests.
+
+- Code intelligence: run 35553804431.
+- Token efficiency: run 35553431498.
+- Beads task store: run 35554136836.
+
+The resulting target architecture is in [BEST-STACK.md](BEST-STACK.md).
+
+## Working today
+
+- Company HQ React/Vite control UI and Agent Teams graph adapter.
+- Workspace creation and local project binding.
+- Native Codex app-server start/resume/steer/stop/approval bridge.
+- Current task/inbox compatibility through ClawTeam.
+- Guarded project-scoped Ruflo memory path.
+- Guarded Codebase Memory capability path.
+- Demo mode that blocks provider/model execution.
+- Health/status view that disables unavailable runtime actions.
+- Source/build/portability checks via the documented launcher.
+
+## Architecture decisions now locked
+
+- Company HQ remains the only orchestration/control authority.
+- Beads is the target canonical task/DAG store.
+- Codebase Memory MCP is primary warm code intelligence.
+- Graphify is second-stage broad/cross-asset graph retrieval.
+- Graft leaves the default path.
+- RTK is first-stage command/test/log compression.
+- Headroom is conditional second-stage structured-context compression.
+- Supermemory local is the target cross-provider long-term memory backend, but
+  migration waits for an isolated acceptance fixture.
+- Ruflo remains important for selected goals/workflows/intelligence/cost/
+  observability/security capabilities, not provider auth or competing scheduling.
+- Provider-native subscription/coding runtimes are preferred over gateways.
+- Model routing starts with the smallest capable tier and escalates.
+- Rust is the target machine/runtime core; TypeScript remains the UI/control
+  policy layer; Python is transitional/optional tooling rather than the desired
+  permanent launch dependency.
+
+## Not finished yet
+
+1. **Desktop packaging.** Current source serves a loopback web UI; it is not yet
+   packaged as the final Tauri-style desktop application.
+2. **Read-only plan -> explicit execute gate.** The bridge supports approvals,
+   but the end-user onboarding flow does not yet enforce the full staged plan
+   experience defined in BEST-STACK.
+3. **Beads migration.** Current UI/API task routes still use ClawTeam. Beads has
+   passed its external-state bakeoff but is not yet wired into Company HQ.
+4. **Provider-neutral runtime adapters.** Live execution is still Codex-only.
+   Claude/Kimi/GLM/Grok/etc. require separate verified adapters and authorized
+   account/quota acceptance.
+5. **Real worker lifecycle and messaging.** Child IDs, queued/delivered/
+   acknowledged states, wake behavior and cross-team messages are not yet
+   synchronized end to end.
+6. **Durable execution replay.** Native thread binding exists, but bounded event
+   history/replay across Company HQ restart is incomplete.
+7. **Hard usage budgets.** Token events exist, but per-project/account budgets,
+   child aggregation and enforced escalation limits are not complete.
+8. **RTK integration.** The bakeoff passed, but production command interception
+   and raw-evidence recall are not yet wired into the runtime.
+9. **Graphify stage-two integration.** Measured and selected, not yet wrapped by
+   the Company HQ context builder.
+10. **Supermemory local acceptance/migration.** Selected as target, but no
+    provider/account memory is moved until isolation, recall and correctness
+    tests pass.
+11. **Rust runtime sidecar.** Architecture is decided; implementation has not
+    begun.
+12. **End-to-end daily-ready acceptance.** A full idea -> plan -> dependency DAG
+    -> parallel isolated execution -> tests -> conditional independent review ->
+    merge proposal has not yet passed as one bounded scenario.
+
+## Meaning of "ready"
+
+Do not call Company HQ daily-ready merely because each subsystem starts.
+
+Daily-ready requires:
+- one-command desktop launch;
+- provider/account health visible before execution;
+- plan/execute separation;
+- task DAG and worker ownership visible;
+- crash/restart recovery;
+- budget/escalation enforcement;
+- compact context/evidence with raw recall;
+- deterministic checks;
+- conditional cross-model review;
+- no product/account pollution;
+- one bounded end-to-end acceptance pass.
