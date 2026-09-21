@@ -80,12 +80,12 @@ def main() -> int:
         ready_before_ids = [x.get("id") for x in ready_before_data if isinstance(x, dict)]
 
         claim = run([exe, "update", "hq-plan", "--claim", "--json"], cwd=workspace, env=env)
-        close_plan = run([exe, "close", "hq-plan", "Planned", "--json"], cwd=workspace, env=env)
+        close_plan = run([exe, "close", "hq-plan", "--reason", "Planned", "--json"], cwd=workspace, env=env)
         ready_after_plan = run([exe, "ready", "--json"], cwd=workspace, env=env)
         ready_after_plan_data = json_value(ready_after_plan) or []
         ready_after_plan_ids = [x.get("id") for x in ready_after_plan_data if isinstance(x, dict)]
 
-        close_build = run([exe, "close", "hq-build", "Built", "--json"], cwd=workspace, env=env)
+        close_build = run([exe, "close", "hq-build", "--reason", "Built", "--json"], cwd=workspace, env=env)
         ready_after_build = run([exe, "ready", "--json"], cwd=workspace, env=env)
         ready_after_build_data = json_value(ready_after_build) or []
         ready_after_build_ids = [x.get("id") for x in ready_after_build_data if isinstance(x, dict)]
@@ -103,7 +103,9 @@ def main() -> int:
                 "deps_ok": all(v["ok"] for v in deps),
                 "ready_before": ready_before_ids,
                 "claim_ok": claim["ok"],
+                "close_plan_ok": close_plan["ok"],
                 "ready_after_plan": ready_after_plan_ids,
+                "close_build_ok": close_build["ok"],
                 "ready_after_build": ready_after_build_ids,
                 "cycle_rejected": not cycle["ok"],
                 "cycle_error_excerpt": (cycle["stdout"] + cycle["stderr"])[-1000:],
@@ -123,7 +125,9 @@ def main() -> int:
             and results["beads"]["deps_ok"]
             and ready_before_ids == ["hq-plan"]
             and claim["ok"]
+            and close_plan["ok"]
             and ready_after_plan_ids == ["hq-build"]
+            and close_build["ok"]
             and ready_after_build_ids == ["hq-review"]
             and results["beads"]["cycle_rejected"]
             and workspace_files == []
