@@ -1,6 +1,6 @@
 # Company HQ
 
-A local AI team workspace for taking an idea through planning, implementation, review and launch. It combines the actual Agent Teams AI graph with ClawTeam task/inbox records, Ruflo decision memory and native Codex supervisor execution.
+A local AI engineering workspace for taking an idea through planning, implementation, review and launch. Company HQ is the control plane; provider runtimes, task/memory/code-intelligence systems and specialist skills sit behind explicit adapters rather than competing for authority.
 
 This public repository preserves the shared toolkit source built on 13–14 September 2026. **It is a working prototype and development handoff.** The portability work keeps runtime state outside the checkout and does not deploy or modify the original live installation merely by cloning or starting this source.
 
@@ -8,13 +8,14 @@ This public repository preserves the shared toolkit source built on 13–14 Sept
 
 - [Implementation handoff and acceptance criteria](docs/IMPLEMENTER-HANDOFF.md)
 - [What works and what remains](docs/STATUS.md)
+- [Locked best-of-all stack and staged fallbacks](docs/BEST-STACK.md)
 - [Architecture and source map](docs/ARCHITECTURE.md)
 - [New upstream candidates: ECC, gstack, Superpowers and the 40-repo list](docs/UPSTREAM-REVIEW.md)
 - [Reviewer instructions](docs/REVIEWER.md)
 - [Portable setup and isolation](docs/PORTABILITY.md)
 - [Packaging provenance](docs/PACKAGING.md)
 
-For the current user-requested implementation sequence, portable setup, onboarding, worker communication/visibility, and usage controls are kept in separate bounded PRs so the original Codex supervisor can review them independently.
+Portable setup is merged. The next bounded milestones are desktop onboarding/read-only planning, Beads task migration, provider-neutral worker communication, usage controls/context routing, and the Rust runtime boundary. Keep these reviewable independently.
 
 The user talks primarily to the overall supervisor. Useful functional leads and specialists should be allocated according to the actual goal, available account access, complexity and cost. A visible roster is not proof that those agents are running.
 
@@ -23,11 +24,11 @@ The user talks primarily to the overall supervisor. Useful functional leads and 
 | Path | Contents |
 | --- | --- |
 | `company-hq/` | React/Vite interface, upstream graph and avatars, source archive builder |
-| `clawteam/integration/` | Loopback HTTP API, native Codex bridge, task/inbox adapter, tests, native protocol schemas |
+| `clawteam/integration/` | Transitional loopback HTTP API, native Codex bridge, compatibility task/inbox adapter, tests, native protocol schemas |
 | `ruflo-integration/` | Narrow project-scoped MCP adapter, allowlist and macOS sandbox |
 | `codebase-memory-mcp-0.10.8/` | MCP guard/launcher and installation provenance; no binary or indexes |
 | `teamboard/` | Earlier Swift/macOS audit board and configuration/test utilities |
-| root Python files | Model/client discovery, kickoff, reviewed update checks, isolated Graft wrapper |
+| root Python files | Transitional model/client discovery, kickoff, reviewed update checks, compatibility wrappers |
 | `skills/`, `roles/` | Reusable operating guidance and native role templates when applicable |
 | `patches/` | Earlier custom upstream compatibility changes; inactive reference material |
 | `catalog.json` | Previously reviewed integration pins and dispositions |
@@ -65,7 +66,7 @@ The original live installation remains a separate deployment target. Running thi
 
 ## Cost and data
 
-Opening the board does not start an agent. Pressing Start working does. Native work uses the existing account and may consume its allowance; the prototype has reported token counts, not a complete bill or enforced spending budget. Multiple agents are not automatically cheaper. Keep simple work with one agent, use bounded smaller workers, and retain concise shared decisions.
+Opening the board does not start an agent. Native work uses the existing authorized provider account and may consume its allowance. The target policy is smallest-capable-model first with explicit escalation, one worker for simple work, bounded parallelism for independent work, RTK-first command evidence, and measured budget/account controls. Reported tokens, account allowance and billed money remain distinct.
 
 No credentials, Codex conversations, runtime bindings, local task/message databases, user project lists, product files, downloaded binaries, virtual environments or dependency caches are intentionally included.
 
