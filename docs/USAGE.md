@@ -7,7 +7,7 @@ Company HQ is the operating cockpit for a project, not a replacement for your ID
 From the Company HQ repo:
 
 ```sh
-cd /Users/uno/Projects/company-hq
+cd /path/to/company-hq
 python3 scripts/hq.py bootstrap --demo
 ```
 
@@ -16,7 +16,7 @@ Use demo mode first. It opens a local URL with fake fixture data, does not call 
 For real local use after demo works:
 
 ```sh
-cd /Users/uno/Projects/company-hq
+cd /path/to/company-hq
 python3 scripts/hq.py bootstrap
 ```
 

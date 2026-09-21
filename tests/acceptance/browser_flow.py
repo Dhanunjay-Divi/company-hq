@@ -40,7 +40,7 @@ with tempfile.TemporaryDirectory(prefix='hq-browser-') as td:
             page = browser.new_page(viewport={'width':1440,'height':1000})
             page.on('pageerror',lambda e:errors.append(str(e)))
             page.goto(url)
-            page.get_by_role('button',name='+ Connect project',exact=True).click()
+            page.get_by_role('button',name='Connect project',exact=True).first.click()
             page.get_by_label('Workspace name',exact=True).fill('Acceptance fixture')
             page.get_by_label('Project folder',exact=True).fill(str(project))
             page.get_by_label('Desired outcome',exact=True).fill('Synthetic plan to approved fixture result')
