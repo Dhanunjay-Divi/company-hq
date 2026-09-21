@@ -1,0 +1,134 @@
+{
+  "schema": 1,
+  "policy": {
+    "principle": "Company HQ owns UI, task authority, routing policy, project boundaries, and human approvals. Upstreams are capabilities, not competing control planes.",
+    "activation": "lazy",
+    "provider_auth": "native-first; explicit API gateway only when user chooses it",
+    "model_selection": "smallest capable authorized model first; escalate on risk/failure",
+    "product_repo_state": "external by default",
+    "claims": "measured evidence over upstream marketing claims"
+  },
+  "layers": {
+    "desktop_control": {
+      "default": "company-hq",
+      "reuse": [
+        "777genius/agent-teams-ai"
+      ],
+      "references": [
+        "generalaction/emdash",
+        "openchamber/openchamber",
+        "superset-sh/superset"
+      ],
+      "notes": "Reuse provider/runtime/team/worktree/diff patterns selectively; do not stack another task authority."
+    },
+    "orchestration": {
+      "default": "company-hq",
+      "augment": [
+        "ruvnet/ruflo"
+      ],
+      "notes": "Adopt Ruflo cost/workflow/intelligence/observability/security capabilities behind Company HQ. Do not enable a second autonomous scheduler by default."
+    },
+    "provider_runtime": {
+      "native_first": [
+        "codex",
+        "claude",
+        "kimi",
+        "glm",
+        "grok",
+        "gemini"
+      ],
+      "fallback": [
+        "anomalyco/opencode"
+      ],
+      "optional_explicit_gateway": [
+        "musistudio/claude-code-router",
+        "farion1231/cc-switch"
+      ],
+      "notes": "Never silently convert a native subscription route into API billing or third-party relay."
+    },
+    "code_intelligence": {
+      "status": "bakeoff",
+      "candidates": [
+        "DeusData/codebase-memory-mcp",
+        "Graphify-Labs/graphify",
+        "@nanonets/graft",
+        "colbymchenry/codegraph"
+      ],
+      "semantic_editing_optional": [
+        "oraios/serena"
+      ],
+      "notes": "Winner selected by deterministic benchmark plus product-tree isolation. Serena is evaluated as an editing/refactoring capability."
+    },
+    "memory": {
+      "current": [
+        "ruvnet/ruflo"
+      ],
+      "candidates": [
+        "supermemoryai/supermemory",
+        "getzep/graphiti",
+        "thedotmack/claude-mem",
+        "rohitg00/agentmemory"
+      ],
+      "notes": "Use scoped retrieval and progressive disclosure; do not inject whole histories."
+    },
+    "token_efficiency": {
+      "candidates": [
+        "rtk-ai/rtk",
+        "headroomlabs-ai/headroom"
+      ],
+      "notes": "RTK is first choice for deterministic command-output compaction. Headroom must pass matched accuracy/auth-route benchmarks before inline use; proxy wrapping is not default."
+    },
+    "tasks_and_coordination": {
+      "default": "company-hq-clawteam",
+      "borrow_from": [
+        "gastownhall/beads",
+        "dsh-agent-teams",
+        "ClawTeam",
+        "Agent Squad"
+      ],
+      "skip_as_core": [
+        "BloopAI/vibe-kanban"
+      ],
+      "notes": "Borrow dependency/claim/message semantics as useful. Vibe Kanban is sunsetting."
+    },
+    "skills": {
+      "mode": "progressive-disclosure",
+      "catalogs": [
+        "affaan-m/ECC",
+        "wshobson/agents",
+        "garrytan/gstack",
+        "msitarzewski/agency-agents",
+        "lamm-mit/scientific-agent-skills",
+        "cathrynlavery/diagram-design",
+        "calesthio/OpenMontage",
+        "obra/superpowers"
+      ],
+      "notes": "Select one or a few relevant skills per task; never inject whole catalogs."
+    },
+    "specialist_media": {
+      "video": [
+        "calesthio/OpenMontage"
+      ],
+      "diagrams": [
+        "cathrynlavery/diagram-design"
+      ],
+      "scientific": [
+        "lamm-mit/scientific-agent-skills"
+      ]
+    },
+    "native_runtime_future": {
+      "language": "rust",
+      "ui_control": "typescript",
+      "python": "optional integration and scientific tooling, not required final launcher",
+      "responsibilities": [
+        "process supervision",
+        "worktrees",
+        "sandbox and permissions",
+        "IPC",
+        "resource and concurrency limits",
+        "usage metering",
+        "secure filesystem operations"
+      ]
+    }
+  }
+}
