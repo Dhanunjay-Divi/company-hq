@@ -27,7 +27,7 @@ class CapabilityRouterTest(unittest.TestCase):
             root = Path(temp)
             (root / "pom.xml").write_text("<project/>", encoding="utf-8")
             (root / "Service.java").write_text("class Service {}", encoding="utf-8")
-            plan = route_task("Refactor and rename the payment service across this Java monorepo.", root)
+            plan = route_task("Refactor and rename the order service across this Java monorepo.", root)
         self.assertEqual(plan["risk"]["level"], "medium")
         self.assertEqual(plan["supervisor"]["codexModel"], "gpt-5.6-sol")
         tools = [item["id"] for item in plan["tools"]]
