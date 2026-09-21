@@ -7,6 +7,7 @@
 - **Graft 0.18.0** is an optional separately installed navigation dependency. Only our isolation wrapper and operational documentation are included.
 - **Agency Agents**, commit `ad9264e309bd5e5422c04784372d7841b1e5d604`, is referenced for on-demand guidance. The installed upstream roster is not copied into this repository.
 - **Codex app-server** protocol schemas are retained as generated API/schema reference from local runtime `0.154.0-alpha.6.2`; no Codex executable, authentication material or conversation is included. OpenAI Codex source is Apache-2.0; corresponding license is retained in `licenses/CODEX-APACHE-2.0.txt`.
+- **react-markdown 10.1.0**, copyright Espen Hovlandsdal, MIT. Used for conversation rendering; raw HTML is disabled. License retained in `company-hq/vendor/REACT-MARKDOWN-MIT.txt`.
 - npm and Python dependencies remain separately licensed; lockfiles are not a relicensing of those dependencies.
 
 Company HQ and original integration code use the root AGPL-3.0-only license. A private repository does not itself change upstream license obligations. A candidate's catalog entry does not authorize copying all of its files. Resolve mixed, custom, unknown and file-level licenses before adopting new code.

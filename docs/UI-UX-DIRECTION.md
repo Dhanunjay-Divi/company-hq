@@ -2,7 +2,7 @@
 
 Updated 2026-09-21.
 
-Company HQ should feel like a simple project chat first, then reveal team and evidence surfaces only when useful. The user should not need to understand Ruflo, ClawTeam, code graphs, model routing or task stores before starting.
+Company HQ should feel like a simple conversation first, then reveal team and evidence surfaces only when useful. The user should not need to understand Ruflo, ClawTeam, code graphs, model routing or task stores before starting.
 
 ## What the reviewed repos teach us
 
@@ -34,9 +34,15 @@ The named team repos are also better as selected ingredients than as separate ap
 
 ## UX rules going forward
 
-- First screen asks “What do you want the team to build?”
-- Creating a project chat drafts a safe read-only planning message, but does not auto-spend tokens.
+- First screen asks “What are we making today?”
+- New chat opens an empty composer without creating a folder or calling a model. Sending creates a managed workspace and starts the requested turn. Add project is optional.
 - Graphs and boards appear after they help explain active work.
 - Right dock is for evidence and context, not an empty panel.
 - The app should say what is real: started thread, pending approval, token reports, task status and verified output.
 - If a feature comes from a repo in the catalog, it must be adopted behind the Company HQ contract: one authority, scoped state, tested behavior and clear user value.
+
+## September 21 chat redesign
+
+Removed duplicate web window controls, setup cards, capability counters and the empty evidence dock from the first screen. The central conversation now renders native user messages and streamed/final Markdown replies. The sidebar lists actual chats. Settings is an installation summary; advanced paths are collapsed. The model dialog lists reviewed native-catalog models and clearly identifies absent provider adapters. Animation uses CSS transforms and a shaded orbital illustration, with reduced-motion overrides; no graphics runtime or image generation is needed.
+
+The existing Agent Teams AI graph stays lazy-loaded for team work. `react-markdown` 10.1.0 (MIT) supplies safe reply formatting with raw HTML disabled. [assistant-ui](https://github.com/assistant-ui/assistant-ui) is a useful specialized React chat option, and [LobeHub](https://github.com/lobehub/lobehub) is a broader application reference. We did not import either runtime or claim they were integrated: replacing native approval/project-binding behavior to obtain their shell would enlarge this change. The current direction reuses existing backend contracts and the licensed graph while correcting the actual first-use flow.

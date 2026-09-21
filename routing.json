@@ -61,8 +61,7 @@
     "gpt-5.6-sol",
     "gpt-5.6-terra",
     "gpt-5.6-luna",
-    "gpt-5.5",
-    "gpt-5.3-codex-spark"
+    "gpt-5.5"
   ],
   "escalation": {
     "start_tier": "standard",
@@ -115,5 +114,7 @@
     "no_idle_roster": true
   },
   "updates": "pin_review_benchmark_stage_activate_with_rollback",
-  "note": "Current live execution remains Codex-only until each additional provider adapter and its account/quota behavior pass acceptance. A provider name never means use its flagship model by default."
+  "note": "Current live execution remains Codex-only until each additional provider adapter and its account/quota behavior pass acceptance. A provider name never means use its flagship model by default.",
+  "supervisor_tier": "flagship",
+  "supervisor_note": "User preference: strongest reviewed available supervisor; smaller capable models for bounded worker tasks."
 }

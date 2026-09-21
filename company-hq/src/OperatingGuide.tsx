@@ -11,14 +11,14 @@ interface Props {
 
 const steps = [
   ['1', 'Bring the idea', 'Describe the customer, outcome, constraints, and what “done” must prove. A vague idea is okay; the supervisor turns it into questions and a plan.'],
-  ['2', 'Connect a local project', 'Company HQ attaches to a folder and creates team/task state outside that repo. Connecting alone does not edit files or start workers.'],
+  ['2', 'Add a project when useful', 'You can chat without a folder. Add project starts a project conversation when you need to work on existing files.'],
   ['3', 'Plan before writes', 'The first native supervisor turn is read-only. It should inspect, choose the smallest useful team, estimate risk, and define verification.'],
   ['4', 'Approve execution', 'Only after the plan completes can you approve workspace-write execution. Permission prompts still show the exact action before it runs.'],
   ['5', 'Review evidence', 'Use the IDE, tests, run events, task board, and usage signal together. A task status is not proof; passing checks and reviewed diffs are proof.'],
 ];
 
 const modelPolicy = [
-  ['Simple or narrow', 'one supervisor, usually a smaller capable model'],
+  ['Overall supervisor', 'Astra by default: plans, assigns useful work, and reviews results'],
   ['Independent streams', 'department lead plus bounded workers, only when parallel work helps'],
   ['High-risk architecture/review', 'escalate the supervisor or reviewer tier for that decision'],
   ['Unclear capability', 'benchmark or run a model-free fixture before promoting a tool'],
@@ -39,6 +39,8 @@ export default function OperatingGuide({ demo, health, runtime }: Props) {
       </aside>
     </header>
 
+    <section className="role-guide" aria-label="Team roles"><article><span>01 / DIRECTION</span><h3>Supervisor</h3><p>Owns your goal, decides which teams are useful, and reviews the final result.</p><small>Talk to this role first.</small></article><article><span>02 / COORDINATION</span><h3>Team lead</h3><p>Owns one area, breaks it into assignments, and checks the specialists’ work.</p><small>Created when coordination helps.</small></article><article><span>03 / DELIVERY</span><h3>Worker</h3><p>Completes a specific assignment, tests it, and reports evidence to the lead.</p><small>A focused task and suitable model.</small></article></section>
+    <p className="role-disclaimer">A bounded supervisor → lead → worker test passed with Astra, Terra, and Luna. Full nested messaging and graph synchronization are still being completed. A role description is not an active agent.</p>
     <section className="guide-steps" aria-label="Company HQ workflow">
       {steps.map(([number, title, body]) => <article key={number}>
         <span>{number}</span><div><h3>{title}</h3><p>{body}</p></div>
@@ -55,7 +57,7 @@ export default function OperatingGuide({ demo, health, runtime }: Props) {
     </section>
 
     <section className="guide-policy">
-      <div><span className="eyebrow">MODEL AND TEAM POLICY</span><h2>Frugal by default, stronger only when justified</h2><p>The supervisor chooses from available, reviewed runtimes at the time of work. Top models are reserved for coordination, architecture, hard debugging, security review, or final synthesis.</p></div>
+      <div><span className="eyebrow">MODEL AND TEAM POLICY</span><h2>A capable head. A focused team.</h2><p>Automatic uses the reviewed flagship supervisor. The supervisor delegates suitable bounded work to smaller models. One person can fill several roles when a task is simple.</p></div>
       <div>{modelPolicy.map(([need, route]) => <article key={need}><b>{need}</b><span>{route}</span></article>)}</div>
     </section>
   </div>;

@@ -2,7 +2,7 @@
 
 A local AI engineering workspace for taking an idea through planning, implementation, review and launch. Company HQ is the control plane; provider runtimes, task/memory/code-intelligence systems and specialist skills sit behind explicit adapters rather than competing for authority.
 
-This public repository preserves the shared toolkit source built on 13–14 September 2026. **It is a working prototype and development handoff.** The portability work keeps runtime state outside the checkout and does not deploy or modify the original live installation merely by cloning or starting this source.
+This repository preserves the shared toolkit source built on 13–14 September 2026. **It is a working prototype and development handoff.** The portability work keeps runtime state outside the checkout and does not deploy or modify the original live installation merely by cloning or starting this source.
 
 ## Start here
 

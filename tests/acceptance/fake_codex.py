@@ -29,6 +29,9 @@ def after_start(params):
     if 'HOLD_FOR_STOP_TEST' in text:
         return
     if params.get('sandboxPolicy',{}).get('type') == 'readOnly':
+        if 'LONG_STREAM_TEST' in text:
+            for _ in range(600):
+                emit({'method':'item/agentMessage/delta','params':{'threadId':'fixture-supervisor','turnId':current_turn,'itemId':current_turn+'-reply','delta':'x'}})
         completed('Synthetic plan: create result.txt only after approval, then verify its exact contents. One small worker is sufficient.')
     else:
         assert params['sandboxPolicy']['writableRoots'] == [str(project)]
@@ -50,12 +53,18 @@ for line in sys.stdin:
     method, params = message.get('method'), message.get('params',{})
     if method == 'initialize': result = {'userAgent':'company-hq-synthetic-test'}
     elif method in ('thread/start','thread/resume'):
-        assert Path(params['cwd']).resolve() == project
+        candidate = Path(params['cwd']).resolve()
+        managed = os.environ.get('HQ_ACCEPTANCE_MANAGED_ROOT')
+        if managed and candidate.parent == Path(managed).resolve():
+            assert candidate.is_dir()
+            project = candidate
+        else:
+            assert candidate == project
         result = {'thread':{'id':'fixture-supervisor'}}
     elif method == 'thread/goal/set':
         result = {'goal':{'tokenBudget':params['tokenBudget']}}
     elif method == 'turn/start':
-        turn += 1; current_turn = 'fixture-turn-'+str(turn)
+        turn += 1; current_turn = 'fixture-turn-'+str(os.getpid())+'-'+str(turn)
         result = {'turn':{'id':current_turn}}
     elif method == 'turn/steer': result = {'turnId':params['expectedTurnId']}
     elif method == 'turn/interrupt': result = {}

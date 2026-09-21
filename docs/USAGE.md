@@ -1,6 +1,6 @@
 # Using Company HQ
 
-Company HQ is the operating cockpit for a project, not a replacement for your IDE. Keep Cursor, VS Code, Xcode, the terminal, or GitHub open as usual. Use Company HQ to connect the project folder, describe the outcome, see the plan, approve execution, watch real runtime events, track tasks, and inspect usage signals.
+Open Company HQ and type what you want to discuss or build. No folder or project name is required. Company HQ provides the conversation and team views; the connected native Codex engine performs model work. You can keep your normal IDE open to inspect files and changes.
 
 ## Quick start
 
@@ -11,7 +11,7 @@ cd /path/to/company-hq
 python3 scripts/hq.py bootstrap --demo
 ```
 
-Use demo mode first. It opens a local URL with fake fixture data, does not call a model, and does not edit any project. When the page opens, try the flow: **Chat → Start project chat → Discuss & plan → Approve plan & start execution**.
+Demo mode shows synthetic data without calling models. Open a demo chat from Your chats, then explore Team, Tasks, and Activity. Sending is disabled in demo mode.
 
 For real local use after demo works:
 
@@ -20,7 +20,7 @@ cd /path/to/company-hq
 python3 scripts/hq.py bootstrap
 ```
 
-Open the URL printed by the command. Start a project chat, choose the project folder you want Company HQ to help with, describe the goal, and keep the first turn as planning. Execution starts only after the plan finishes and you approve it.
+Open the printed URL, type in the central composer, and press Enter or the arrow. Shift+Enter adds a line. The first send creates a private app-managed workspace automatically. For existing code, use **Add project**. Adding a project after a chat is bound starts a separate project chat; the old conversation remains available. Execution starts after the plan finishes and you approve it.
 
 To run the native desktop shell from the source checkout:
 
@@ -49,11 +49,11 @@ Codex is the live runtime wired today. Company HQ reuses your existing authorize
 
 Claude can be reused the same way once a verified adapter exists for your authorized Claude runtime or CLI. The rule is the same: no copied credentials, no hidden account switching, no provider proxy unless you explicitly choose it, and no claim that Claude is running until Company HQ can show real started sessions, messages, approvals and usage evidence.
 
-The simple default is: use Codex now, keep the supervisor model on automatic policy, set a workspace token budget, and let Company HQ choose smaller workers only when the task truly benefits from them.
+Automatic follows the configured supervisor tier: currently Astra, as requested by the user. The five native-catalog models checked on 2026-09-21 are Astra, Sol, Terra, Luna, and GPT-5.5. The selected model is fixed for the native conversation; start a new chat to choose another. Smaller models are available for bounded worker tasks. Additional provider adapters and full nested team messaging are still incomplete.
 
 ## Everyday flow
 
-1. Start a project chat and choose a local project folder. This creates Company HQ state outside the repo and does not edit project files.
+1. Start a New chat and send your idea. A project folder is optional; app-managed working space lives outside your repositories.
 2. Tell the overall supervisor what you want to build, who it is for, constraints, and what proof should count as done.
 3. The first native supervisor turn is read-only planning. It should choose the smallest useful team, reuse code intelligence where available, define acceptance checks, and call out risks.
 4. Approve execution only after the plan is acceptable. That separate approval switches the native session to workspace-write inside the approved project folder.
@@ -65,13 +65,13 @@ A good first prompt is:
 
 ## Usage and cost
 
-The run screen shows provider-reported token counts when the native runtime emits them: input, cached input, output, total, and report count. Each workspace also has a reported-token ceiling. The default is 200,000 tokens and the Run overview lets you raise, lower, disable, or switch it to tracking-only mode. Once reported native totalTokens reaches the enforced ceiling, Company HQ blocks the next start, send, execute, or approval action for that workspace. This is local run evidence and an action gate. It is not account-wide quota, billed money, or a savings claim, and it cannot guarantee a provider-side mid-turn hard stop.
+The Activity screen shows provider-reported token counts when the native runtime emits them: input, cached input, output, total, and report count. Each workspace also has a reported-token ceiling. The default is 200,000 tokens and the Activity view lets you raise, lower, disable, or switch it to tracking-only mode. Once reported native totalTokens reaches the enforced ceiling, Company HQ blocks the next start, send, execute, or approval action for that workspace. This is local run evidence and an action gate. It is not account-wide quota, billed money, or a savings claim, and it cannot guarantee a provider-side mid-turn hard stop.
 
 Company HQ stays frugal by default:
 
 - Use one agent for simple changes.
 - Use bounded teams only for independent work streams.
-- Start with smaller capable models and escalate only for complexity, risk, failure recovery, architecture, security review, or final synthesis.
+- Use Astra for overall supervision as requested, Terra/Sol for useful department coordination, and smaller capable leaf workers. Escalate worker assignments only when complexity or evidence requires it.
 - Use code intelligence before broad repeated file reads.
 - Use output reduction only when raw evidence is retained and the reducer passes gates.
 
@@ -84,3 +84,33 @@ Rust is a strong candidate for narrower runtime pieces once benchmarks justify t
 ## Repository adoption
 
 The **Why this stack** screen separates integrated, default-off, benchmarked, doc-reviewed, and inventoried repositories. Useful code from upstream projects is adopted behind Company HQ contracts only after license, state, startup-write, dependency, permission, security, and acceptance checks. Bulk installing every framework would create duplicate schedulers, hidden cost, and unclear authority.
+
+## Roles and expectations
+
+- Supervisor: owns the goal, chooses useful teams, reviews results.
+- Team lead: coordinates one discipline and its specialists.
+- Worker: completes a bounded assignment and returns evidence.
+
+A role description is not a running agent. A bounded live Astra → Terra → Luna test completed, with parent links verified through the native API. The earlier Luna-lead attempt could not spawn its own worker. The current graph uses registered ClawTeam members; Activity shows observed immediate native child IDs. Nested worker messages, live graph synchronization, and provider-neutral routing still require further integration. One successful chat test does not establish that teams outperform one agent.
+
+## Where data lives
+
+Default app root: `~/.local/state/company-hq` (or `COMPANY_HQ_STATE_ROOT` / XDG override).
+
+- `clawteam/managed-workspaces/<chat-id>/`: private working folder for a chat without an attached project.
+- `clawteam/company-profiles/`: chat labels and project bindings.
+- `clawteam/runtime/events/`: bounded recent chat/event snapshots (owner-only files, up to 500 events and 4 MiB per chat). Saved events are replay, not proof of a live worker.
+- `clawteam/runtime/bindings/`: references used to resume native tasks.
+- `clawteam/runtime/budgets/`: local reported-token policies and counters.
+
+Native Codex continues to own its own account and thread storage; HQ does not copy auth files or scan native session databases. Unsent drafts currently live in the open UI and survive chat switching, but not a full page reload.
+
+Streaming chunks no longer evict finalized messages from the replay budget. A private sequence watermark prevents event IDs from being reused after a restart during streaming. Disk-write failures still make replay best effort; this is not an unlimited transcript archive.
+
+## Tools and settings
+
+Settings checks the local installation on app load and on **Check again**, with no model prompt. It shows the active engine, shared memory, and code understanding. File paths and internal checks are under Technical details. Graft is off the default path. Engine sign-in and tool permission are verified when connecting/using that engine.
+
+The intended additional-provider flow is native sign-in, verified connection, model/tool discovery, then selection from reviewed available models. That flow is not implemented for other providers today. A connection must not silently import old chats, copy passwords, change billing routes, or make all desktop-hosted plugins available without their own integration.
+
+Codex app-server supports native tools and MCP events, but HQ has not verified every desktop capability. Desktop-hosted computer use, plugin management, rich attachments, voice, and all-provider parity are not claimed. [Official app-server event documentation](https://learn.chatgpt.com/docs/app-server#items).

@@ -11,7 +11,7 @@ Milestone 1 is merged to main.
 - Portable external runtime state and account/project boundaries.
 - Model-free synthetic demo.
 - Truthful capability/status UI.
-- Public model-free CI on standard GitHub-hosted runners.
+- Model-free CI on standard GitHub-hosted runners. Repository visibility is private.
 - Loopback/Host/Origin protections.
 - Existing provider account home preserved.
 - Cross-platform state/root checks and Windows-safe integration paths.
@@ -37,7 +37,9 @@ The resulting target architecture is in [BEST-STACK.md](BEST-STACK.md).
 ## Working today
 
 - Company HQ React/Vite control UI and Agent Teams graph adapter.
-- Workspace creation and local project binding.
+- Folder-optional chats with isolated managed workspaces, optional project chats, and locked project binding.
+- Central Markdown conversation, native user/reply events, simplified settings/model picker, reduced-motion-aware visual depth, and lazy-loaded team views.
+- Private bounded event replay across server restarts with monotonic native resume; user/final replies persisted, up to 500 events / 4 MiB per chat.
 - Native Codex app-server start/resume/steer/stop/approval bridge.
 - Current task/inbox compatibility through ClawTeam.
 - Guarded project-scoped Ruflo memory path, installed by setup with lifecycle scripts disabled.
@@ -46,7 +48,8 @@ The resulting target architecture is in [BEST-STACK.md](BEST-STACK.md).
 - Health/status view that disables unavailable runtime actions.
 - Source/build/portability checks via the documented launcher.
 - Per-workspace reported-token action gate in the native Codex bridge and Run overview.
-- IDE-style app shell slice with desktop frame, command bar, status bar, supervisor evidence dock and visible capability/budget indicators.
+- Chat-first app shell with an optional activity panel; duplicate window chrome and empty startup counters removed.
+- Bounded live hierarchy acceptance: Astra supervisor, Terra lead, Luna QA specialist; parent links and completed turns independently verified through native thread/read.
 - Source-checkout Tauri desktop shell scaffold that starts/reuses the guarded local backend and opens Company HQ in a native window.
 
 ## Architecture decisions now locked
@@ -63,7 +66,7 @@ The resulting target architecture is in [BEST-STACK.md](BEST-STACK.md).
 - Ruflo remains important for selected goals/workflows/intelligence/cost/
   observability/security capabilities, not provider auth or competing scheduling.
 - Provider-native subscription/coding runtimes are preferred over gateways.
-- Model routing starts with the smallest capable tier and escalates.
+- The overall supervisor uses the reviewed flagship tier, currently Astra. Useful department leads prefer Terra/Sol; bounded leaf work can use Luna. Model catalog availability is not account entitlement or a quality benchmark.
 - Rust is the target machine/runtime core; TypeScript remains the UI/control
   policy layer; Python is transitional/optional tooling rather than the desired
   permanent launch dependency.
@@ -72,19 +75,16 @@ The resulting target architecture is in [BEST-STACK.md](BEST-STACK.md).
 
 1. **Desktop packaging.** Current source serves a loopback web UI; it is not yet
    packaged as the final Tauri-style desktop application.
-2. **Founder onboarding polish.** Read-only planning and explicit execution
-   approval are wired, but the founder-friendly idea intake and visual plan
-   explanation still need the next UX pass.
+2. **Founder workflow.** Folderless chat, readable model/settings controls and central conversation now pass acceptance. Guided plan cards, rich file attachments, integrated editor/terminal and full desktop-plugin parity remain future work.
 3. **Beads migration.** Current UI/API task routes still use ClawTeam. Beads has
    passed its external-state bakeoff but is not yet wired into Company HQ.
 4. **Provider-neutral runtime adapters.** Live execution is still Codex-only.
    Claude/Kimi/GLM/Grok/etc. require separate verified adapters and authorized
    account/quota acceptance.
-5. **Real worker lifecycle and messaging.** Child IDs, queued/delivered/
+5. **Real worker lifecycle and messaging.** Native supervisor → lead → worker delegation passed one bounded live check. Nested child IDs, queued/delivered/
    acknowledged states, wake behavior and cross-team messages are not yet
    synchronized end to end.
-6. **Durable execution replay.** Native thread binding exists, but bounded event
-   history/replay across Company HQ restart is incomplete.
+6. **Full execution recovery.** Bounded sanitized chat/event replay and native resume now pass restart tests. Complete transcripts beyond retention, pending-approval recovery, child-worker reconciliation and unsent drafts across app restarts remain incomplete.
 7. **Budget scope beyond the local gate.** Company HQ now enforces a
    per-workspace reported-token action gate for start/send/execute/approval
    boundaries. Account-wide quota, billed spend, guaranteed mid-turn hard stops,
@@ -104,6 +104,8 @@ The resulting target architecture is in [BEST-STACK.md](BEST-STACK.md).
     merge proposal has not yet passed as one bounded scenario.
 
 ## Meaning of "ready"
+
+The latest chat and native-delegation evidence, including the failed Luna-lead attempt, is recorded in [CHAT-FIRST-ACCEPTANCE.md](CHAT-FIRST-ACCEPTANCE.md).
 
 Do not call Company HQ daily-ready merely because each subsystem starts.
 
