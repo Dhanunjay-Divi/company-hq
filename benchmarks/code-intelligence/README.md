@@ -40,9 +40,9 @@ about provider-billed tokens.
   The benchmark deliberately installs the npm package with lifecycle scripts
   disabled, matching the safer fresh-clone posture; missing native parser
   readiness is therefore visible rather than repaired invisibly.
-- **Codebase Memory MCP 0.10.8** — downloaded from its immutable release and
+- **Codebase Memory MCP 0.11.0** — downloaded from its immutable release and
   verified against SHA-256
-  `6eef49652bc0c7820f43114125044d40bf7f4d97c11b2592f6b0f6a307702325`.
+  `1f9e8293eb2bc5c05cfa27a7e8fc033da6d729ffad525ccfcdaa3fd606306683`.
 - **Graphify 0.9.65** — installed from release commit
   `7ca736cf94cd2fe8564704e31aa0e9b9f6e04fc6`; output is redirected outside
   the fixture with `GRAPHIFY_OUT`.
