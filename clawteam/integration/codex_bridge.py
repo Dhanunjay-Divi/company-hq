@@ -545,6 +545,26 @@ class CodexBridge:
                 result["error"] = session.error
             return result
 
+    def record_event(self, team: str, event_type: str, data: dict[str, Any]) -> None:
+        """Record a sanitized Company HQ control-plane event for an active team."""
+        session = self._require_session(_validate_team(team))
+        if not isinstance(event_type, str) or not re.fullmatch(r"[a-z][a-z0-9_.-]{0,79}", event_type):
+            raise BridgeError("event_type must be a short lowercase identifier")
+        if not isinstance(data, dict):
+            raise BridgeError("event data must be an object")
+        safe: dict[str, Any] = {}
+        for key, value in data.items():
+            name = str(key)[:80]
+            if isinstance(value, (str, int, float, bool)) or value is None:
+                safe[name] = _safe_text(value, 4000) if isinstance(value, str) else value
+            elif isinstance(value, list):
+                safe[name] = [
+                    _safe_text(item, 1000) if isinstance(item, str) else item
+                    for item in value[:20]
+                    if isinstance(item, (str, int, float, bool)) or item is None
+                ]
+        self._event(session, event_type, safe)
+
     def events(self, team: str, after_seq: int = 0) -> dict[str, Any]:
         team = _validate_team(team)
         if not isinstance(after_seq, int) or isinstance(after_seq, bool) or after_seq < 0:
