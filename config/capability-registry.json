@@ -1,5 +1,5 @@
 {
-  "schema": 1,
+  "schema": 2,
   "policy": {
     "principle": "Company HQ owns UI, task authority, routing policy, project boundaries, and human approvals. Upstreams are capabilities, not competing control planes.",
     "activation": "lazy",
@@ -47,7 +47,7 @@
       "notes": "Never silently convert a native subscription route into API billing or third-party relay."
     },
     "code_intelligence": {
-      "status": "bakeoff",
+      "status": "measured",
       "candidates": [
         "DeusData/codebase-memory-mcp",
         "Graphify-Labs/graphify",
@@ -57,7 +57,50 @@
       "semantic_editing_optional": [
         "oraios/serena"
       ],
-      "notes": "Winner selected by deterministic benchmark plus product-tree isolation. Serena is evaluated as an editing/refactoring capability."
+      "notes": "CBM v0.11.0 is the current default for repeated structural queries. Graphify complements it for fast local project/docs/media graphing. CodeGraph stays optional until its index is isolated from the product tree. Serena is a separate semantic editing/refactoring specialist.",
+      "default": "DeusData/codebase-memory-mcp@v0.11.0",
+      "complementary": [
+        "Graphify-Labs/graphify@v0.9.65"
+      ],
+      "optional": [
+        "colbymchenry/codegraph@v1.6.0",
+        "oraios/serena"
+      ],
+      "not_default": [
+        "@nanonets/graft@0.18.0"
+      ],
+      "evidence": {
+        "fixture": "synthetic authentication call chain, model-free",
+        "codebase-memory-mcp": {
+          "symbols": "3/3",
+          "relation": true,
+          "query_token_proxy": 378,
+          "repo_clean": true,
+          "index_seconds": 1.7553,
+          "query_seconds": 0.0253
+        },
+        "graphify": {
+          "symbols": "3/3",
+          "relation": true,
+          "query_token_proxy": 570,
+          "repo_clean": true,
+          "index_seconds": 0.431,
+          "query_seconds": 0.4714
+        },
+        "codegraph": {
+          "symbols": "3/3",
+          "relation": true,
+          "query_token_proxy": 914,
+          "repo_clean": false,
+          "index_seconds": 0.6896,
+          "query_seconds": 0.6549
+        },
+        "graft": {
+          "indexed": false,
+          "repo_clean": true,
+          "reason": "fresh safe install lacked compatible tree-sitter-kotlin native build"
+        }
+      }
     },
     "memory": {
       "current": [
@@ -76,7 +119,44 @@
         "rtk-ai/rtk",
         "headroomlabs-ai/headroom"
       ],
-      "notes": "RTK is first choice for deterministic command-output compaction. Headroom must pass matched accuracy/auth-route benchmarks before inline use; proxy wrapping is not default."
+      "notes": "Use RTK selectively for supported shell/test/log output; never auto-route JSON through RTK under the current evidence gate. Use Headroom only through local library/MCP for large repetitive structured payloads when evidence checks pass. Do not use Headroom proxy/wrap or any auth/provider rewrite by default.",
+      "policy": {
+        "default": "raw",
+        "logs_and_test_output": "rtk-ai/rtk@v0.49.0",
+        "repetitive_structured_json": "headroomlabs-ai/headroom@v0.37.0 library/MCP only",
+        "unknown_or_high_risk": "raw"
+      },
+      "evidence": {
+        "fixture": "synthetic noisy logs/tests/JSON, model-free",
+        "rtk": {
+          "logs": {
+            "reduction_pct": 99.35,
+            "evidence_preserved": true
+          },
+          "tests": {
+            "reduction_pct": 96.35,
+            "evidence_preserved": true
+          },
+          "json": {
+            "reduction_pct": 99.7,
+            "evidence_preserved": false
+          }
+        },
+        "headroom_local_structural": {
+          "logs": {
+            "reduction_pct": 22.8,
+            "evidence_preserved": true
+          },
+          "tests": {
+            "reduction_pct": 0,
+            "evidence_preserved": true
+          },
+          "json": {
+            "reduction_pct": 81.96,
+            "evidence_preserved": true
+          }
+        }
+      }
     },
     "tasks_and_coordination": {
       "default": "company-hq-clawteam",
