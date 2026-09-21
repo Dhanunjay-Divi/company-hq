@@ -169,6 +169,11 @@ def evaluate(name: str, base: Path, output: Path, repetitions: int) -> dict:
                 for attempt in range(repetitions):
                     if mcp:
                         result = mcp.tool(trace, {'project': 'fixture', 'function_name': seed, 'direction': 'both', 'depth': 2})
+                        locations = mcp.tool('search_graph', {'project': 'fixture', 'name_pattern': '|'.join(x for x in expected if '/' not in x), 'limit': 20})
+                        result['ok'] = result['ok'] and locations['ok']
+                        result['stdout'] += '\n' + locations['stdout']
+                        result['seconds'] += locations['seconds']
+                        result['tool_calls'] = 2
                     elif name == 'graphify':
                         result = run([executable, 'query', seed], cwd=project, env=env)
                     elif name == 'codegraph':
@@ -212,7 +217,7 @@ def main() -> int:
               'fixture_sha256': hashlib.sha256(b''.join(relative.encode() + (FIXTURE / relative).read_bytes() for relative in FILES)).hexdigest() if FIXTURE.exists() else None}
     (output / 'code-intel-results.json').write_text(json.dumps(report, indent=2) + '\n')
     summary = {key: value for key, value in report.items() if key != 'results'}
-    summary['results'] = {name: {key: value for key, value in result.items() if key not in {'queries', 'build'}} | {'build_ok': result.get('build', {}).get('ok'), 'build_seconds': result.get('build', {}).get('seconds'), 'query_cases': [{key: q.get(key) for key in ('case', 'repetition', 'ok', 'coverage_complete', 'matched', 'stdout_bytes')} for q in result.get('queries', [])]} for name, result in results.items()}
+    summary['results'] = {name: {key: value for key, value in result.items() if key not in {'queries', 'build'}} | {'build_ok': result.get('build', {}).get('ok'), 'build_seconds': result.get('build', {}).get('seconds'), 'build_error': result.get('build', {}).get('stderr', '')[-3000:], 'query_cases': [{key: q.get(key) for key in ('case', 'repetition', 'ok', 'coverage_complete', 'matched', 'stdout_bytes', 'tool_calls')} for q in result.get('queries', [])]} for name, result in results.items()}
     print(json.dumps(summary, indent=2))
     return exit_code(results)
 
