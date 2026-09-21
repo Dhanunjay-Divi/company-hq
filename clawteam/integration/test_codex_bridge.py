@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import tempfile
 import threading
 import unittest
@@ -669,6 +670,74 @@ class CodexBridgeTest(unittest.TestCase):
         thread.join(timeout=1)
         self.assertEqual(len(failures), 1)
         self.assertIn("already has", failures[0])
+
+    def test_sanitized_event_replay_survives_restart_and_continues_sequence(self):
+        self.start()
+        connection = self.factory.connections[0]
+        connection.emit({
+            "method": "item/completed",
+            "params": {
+                "threadId": "thr-1", "turnId": "turn-1-1",
+                "item": {"id": "reply-one", "type": "agentMessage", "text": "Done with api_key=secret-value"},
+            },
+        })
+        before = self.bridge.events("team-one", 0)["events"]
+        self.bridge.shutdown_all()
+        restarted = CodexBridge(
+            state_dir=self.root / "runtime", connection_factory=FakeFactory(),
+            request_timeout=0.2, max_events=20,
+        )
+        self.addCleanup(restarted.shutdown_all)
+        offline = restarted.events("team-one", 0)
+        self.assertEqual(restarted.events("team-two", 0)["events"], [])
+        self.assertEqual([event["seq"] for event in offline["events"]], [event["seq"] for event in before])
+        self.assertEqual(sum(event["type"] == "message.user" for event in offline["events"]), 1)
+        self.assertEqual(sum(event["type"] == "message.completed" for event in offline["events"]), 1)
+        self.assertIn("api_key=[redacted]", next(event for event in offline["events"] if event["type"] == "message.completed")["data"]["text"])
+        resumed = restarted.start("team-one", self.project, "Continue.", "gpt-5.6-luna")
+        self.assertGreater(resumed["lastEventSeq"], before[-1]["seq"])
+        events = restarted.events("team-one", 0)["events"]
+        self.assertEqual([event["seq"] for event in events], sorted({event["seq"] for event in events}))
+        self.assertEqual(sum(event["data"].get("text") == "Done with api_key=[redacted]" for event in events), 1)
+
+    def test_event_snapshot_is_capped_and_never_follows_corrupt_or_symlinked_files(self):
+        self.start()
+        with self.bridge._sessions_lock:
+            session = self.bridge._sessions["team-one"]
+        for number in range(30):
+            self.bridge._event(session, "message.completed", {"text": f"reply-{number}"})
+        self.bridge.shutdown_all()
+        replay = CodexBridge(
+            state_dir=self.root / "runtime", connection_factory=FakeFactory(),
+            request_timeout=0.2, max_events=20,
+        )
+        self.addCleanup(replay.shutdown_all)
+        events = replay.events("team-one", 0)["events"]
+        self.assertLessEqual(len(events), 20)
+        self.assertEqual([event["seq"] for event in events], sorted(event["seq"] for event in events))
+        path = self.root / "runtime" / "events" / (hashlib.sha256(b"team-one").hexdigest() + ".json")
+        self.assertLessEqual(path.stat().st_size, 4 * 1024 * 1024)
+        self.assertEqual((path.parent.stat().st_mode & 0o777), 0o700)
+        self.assertEqual((path.stat().st_mode & 0o777), 0o600)
+        outside = self.root / "outside-events.json"
+        outside.write_text('{"team":"team-one","events":[]}')
+        path.unlink()
+        path.symlink_to(outside)
+        unsafe = CodexBridge(
+            state_dir=self.root / "runtime", connection_factory=FakeFactory(),
+            request_timeout=0.2, max_events=20,
+        )
+        self.addCleanup(unsafe.shutdown_all)
+        self.assertEqual(unsafe.events("team-one", 0)["events"], [])
+        self.assertEqual(outside.read_text(), '{"team":"team-one","events":[]}')
+        path.unlink()
+        path.write_text("not json")
+        corrupt = CodexBridge(
+            state_dir=self.root / "runtime", connection_factory=FakeFactory(),
+            request_timeout=0.2, max_events=20,
+        )
+        self.addCleanup(corrupt.shutdown_all)
+        self.assertEqual(corrupt.events("team-one", 0)["events"], [])
 
     def test_singleton_factory_is_keyed_by_resolved_state_directory(self):
         one = get_codex_bridge(self.root / "singleton")

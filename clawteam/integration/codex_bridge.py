@@ -32,6 +32,7 @@ MAX_PROMPT = 40_000
 MAX_TEXT = 24_000
 DEFAULT_TOKEN_BUDGET = 200_000
 MAX_TOKEN_BUDGET = 20_000_000
+MAX_EVENT_SNAPSHOT_BYTES = 4 * 1024 * 1024
 
 
 class BridgeError(RuntimeError):
@@ -460,6 +461,98 @@ def _native_total_tokens(counts: dict[str, Any]) -> int | None:
     return None
 
 
+def _safe_event_value(value: object) -> object:
+    if value is None or isinstance(value, (bool, int, float)):
+        return value
+    if isinstance(value, str):
+        return _safe_text(value)
+    if isinstance(value, list):
+        return [_safe_event_value(item) for item in value[:500]]
+    if isinstance(value, dict):
+        return {
+            _safe_text(key, 200): _safe_event_value(item)
+            for key, item in list(value.items())[:500]
+        }
+    return _safe_text(value)
+
+
+class _EventStore:
+    """Small private replay snapshots; never a copy of provider history."""
+
+    def __init__(self, state_dir: Path, max_events: int):
+        self.directory = state_dir / "events"
+        self.max_events = max_events
+        self.available = False
+        try:
+            self.directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+            if self.directory.is_symlink() or not self.directory.is_dir():
+                return
+            os.chmod(self.directory, 0o700)
+            self.available = True
+        except OSError:
+            return
+
+    def _path(self, team: str) -> Path:
+        return self.directory / f"{hashlib.sha256(team.encode('utf-8')).hexdigest()}.json"
+
+    def load(self, team: str) -> list[dict[str, Any]]:
+        if not self.available:
+            return []
+        path = self._path(team)
+        try:
+            if not path.exists() or path.is_symlink() or not path.is_file() or path.stat().st_size > MAX_EVENT_SNAPSHOT_BYTES:
+                return []
+            value = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return []
+        if not isinstance(value, dict) or value.get("team") != team or not isinstance(value.get("events"), list):
+            return []
+        events = []
+        previous_seq = 0
+        for event in value["events"][-self.max_events:]:
+            if not isinstance(event, dict):
+                return []
+            seq = event.get("seq")
+            if not isinstance(seq, int) or isinstance(seq, bool) or seq <= previous_seq:
+                return []
+            event_type = event.get("type")
+            if not isinstance(event_type, str) or len(event_type) > 200 or not isinstance(event.get("data"), dict):
+                return []
+            previous_seq = seq
+            events.append({
+                "seq": seq,
+                "time": event.get("time") if isinstance(event.get("time"), int) else 0,
+                "type": event_type,
+                "threadId": event.get("threadId") if isinstance(event.get("threadId"), str) else None,
+                "turnId": event.get("turnId") if isinstance(event.get("turnId"), str) else None,
+                "itemId": event.get("itemId") if isinstance(event.get("itemId"), str) else None,
+                "data": _safe_event_value(event["data"]),
+            })
+        return events
+
+    def save(self, team: str, events: list[dict[str, Any]]) -> None:
+        if not self.available:
+            return
+        clean = [_safe_event_value(event) for event in events[-self.max_events:]]
+        kept = []
+        for event in reversed(clean):
+            candidate = {"version": 1, "team": team, "events": [event, *kept]}
+            try:
+                if len(json.dumps(candidate, separators=(",", ":"), ensure_ascii=False).encode("utf-8")) > MAX_EVENT_SNAPSHOT_BYTES:
+                    break
+            except (TypeError, ValueError):
+                return
+            kept.insert(0, event)
+        payload = {"version": 1, "team": team, "events": kept}
+        try:
+            temporary = self.directory / f".{self._path(team).name}.{uuid.uuid4().hex}.tmp"
+            temporary.write_text(json.dumps(payload, separators=(",", ":"), ensure_ascii=False), encoding="utf-8")
+            os.chmod(temporary, 0o600)
+            os.replace(temporary, self._path(team))
+        except OSError:
+            return
+
+
 class CodexBridge:
     """Synchronous, thread-safe facade over asynchronous app-server JSONL."""
 
@@ -486,6 +579,7 @@ class CodexBridge:
         self._sessions_lock = threading.RLock()
         self._binding_lock = threading.Lock()
         self._budget = _BudgetStore(self.state_dir)
+        self._event_store = _EventStore(self.state_dir, max_events)
         atexit.register(self.shutdown_all)
 
     def _binding_path(self, team: str) -> Path:
@@ -602,6 +696,7 @@ class CodexBridge:
         mode: str,
         plan_ready: bool = False,
     ) -> _TeamSession:
+        restored = self._event_store.load(team)
         session = _TeamSession(
             team=team,
             project=project,
@@ -609,7 +704,8 @@ class CodexBridge:
             mode=mode,
             plan_ready=plan_ready,
             connection=self.connection_factory(self.codex_path),
-            events=deque(maxlen=self.max_events),
+            events=deque(restored, maxlen=self.max_events),
+            next_event_seq=(restored[-1]["seq"] + 1) if restored else 1,
         )
         with self._sessions_lock:
             current = self._sessions.get(team)
@@ -990,7 +1086,16 @@ class CodexBridge:
         with self._sessions_lock:
             session = self._sessions.get(team)
         if not session:
-            return {"team": team, "afterSeq": after_seq, "nextSeq": after_seq, "events": []}
+            restored = self._event_store.load(team)
+            oldest = restored[0]["seq"] if restored else after_seq + 1
+            next_seq = restored[-1]["seq"] if restored else after_seq
+            return {
+                "team": team,
+                "afterSeq": after_seq,
+                "nextSeq": next_seq,
+                "truncated": after_seq + 1 < oldest,
+                "events": [dict(event) for event in restored if event["seq"] > after_seq],
+            }
         with session.lock:
             oldest = session.events[0]["seq"] if session.events else session.next_event_seq
             return {
@@ -1021,6 +1126,9 @@ class CodexBridge:
                 "data": data,
             })
             session.next_event_seq += 1
+            snapshot = [event for event in session.events if event["type"] != "message.delta"]
+            if event_type != "message.delta":
+                self._event_store.save(session.team, snapshot)
 
     def _on_message(self, session: _TeamSession, message: dict[str, Any]) -> None:
         if "id" in message and ("result" in message or "error" in message):
