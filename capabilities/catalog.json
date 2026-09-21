@@ -1,0 +1,626 @@
+{
+  "schema": 1,
+  "principles": {
+    "lazy_load": true,
+    "minimal_team": true,
+    "one_task_authority": "ClawTeam",
+    "one_orchestrator": "Company HQ",
+    "preflight_review_before_spawn": true,
+    "cross_family_review_preferred": true,
+    "no_full_catalog_prompt_injection": true
+  },
+  "source_pool": {
+    "top_40": "docs/repository-candidates.json",
+    "extra": [
+      "ruvnet/ruflo",
+      "msitarzewski/agency-agents",
+      "lamm-mit/scientific-agent-skills",
+      "cathrynlavery/diagram-design",
+      "calesthio/OpenMontage",
+      "DeusData/codebase-memory-mcp",
+      "getzep/graphiti",
+      "supermemoryai/supermemory"
+    ]
+  },
+  "stack_decisions": [
+    {
+      "layer": "desktop",
+      "primary": "Company HQ + Agent Teams AI UI patterns",
+      "disposition": "keep",
+      "reason": "Single desktop control surface; do not add a second canonical task board."
+    },
+    {
+      "layer": "orchestration",
+      "primary": "Company HQ",
+      "secondary": "Ruflo selective capabilities",
+      "disposition": "keep-and-expand",
+      "reason": "Ruflo contributes goals, intelligence, workflows, cost and observability without becoming a competing scheduler."
+    },
+    {
+      "layer": "code_intelligence",
+      "primary": "CodeGraph",
+      "secondary": "Serena",
+      "optional": [
+        "Graphify"
+      ],
+      "fallbacks": [
+        "codebase-memory-mcp",
+        "Graft"
+      ],
+      "disposition": "migrate-preference",
+      "reason": "CodeGraph is local, auto-syncing and cross-platform; Serena adds semantic/LSP refactors; Graphify is strongest when docs/media/SQL belong in the graph."
+    },
+    {
+      "layer": "project_memory",
+      "primary": "Ruflo scoped memory",
+      "optional": [
+        "Graphiti",
+        "Supermemory"
+      ],
+      "disposition": "keep",
+      "reason": "Avoid duplicate memory stores by default; add temporal/global memory only for a measured gap."
+    },
+    {
+      "layer": "token_output",
+      "primary": "RTK",
+      "optional": [
+        "Headroom"
+      ],
+      "disposition": "adopt-after-benchmark",
+      "reason": "RTK compactly filters noisy tool output without proxying provider auth; Headroom is more aggressive and stays opt-in until matched quality tests pass."
+    },
+    {
+      "layer": "skills",
+      "primary": "lazy capability registry",
+      "sources": [
+        "ECC",
+        "wshobson/agents",
+        "gstack",
+        "Agency Agents",
+        "Superpowers",
+        "Scientific Agent Skills",
+        "Diagram Design",
+        "OpenMontage"
+      ],
+      "disposition": "lazy-load",
+      "reason": "Index metadata globally; load only selected role/skill packets for each task."
+    },
+    {
+      "layer": "provider_routing",
+      "primary": "native provider runtimes first",
+      "optional": [
+        "OpenCode"
+      ],
+      "disposition": "subscription-first",
+      "reason": "Preserve account and billing boundaries; use OpenCode for explicitly configured long-tail providers, not as a silent auth/proxy rewrite."
+    },
+    {
+      "layer": "vibe-kanban",
+      "primary": "none",
+      "disposition": "do-not-adopt",
+      "reason": "Upstream is sunsetting; borrow UX ideas only."
+    },
+    {
+      "layer": "cc-switch",
+      "primary": "none",
+      "disposition": "reference-only",
+      "reason": "Useful provider configuration UI, but provider switching/proxying must not become Company HQ's execution authority."
+    }
+  ],
+  "facets": {
+    "product": [
+      "product",
+      "requirements",
+      "customer",
+      "mvp",
+      "roadmap",
+      "feature",
+      "user story",
+      "acceptance criteria"
+    ],
+    "architecture": [
+      "architecture",
+      "system design",
+      "distributed",
+      "scalability",
+      "service",
+      "microservice",
+      "event driven",
+      "migration"
+    ],
+    "backend": [
+      "backend",
+      "api",
+      "service",
+      "server",
+      "endpoint",
+      "spring",
+      "fastapi",
+      "django",
+      "node",
+      "java",
+      "python",
+      "go",
+      "rust"
+    ],
+    "frontend": [
+      "frontend",
+      "ui",
+      "ux",
+      "react",
+      "next",
+      "vue",
+      "css",
+      "screen",
+      "dashboard",
+      "website",
+      "web app"
+    ],
+    "data": [
+      "database",
+      "sql",
+      "schema",
+      "postgres",
+      "mysql",
+      "snowflake",
+      "redshift",
+      "etl",
+      "pipeline",
+      "spark",
+      "airflow",
+      "warehouse"
+    ],
+    "security": [
+      "security",
+      "auth",
+      "oauth",
+      "jwt",
+      "permission",
+      "secret",
+      "vulnerability",
+      "cve",
+      "encryption",
+      "payment",
+      "pci"
+    ],
+    "testing": [
+      "test",
+      "qa",
+      "bug",
+      "regression",
+      "verify",
+      "validation",
+      "playwright",
+      "unit test",
+      "integration test"
+    ],
+    "devops": [
+      "deploy",
+      "deployment",
+      "docker",
+      "kubernetes",
+      "terraform",
+      "ci",
+      "cd",
+      "release",
+      "observability",
+      "monitoring"
+    ],
+    "research": [
+      "research",
+      "paper",
+      "literature",
+      "study",
+      "evidence",
+      "benchmark",
+      "experiment",
+      "scientific"
+    ],
+    "design": [
+      "design",
+      "diagram",
+      "architecture diagram",
+      "sequence diagram",
+      "wireframe",
+      "mockup"
+    ],
+    "marketing": [
+      "marketing",
+      "launch",
+      "seo",
+      "campaign",
+      "positioning",
+      "growth",
+      "content"
+    ],
+    "video": [
+      "video",
+      "montage",
+      "trailer",
+      "demo reel",
+      "youtube",
+      "render"
+    ],
+    "refactor": [
+      "refactor",
+      "rename",
+      "move symbol",
+      "dependency",
+      "impact analysis",
+      "call graph",
+      "large codebase"
+    ]
+  },
+  "agents": [
+    {
+      "id": "product-strategist",
+      "covers": [
+        "product"
+      ],
+      "priority": 80,
+      "source": [
+        "msitarzewski/agency-agents",
+        "garrytan/gstack"
+      ],
+      "packet": "Clarify the customer problem, narrow scope, acceptance criteria, evidence and success metric."
+    },
+    {
+      "id": "software-architect",
+      "covers": [
+        "architecture",
+        "security"
+      ],
+      "priority": 95,
+      "source": [
+        "affaan-m/ECC",
+        "wshobson/agents"
+      ],
+      "packet": "Own architecture, interfaces, failure modes, boundaries and high-risk technical decisions; keep the design no larger than the task requires."
+    },
+    {
+      "id": "backend-engineer",
+      "covers": [
+        "backend"
+      ],
+      "priority": 70,
+      "source": [
+        "Company HQ team-builder",
+        "wshobson/agents"
+      ],
+      "packet": "Implement bounded backend changes with tests and project conventions."
+    },
+    {
+      "id": "frontend-engineer",
+      "covers": [
+        "frontend"
+      ],
+      "priority": 70,
+      "source": [
+        "Company HQ team-builder",
+        "nextlevelbuilder/ui-ux-pro-max-skill"
+      ],
+      "packet": "Implement accessible, responsive UI changes and verify the rendered behavior."
+    },
+    {
+      "id": "data-engineer",
+      "covers": [
+        "data"
+      ],
+      "priority": 75,
+      "source": [
+        "wshobson/agents",
+        "Agency Agents"
+      ],
+      "packet": "Own data contracts, schemas, pipelines, migrations, correctness and reconciliation."
+    },
+    {
+      "id": "security-reviewer",
+      "covers": [
+        "security"
+      ],
+      "priority": 100,
+      "source": [
+        "affaan-m/ECC",
+        "ruvnet/ruflo security-audit"
+      ],
+      "packet": "Review threat boundaries, secrets, auth, unsafe inputs and permission changes independently."
+    },
+    {
+      "id": "qa-engineer",
+      "covers": [
+        "testing"
+      ],
+      "priority": 85,
+      "source": [
+        "garrytan/gstack",
+        "Agency Agents reality-checker"
+      ],
+      "packet": "Design acceptance checks that reproduce failures and verify user-visible behavior."
+    },
+    {
+      "id": "devops-engineer",
+      "covers": [
+        "devops"
+      ],
+      "priority": 80,
+      "source": [
+        "wshobson/agents",
+        "affaan-m/ECC"
+      ],
+      "packet": "Own build, deployment, CI and operational changes with rollback and verification."
+    },
+    {
+      "id": "research-specialist",
+      "covers": [
+        "research"
+      ],
+      "priority": 80,
+      "source": [
+        "lamm-mit/scientific-agent-skills",
+        "ruvnet/ruflo goals"
+      ],
+      "packet": "Gather evidence proportionately, grade sources, surface uncertainty and produce a concise synthesis."
+    },
+    {
+      "id": "design-specialist",
+      "covers": [
+        "design"
+      ],
+      "priority": 65,
+      "source": [
+        "cathrynlavery/diagram-design",
+        "garrytan/gstack"
+      ],
+      "packet": "Produce useful diagrams or design artifacts tied to the implementation, not decorative output."
+    },
+    {
+      "id": "marketing-specialist",
+      "covers": [
+        "marketing"
+      ],
+      "priority": 60,
+      "source": [
+        "msitarzewski/agency-agents",
+        "garrytan/gstack"
+      ],
+      "packet": "Create audience-specific launch/positioning material with proof, channel fit and measurable goals."
+    },
+    {
+      "id": "video-specialist",
+      "covers": [
+        "video"
+      ],
+      "priority": 60,
+      "source": [
+        "calesthio/OpenMontage"
+      ],
+      "packet": "Plan and produce the minimum video workflow needed for the requested deliverable."
+    }
+  ],
+  "skills": [
+    {
+      "id": "bounded-plan",
+      "facets": [
+        "product",
+        "architecture",
+        "backend",
+        "frontend",
+        "data",
+        "devops"
+      ],
+      "source": "obra/superpowers",
+      "load": "on-demand",
+      "packet": "Create a bounded implementation plan with explicit acceptance checks before edits."
+    },
+    {
+      "id": "context-discipline",
+      "facets": [
+        "architecture",
+        "backend",
+        "frontend",
+        "data",
+        "refactor"
+      ],
+      "source": "affaan-m/ECC",
+      "load": "on-demand",
+      "packet": "Retrieve only task-relevant context and preserve verification evidence."
+    },
+    {
+      "id": "product-review",
+      "facets": [
+        "product"
+      ],
+      "source": "garrytan/gstack",
+      "load": "on-demand",
+      "packet": "Challenge assumptions and scope before implementation."
+    },
+    {
+      "id": "browser-qa",
+      "facets": [
+        "frontend",
+        "testing"
+      ],
+      "source": "garrytan/gstack",
+      "load": "on-demand",
+      "packet": "Verify UI behavior in a real browser when the deliverable has a user interface."
+    },
+    {
+      "id": "engineering-domain",
+      "facets": [
+        "backend",
+        "frontend",
+        "data",
+        "security",
+        "devops"
+      ],
+      "source": "wshobson/agents",
+      "load": "on-demand",
+      "packet": "Load only the matching engineering-domain skill rather than the full marketplace."
+    },
+    {
+      "id": "business-specialist",
+      "facets": [
+        "product",
+        "marketing"
+      ],
+      "source": "msitarzewski/agency-agents",
+      "load": "on-demand",
+      "packet": "Load only the specialist role relevant to this deliverable."
+    },
+    {
+      "id": "scientific-research",
+      "facets": [
+        "research"
+      ],
+      "source": "lamm-mit/scientific-agent-skills",
+      "load": "on-demand",
+      "packet": "Load only the scientific skill needed for the method/domain."
+    },
+    {
+      "id": "diagram-workflow",
+      "facets": [
+        "design",
+        "architecture"
+      ],
+      "source": "cathrynlavery/diagram-design",
+      "load": "on-demand",
+      "packet": "Choose the smallest useful diagram type and generate it from verified system facts."
+    },
+    {
+      "id": "video-workflow",
+      "facets": [
+        "video"
+      ],
+      "source": "calesthio/OpenMontage",
+      "load": "on-demand",
+      "packet": "Use the video production workflow only for explicit media deliverables."
+    }
+  ],
+  "tools": [
+    {
+      "id": "codegraph",
+      "facets": [
+        "architecture",
+        "backend",
+        "frontend",
+        "data",
+        "refactor"
+      ],
+      "preference": 100,
+      "status": "preferred",
+      "source": "colbymchenry/codegraph",
+      "packet": "Query the local auto-synced code graph before broad repository rereads."
+    },
+    {
+      "id": "serena",
+      "facets": [
+        "backend",
+        "frontend",
+        "refactor"
+      ],
+      "preference": 95,
+      "status": "preferred",
+      "source": "oraios/serena",
+      "packet": "Use symbol/LSP-aware navigation and refactoring for semantic edits."
+    },
+    {
+      "id": "graphify",
+      "facets": [
+        "research",
+        "data",
+        "architecture"
+      ],
+      "preference": 75,
+      "status": "optional",
+      "source": "Graphify-Labs/graphify",
+      "packet": "Use when code must be connected with docs, PDFs, schemas or media."
+    },
+    {
+      "id": "codebase-memory",
+      "facets": [
+        "architecture",
+        "backend",
+        "frontend",
+        "data",
+        "refactor"
+      ],
+      "preference": 60,
+      "status": "fallback",
+      "source": "DeusData/codebase-memory-mcp",
+      "packet": "Fallback structural graph when preferred code intelligence is unavailable."
+    },
+    {
+      "id": "graft",
+      "facets": [
+        "architecture",
+        "backend",
+        "frontend",
+        "refactor"
+      ],
+      "preference": 50,
+      "status": "fallback",
+      "source": "@nanonets/graft",
+      "packet": "Deterministic structural fallback; use only when healthy."
+    },
+    {
+      "id": "ruflo",
+      "facets": [
+        "product",
+        "architecture",
+        "backend",
+        "frontend",
+        "data",
+        "security",
+        "testing",
+        "devops",
+        "research",
+        "marketing"
+      ],
+      "preference": 90,
+      "status": "preferred",
+      "source": "ruvnet/ruflo",
+      "packet": "Use scoped memory, goals, workflows, cost, observability and learned routing selectively; Company HQ remains scheduler."
+    },
+    {
+      "id": "rtk",
+      "facets": [
+        "backend",
+        "frontend",
+        "data",
+        "testing",
+        "devops",
+        "refactor"
+      ],
+      "preference": 90,
+      "status": "preferred-after-benchmark",
+      "source": "rtk-ai/rtk",
+      "packet": "Compact noisy shell/test/log output while preserving failures."
+    },
+    {
+      "id": "headroom",
+      "facets": [
+        "backend",
+        "frontend",
+        "data",
+        "testing",
+        "devops",
+        "research"
+      ],
+      "preference": 55,
+      "status": "experimental",
+      "source": "headroomlabs-ai/headroom",
+      "packet": "Use only after matched quality/token benchmark; never silently proxy provider auth."
+    },
+    {
+      "id": "playwright",
+      "facets": [
+        "frontend",
+        "testing"
+      ],
+      "preference": 85,
+      "status": "preferred-for-ui",
+      "source": "microsoft/playwright-mcp",
+      "packet": "Use for browser-level acceptance when native/browser tooling is otherwise insufficient."
+    }
+  ]
+}
