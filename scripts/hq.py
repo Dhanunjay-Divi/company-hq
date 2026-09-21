@@ -37,6 +37,7 @@ def setup() -> None:
     run([str(VENV_PYTHON), "-m", "pip", "install", "--disable-pip-version-check", "-r", str(ROOT / "clawteam" / "requirements.txt")])
     run(["npm", "ci", "--ignore-scripts"], cwd=ROOT / "company-hq")
     run(["npm", "run", "build"], cwd=ROOT / "company-hq")
+    run([sys.executable, str(ROOT / "company-hq" / "build-source.py")])
     print("Setup complete. Runtime state and provider accounts remain outside this checkout.")
 
 
@@ -106,6 +107,18 @@ def seed_demo(url: str) -> None:
         pass
 
 
+def checks() -> int:
+    commands = [
+        [sys.executable, "-m", "unittest", "-v", "test_check_updates", "test_discover"],
+        [str(VENV_PYTHON), "-m", "unittest", "discover", "-s", "clawteam/integration", "-p", "test_*.py", "-v"],
+        [sys.executable, "scripts/check_source_bundle.py"],
+        [sys.executable, "scripts/check_portability.py"],
+    ]
+    for command in commands:
+        run(command)
+    return health()
+
+
 def health() -> int:
     snapshot = health_snapshot()
     print(json.dumps(snapshot, indent=2))
@@ -125,6 +138,7 @@ def main() -> int:
     bootstrap = sub.add_parser("bootstrap", help="setup, build, and start in one command")
     bootstrap.add_argument("--demo", action="store_true", help="start model-free with synthetic fixture data")
     sub.add_parser("health", help="print capability status without starting providers")
+    sub.add_parser("check", help="run the complete model-free validation suite")
     args = parser.parse_args()
 
     if args.command == "setup":
@@ -132,6 +146,8 @@ def main() -> int:
         return 0
     if args.command == "health":
         return health()
+    if args.command == "check":
+        return checks()
     if args.command in {"status", "stop"}:
         result = _team_ui(args.command, demo=args.demo, check=False)
         if result.stdout:
