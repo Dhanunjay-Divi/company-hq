@@ -40,11 +40,12 @@ The resulting target architecture is in [BEST-STACK.md](BEST-STACK.md).
 - Workspace creation and local project binding.
 - Native Codex app-server start/resume/steer/stop/approval bridge.
 - Current task/inbox compatibility through ClawTeam.
-- Guarded project-scoped Ruflo memory path.
-- Guarded Codebase Memory capability path.
+- Guarded project-scoped Ruflo memory path, installed by setup with lifecycle scripts disabled.
+- Guarded Codebase Memory capability path, installed by setup from checksum-verified pinned release binary into ignored local state.
 - Demo mode that blocks provider/model execution.
 - Health/status view that disables unavailable runtime actions.
 - Source/build/portability checks via the documented launcher.
+- Per-workspace reported-token action gate in the native Codex bridge and Run overview.
 
 ## Architecture decisions now locked
 
@@ -69,9 +70,9 @@ The resulting target architecture is in [BEST-STACK.md](BEST-STACK.md).
 
 1. **Desktop packaging.** Current source serves a loopback web UI; it is not yet
    packaged as the final Tauri-style desktop application.
-2. **Read-only plan -> explicit execute gate.** The bridge supports approvals,
-   but the end-user onboarding flow does not yet enforce the full staged plan
-   experience defined in BEST-STACK.
+2. **Founder onboarding polish.** Read-only planning and explicit execution
+   approval are wired, but the founder-friendly idea intake and visual plan
+   explanation still need the next UX pass.
 3. **Beads migration.** Current UI/API task routes still use ClawTeam. Beads has
    passed its external-state bakeoff but is not yet wired into Company HQ.
 4. **Provider-neutral runtime adapters.** Live execution is still Codex-only.
@@ -82,8 +83,11 @@ The resulting target architecture is in [BEST-STACK.md](BEST-STACK.md).
    synchronized end to end.
 6. **Durable execution replay.** Native thread binding exists, but bounded event
    history/replay across Company HQ restart is incomplete.
-7. **Hard usage budgets.** Token events exist, but per-project/account budgets,
-   child aggregation and enforced escalation limits are not complete.
+7. **Budget scope beyond the local gate.** Company HQ now enforces a
+   per-workspace reported-token action gate for start/send/execute/approval
+   boundaries. Account-wide quota, billed spend, guaranteed mid-turn hard stops,
+   child aggregation and provider-neutral escalation budgets remain separate
+   work.
 8. **RTK integration.** The bakeoff passed, but production command interception
    and raw-evidence recall are not yet wired into the runtime.
 9. **Graphify stage-two integration.** Measured and selected, not yet wrapped by
@@ -107,7 +111,7 @@ Daily-ready requires:
 - plan/execute separation;
 - task DAG and worker ownership visible;
 - crash/restart recovery;
-- budget/escalation enforcement;
+- budget/escalation enforcement beyond the current local reported-token action gate;
 - compact context/evidence with raw recall;
 - deterministic checks;
 - conditional cross-model review;
