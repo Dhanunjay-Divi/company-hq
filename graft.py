@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import argparse
 from contextlib import contextmanager
-import fcntl
 import hashlib
 import json
 import os
@@ -13,6 +12,11 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+
+if os.name == "nt":
+    import msvcrt
+else:
+    import fcntl
 
 
 REPO_ROOT = Path(__file__).resolve().parent
@@ -40,7 +44,7 @@ def validate_state_root() -> Path:
     state = STATE.resolve()
     home = Path.home().resolve()
     source = REPO_ROOT.resolve()
-    if state in {Path("/").resolve(), home, source} or state.is_relative_to(source):
+    if state in {Path(state.anchor).resolve(), home, source} or state.is_relative_to(source):
         raise ValueError(f"unsafe Graft state root: {state}")
     probe = state
     while not probe.exists() and probe.parent != probe:
@@ -115,12 +119,38 @@ def project_write_lock(state_dir: Path):
     state_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
     lock_path = state_dir / ".structural.lock"
     descriptor = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
+    acquired = False
     try:
-        fcntl.flock(descriptor, fcntl.LOCK_EX)
+        if os.name == "nt":
+            if os.fstat(descriptor).st_size == 0:
+                os.write(descriptor, b"\0")
+                os.fsync(descriptor)
+            while True:
+                os.lseek(descriptor, 0, os.SEEK_SET)
+                try:
+                    msvcrt.locking(descriptor, msvcrt.LK_NBLCK, 1)
+                    acquired = True
+                    break
+                except OSError:
+                    # LK_LOCK gives up after a bounded retry window. Poll the
+                    # non-blocking primitive instead so long graph builds are
+                    # serialized just like POSIX flock without a false timeout.
+                    import time
+                    time.sleep(0.1)
+        else:
+            fcntl.flock(descriptor, fcntl.LOCK_EX)
+            acquired = True
         yield
     finally:
-        fcntl.flock(descriptor, fcntl.LOCK_UN)
-        os.close(descriptor)
+        try:
+            if acquired:
+                if os.name == "nt":
+                    os.lseek(descriptor, 0, os.SEEK_SET)
+                    msvcrt.locking(descriptor, msvcrt.LK_UNLCK, 1)
+                else:
+                    fcntl.flock(descriptor, fcntl.LOCK_UN)
+        finally:
+            os.close(descriptor)
 
 
 def run_graft(arguments: list[str]) -> int:

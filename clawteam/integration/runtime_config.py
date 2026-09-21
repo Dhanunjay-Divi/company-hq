@@ -33,13 +33,19 @@ def _default_state_root() -> Path:
     return base / "company-hq"
 
 
+def _is_filesystem_root(path: Path) -> bool:
+    anchor = path.anchor
+    return bool(anchor) and path == Path(anchor).resolve()
+
+
 def state_root() -> Path:
     raw = os.environ.get("COMPANY_HQ_STATE_ROOT")
     path = _expand(raw) if raw else _default_state_root().resolve()
     source = REPO_ROOT.resolve()
     home = Path.home().resolve()
     if (
-        path in {Path("/").resolve(), home, source}
+        path in {home, source}
+        or _is_filesystem_root(path)
         or path.is_relative_to(source)
         or _inside_git_checkout(path)
     ):
@@ -109,7 +115,7 @@ def validate_component_state_root(path: Path, component: str) -> Path:
     resolved = path.expanduser().resolve()
     source = REPO_ROOT.resolve()
     home = Path.home().resolve()
-    if resolved in {Path("/").resolve(), home, source}:
+    if resolved in {home, source} or _is_filesystem_root(resolved):
         raise ConfigurationError(f"{component} state root is unsafe: {resolved}")
     if resolved.is_relative_to(source):
         raise ConfigurationError(f"{component} state root must be outside the Company HQ checkout")
@@ -255,6 +261,14 @@ def _graft_availability() -> dict[str, Any]:
     return {"available": True, "path": str(graft_bin), "reason": None}
 
 
+def _guard_component(component: str, check) -> dict[str, Any]:
+    try:
+        component_state_root(component)
+    except ConfigurationError as exc:
+        return {"available": False, "path": "", "reason": str(exc)}
+    return check()
+
+
 def _compound_availability(
     launcher: Path,
     required: list[tuple[Path, bool]],
@@ -297,17 +311,23 @@ def health_snapshot(data_dir: Path | None = None) -> dict[str, Any]:
             "frontend": _availability(frontend_dist() / "index.html"),
             "routing": _availability(routing),
             "codex": _availability(codex, executable=True),
-            "rufloMemory": _compound_availability(
-                ruflo,
-                [
-                    (ruflo_handler, False),
-                    (node, True),
-                    (sandbox, True),
-                ],
+            "rufloMemory": _guard_component(
+                "ruflo",
+                lambda: _compound_availability(
+                    ruflo,
+                    [
+                        (ruflo_handler, False),
+                        (node, True),
+                        (sandbox, True),
+                    ],
+                ),
             ),
-            "graft": _graft_availability(),
-            "codebaseMemory": _compound_availability(
-                cbm, [(cbm_binary, True), (cbm_guard, False)]
+            "graft": _guard_component("graft", _graft_availability),
+            "codebaseMemory": _guard_component(
+                "codebase-memory",
+                lambda: _compound_availability(
+                    cbm, [(cbm_binary, True), (cbm_guard, False)]
+                ),
             ),
         },
     }
