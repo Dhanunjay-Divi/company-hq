@@ -3,12 +3,16 @@ set -eu
 umask 077
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-HOME_DIR=${HOME:?HOME is required to choose external state}
-STATE_BASE=${XDG_STATE_HOME:-"$HOME_DIR/.local/state"}
-STATE_ROOT=${COMPANY_HQ_RUFLO_STATE_ROOT:-"$STATE_BASE/company-hq/ruflo"}
+REPO_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
+PYTHON=${COMPANY_HQ_PYTHON:-$(command -v python3 || true)}
 NODE=${COMPANY_HQ_NODE:-$(command -v node || true)}
 SANDBOX_EXEC=${COMPANY_HQ_SANDBOX_EXEC:-/usr/bin/sandbox-exec}
 
+if [ -z "$PYTHON" ] || [ ! -x "$PYTHON" ]; then
+  echo "ruflo-mcp: python3 is unavailable; set COMPANY_HQ_PYTHON" >&2
+  exit 1
+fi
+STATE_ROOT=$("$PYTHON" "$REPO_ROOT/scripts/resolve_state_path.py" ruflo) || exit $?
 if [ -z "$NODE" ] || [ ! -x "$NODE" ]; then
   echo "ruflo-mcp: Node.js is unavailable; set COMPANY_HQ_NODE" >&2
   exit 1
