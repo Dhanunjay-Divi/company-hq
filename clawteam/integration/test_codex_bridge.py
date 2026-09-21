@@ -118,7 +118,7 @@ class CodexBridgeTest(unittest.TestCase):
         self.assertEqual(thread_params["approvalsReviewer"], "user")
         self.assertEqual(thread_params["sandbox"], "workspace-write")
         self.assertNotIn("config", thread_params)
-        self.assertIn("Use registered Ruflo", thread_params["developerInstructions"])
+        self.assertIn("Use Company HQ-selected tools", thread_params["developerInstructions"])
 
         turn_params = connection.sent[3]["params"]
         self.assertEqual(turn_params["sandboxPolicy"], {
