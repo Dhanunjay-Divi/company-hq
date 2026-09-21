@@ -209,15 +209,22 @@ def cbm(project: Path, state: Path) -> tuple[list[dict[str, Any]], bool, str | N
     binary = executable("CBM_BIN", "codebase-memory-mcp")
     if not binary:
         return [], False, "codebase-memory-mcp executable not installed"
-    cache = state / "cache"
-    runtime = state / "runtime"
-    config = state / "config"
-    for directory in (cache, runtime, config):
-        directory.mkdir(parents=True, exist_ok=True)
+    # CBM uses Unix-domain coordination endpoints. Keep their paths short on
+    # Linux/macOS and owner-private; a deep GitHub runner path can exceed the
+    # socket limit before the graph is even exercised.
+    short_root = Path(tempfile.mkdtemp(prefix="hq-cbm-", dir="/tmp"))
+    cache = short_root / "c"
+    runtime = short_root / "r"
+    config = short_root / "x"
+    scratch = short_root / "t"
+    for directory in (short_root, cache, runtime, config, scratch):
+        directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+        directory.chmod(0o700)
     env = child_env({
         "CBM_CACHE_DIR": str(cache),
         "CBM_RUNTIME_DIR": str(runtime),
         "XDG_CONFIG_HOME": str(config),
+        "TMPDIR": str(scratch),
         "CBM_LOG_LEVEL": "error",
     })
     payload = json.dumps({"repo_path": str(project), "mode": "full", "persistence": False})
