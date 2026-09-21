@@ -431,7 +431,7 @@ class CodexBridge:
                 "model": model,
                 "approvalPolicy": "on-request",
                 "approvalsReviewer": "user",
-                "sandbox": "workspace-write",
+                "sandbox": "read-only" if mode == "plan" else "workspace-write",
                 "developerInstructions": _supervisor_instructions(team, project_path)
                 + (
                     "\nThis session begins in read-only planning mode. Clarify only material unknowns, "
