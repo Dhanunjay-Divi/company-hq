@@ -71,28 +71,48 @@ authority for tasks, provider selection, worker lifecycle and human approvals.
 
 ### Benchmark code intelligence instead of guessing
 
-The deterministic benchmark in `benchmarks/code-intelligence/` compares:
+The deterministic model-free benchmark in `benchmarks/code-intelligence/`
+currently compares Graft 0.18.0, Codebase Memory MCP 0.11.0, Graphify 0.9.65,
+and CodeGraph 1.6.0 on the same synthetic authentication call chain.
 
-- Graft 0.18.0
-- Codebase Memory MCP 0.10.8
-- Graphify 0.9.65
-- CodeGraph 1.6.0
+Measured current result:
 
-CodeGraph is technically strong but currently places its index under the project
-root by design. That makes it ineligible as the default Company HQ index unless
-we isolate it in a disposable worktree/copy or upstream gains external index
-storage.
+| Candidate | Full symbols/relation | Query token proxy | Repo clean | Index / query |
+| --- | --- | ---: | --- | --- |
+| Codebase Memory MCP 0.11.0 | yes | 378 | yes | 1.755s / 0.025s |
+| Graphify 0.9.65 | yes | 570 | yes | 0.431s / 0.471s |
+| CodeGraph 1.6.0 | yes | 914 | **no** | 0.690s / 0.655s |
+| Graft 0.18.0 | no (fresh safe install failed native parser) | 0 | yes | 0.260s / — |
+
+So **Codebase Memory MCP 0.11.0 is the current default for repeated structural
+code queries**. Graphify is complementary: it indexes much faster and extends
+naturally to docs/media graphs while keeping the project tree clean. CodeGraph
+remains a strong optional specialist but is not the default while it places its
+index inside the product tree. Graft stays available only where a verified local
+native runtime already exists; it no longer wins the portable default slot.
 
 Serena is evaluated separately for semantic symbol lookup, safe editing and
-refactoring. It can complement the graph winner rather than replace it.
+refactoring. Its current repository is GPL-3.0-or-later, so Company HQ should
+treat it as an external optional service/tool unless a later license review
+justifies a different reuse boundary.
 
 ### Token efficiency is layered
 
-RTK is the first deterministic command-output compression candidate because it
-filters noisy shell/test output without inserting another LLM. Headroom is a
-stronger general compression candidate, but Company HQ will test its
-library/MCP path before considering any proxy/wrapper route that could interfere
-with native provider authentication.
+The model-free bake-off in `benchmarks/token-efficiency/` now gives us a
+selective policy rather than one global compressor.
+
+| Path | Logs | Tests | Repetitive JSON | Decision |
+| --- | ---: | ---: | ---: | --- |
+| RTK 0.49.0 | 99.35% saved, evidence kept | 96.35% saved, evidence kept | 99.7% saved but **evidence lost** | default for supported logs/tests only |
+| Headroom 0.37.0 local structural mode | 22.8% saved, evidence kept | 0% saved | 81.96% saved, evidence kept | optional for large structured payloads |
+| Raw | 0% | 0% | 0% | fallback for unknown/high-risk output |
+
+These percentages are reductions in the benchmark payload, not provider billing
+claims. Company HQ should therefore use RTK for supported shell/test/log output,
+fall back to raw for unknown or evidence-sensitive output, and use Headroom only
+through its local library/MCP surface when a structured payload actually
+benefits. **Headroom proxy/wrap is not the default**, because native provider
+authentication and subscription routing must remain unchanged.
 
 The router also reduces usage by retrieving code/memory before raw exploration,
 passing compact task packets, loading skills on demand, using the smallest
@@ -140,7 +160,7 @@ not be required just to launch the finished application.
 ## Rollout order
 
 1. Finish portable/readiness fixes and keep model-free CI green.
-2. Run and record code-intelligence bake-off.
+2. Keep code-intelligence and token-efficiency bake-offs in public model-free CI.
 3. Add first-run plan/approve/execute UX.
 4. Introduce a provider adapter interface and native workers beyond Codex.
 5. Add durable worker events/messages and restart recovery.
