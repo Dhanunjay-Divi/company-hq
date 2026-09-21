@@ -1,7 +1,7 @@
 {
-  "schema": 1,
-  "reviewed_on": "2026-09-13",
-  "supervisor_policy": "best_reviewed_available",
+  "schema": 2,
+  "reviewed_on": "2026-09-20",
+  "supervisor_policy": "risk_tiered_best_reviewed_available",
   "preferred_supervisors": [
     {
       "provider": "codex",
@@ -28,12 +28,26 @@
   "unknown_models": "review_current_official_capabilities_before_ranking",
   "automatic_updates": "review_stage_test_activate_relevant_tools_with_rollback",
   "scope": "all_projects",
-  "provider_note": "Codex execution is enabled. Other clients are discovered but need a verified integration and their own authorized login before use. Never put a third-party model ID into Codex's OpenAI-only model selector.",
+  "provider_note": "Company HQ classifies and reviews each build before execution. Codex is the currently verified executor; cross-family Claude/OpenCode reviewers are used only when an authorized local runtime is available. No silent billing-route or authentication changes.",
   "organization": {
     "structure": "overall_head -> department_supervisors -> specialists",
     "department_supervisor_default": "gpt-5.6-sol",
     "department_supervisor_effort": "high",
     "staffing": "goal_and_dependency_driven",
     "concurrency_note": "Current worker limit schedules departments and specialists; it does not cap total project responsibilities."
+  },
+  "auto_tiers": {
+    "low": {
+      "model": "gpt-5.6-terra",
+      "effort": "medium"
+    },
+    "medium": {
+      "model": "gpt-5.6-sol",
+      "effort": "high"
+    },
+    "high": {
+      "model": "gpt-6-astra",
+      "effort": "high"
+    }
   }
 }
