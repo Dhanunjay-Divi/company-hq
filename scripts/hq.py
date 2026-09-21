@@ -21,6 +21,9 @@ INTEGRATION = ROOT / "clawteam" / "integration"
 VENV = ROOT / "clawteam" / "venv"
 VENV_PYTHON = VENV / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
 TEAM_UI = INTEGRATION / "team-ui"
+if str(INTEGRATION) not in sys.path:
+    sys.path.insert(0, str(INTEGRATION))
+from runtime_config import demo_project_root, health_snapshot, python_executable  # noqa: E402
 
 
 def run(command: list[str], *, cwd: Path = ROOT, env: dict[str, str] | None = None) -> None:
@@ -46,29 +49,25 @@ def _launch_env(*, demo: bool) -> dict[str, str]:
     return env
 
 
-def start(*, demo: bool) -> str:
-    env = _launch_env(demo=demo)
-    result = subprocess.run(
-        [str(TEAM_UI), "start"],
+def _team_ui(command: str, *, demo: bool, check: bool = True) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [str(python_executable()), str(TEAM_UI), command],
         cwd=INTEGRATION,
-        env=env,
+        env=_launch_env(demo=demo),
         capture_output=True,
         text=True,
-        check=True,
+        check=check,
     )
+
+
+def start(*, demo: bool) -> str:
+    result = _team_ui("start", demo=demo)
     print(result.stdout, end="")
     marker = "http://127.0.0.1:"
     for token in result.stdout.split():
         if token.startswith(marker):
             return token.rstrip()
-    status = subprocess.run(
-        [str(TEAM_UI), "status"],
-        cwd=INTEGRATION,
-        env=env,
-        capture_output=True,
-        text=True,
-        check=True,
-    )
+    status = _team_ui("status", demo=demo)
     for token in status.stdout.split():
         if token.startswith(marker):
             return token.rstrip()
@@ -77,10 +76,7 @@ def start(*, demo: bool) -> str:
 
 def seed_demo(url: str) -> None:
     """Create one clearly synthetic workspace without starting any model."""
-    state_base = Path(os.environ.get("COMPANY_HQ_STATE_ROOT") or os.environ.get("XDG_STATE_HOME") or Path.home() / ".local" / "state")
-    if state_base.name != "company-hq" and "COMPANY_HQ_STATE_ROOT" not in os.environ:
-        state_base = state_base / "company-hq"
-    project = state_base / "demo" / "project"
+    project = demo_project_root()
     project.mkdir(parents=True, exist_ok=True)
     sample = project / "README.md"
     if not sample.exists():
@@ -111,8 +107,6 @@ def seed_demo(url: str) -> None:
 
 
 def health() -> int:
-    sys.path.insert(0, str(INTEGRATION))
-    from runtime_config import health_snapshot
     snapshot = health_snapshot()
     print(json.dumps(snapshot, indent=2))
     required = ("frontend", "routing")
@@ -125,6 +119,9 @@ def main() -> int:
     sub.add_parser("setup", help="install pinned Python/Node dependencies and build the UI")
     sub.add_parser("start", help="start the normal local workspace")
     sub.add_parser("demo", help="start a model-free synthetic workspace")
+    for lifecycle in ("status", "stop"):
+        command = sub.add_parser(lifecycle, help=f"{lifecycle} the local workspace")
+        command.add_argument("--demo", action="store_true", help="target the model-free demo board")
     bootstrap = sub.add_parser("bootstrap", help="setup, build, and start in one command")
     bootstrap.add_argument("--demo", action="store_true", help="start model-free with synthetic fixture data")
     sub.add_parser("health", help="print capability status without starting providers")
@@ -135,16 +132,25 @@ def main() -> int:
         return 0
     if args.command == "health":
         return health()
+    if args.command in {"status", "stop"}:
+        result = _team_ui(args.command, demo=args.demo, check=False)
+        if result.stdout:
+            print(result.stdout, end="")
+        if result.stderr:
+            print(result.stderr, end="", file=sys.stderr)
+        return result.returncode
     if args.command == "bootstrap":
         setup()
         url = start(demo=args.demo)
         if args.demo:
             seed_demo(url)
+            print("Stop demo with: python3 scripts/hq.py stop --demo")
         print(url)
         return 0
     if args.command == "demo":
         url = start(demo=True)
         seed_demo(url)
+        print("Stop demo with: python3 scripts/hq.py stop --demo")
         print(url)
         return 0
     url = start(demo=False)
