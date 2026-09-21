@@ -36,7 +36,7 @@
       {
         "provider_family": "anthropic",
         "model": "claude-fable-5",
-        "role": "high-risk-cross-family-reviewer-and-apex-challenger",
+        "role": "apex reviewer; cross-family for high risk",
         "status": "official-active-alias-reviewed-2026-09-20"
       },
       {
