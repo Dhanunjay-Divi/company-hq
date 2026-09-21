@@ -177,7 +177,8 @@ def handle_post(handler,state,path,body):
         if action=='route':
             prompt=body.get('prompt','')
             if not isinstance(prompt,str) or not prompt.strip() or len(prompt)>24000: raise ValueError('Enter a message of at most 24000 characters')
-            handler._serve_json(route_task(prompt.strip(),Path(project)));return True
+            capability_status=health_snapshot(state).get('capabilities',{})
+            handler._serve_json(route_task(prompt.strip(),Path(project),capability_status));return True
         client=bridge(state)
         if demo_mode() and action in ('start','send','approve'):
             raise ValueError('Model execution is disabled in model-free demo mode')
@@ -186,7 +187,8 @@ def handle_post(handler,state,path,body):
             if not isinstance(prompt,str) or not prompt.strip() or len(prompt)>24000: raise ValueError('Enter a message of at most 24000 characters')
             if action=='start':
                 routing=json.loads(routing_path().read_text());requested_model=body.get('model','auto')
-                plan=route_task(prompt.strip(),Path(project))
+                capability_status=health_snapshot(state).get('capabilities',{})
+                plan=route_task(prompt.strip(),Path(project),capability_status)
                 review=review_plan(plan,executor_family='openai',allow_model_calls=True)
                 if not review_is_sufficient(plan,review):
                     reason=str(review.get('reason') or 'Independent preflight review blocked execution')[:1200]
