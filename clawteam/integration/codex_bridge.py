@@ -279,6 +279,8 @@ class CodexBridge:
             raise BridgeError("runtime binding is invalid")
         if value.get("threadId") is not None and not isinstance(value["threadId"], str):
             raise BridgeError("runtime binding is invalid")
+        if value.get("mode") not in {None, "plan", "execute"}:
+            raise BridgeError("runtime binding is invalid")
         return value
 
     def _write_binding(
@@ -496,6 +498,8 @@ class CodexBridge:
                     raise BridgeError(
                         "wait for the planning turn to finish before starting execution"
                     )
+                if session.mode != "plan":
+                    raise BridgeError("execution is already enabled for this session")
                 session.mode = "execute"
                 thread_id = session.thread_id
             with self._binding_lock:
