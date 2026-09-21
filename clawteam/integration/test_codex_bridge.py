@@ -107,6 +107,7 @@ class CodexBridgeTest(unittest.TestCase):
         self.assertEqual(status["state"], "running")
         self.assertEqual(status["threadId"], "thr-1")
         self.assertEqual(status["turnId"], "turn-1-1")
+        self.assertEqual(status["mode"], "plan")
 
         methods = [item.get("method") for item in connection.sent]
         self.assertEqual(
@@ -119,18 +120,46 @@ class CodexBridgeTest(unittest.TestCase):
         self.assertEqual(thread_params["sandbox"], "workspace-write")
         self.assertNotIn("config", thread_params)
         self.assertIn("Use registered Ruflo", thread_params["developerInstructions"])
+        self.assertIn("read-only planning mode", thread_params["developerInstructions"])
 
         turn_params = connection.sent[3]["params"]
-        self.assertEqual(turn_params["sandboxPolicy"], {
-            "type": "workspaceWrite",
-            "writableRoots": [str(self.project.resolve())],
-            "networkAccess": False,
-        })
+        self.assertEqual(turn_params["sandboxPolicy"], {"type": "readOnly"})
         binding_files = list((self.root / "runtime" / "bindings").glob("*.json"))
         self.assertEqual(len(binding_files), 1)
         binding = json.loads(binding_files[0].read_text())
         self.assertEqual(binding["projectRoot"], str(self.project.resolve()))
         self.assertEqual(binding["threadId"], "thr-1")
+        self.assertEqual(binding["mode"], "plan")
+
+    def test_plan_must_finish_before_execution_and_then_enables_workspace_write(self):
+        self.start()
+        connection = self.factory.connections[0]
+        with self.assertRaisesRegex(BridgeError, "planning turn"):
+            self.bridge.begin_execution("team-one")
+
+        connection.emit({
+            "method": "turn/completed",
+            "params": {
+                "threadId": "thr-1",
+                "turn": {"id": "turn-1-1", "status": "completed"},
+            },
+        })
+        response = self.bridge.begin_execution("team-one")
+        self.assertTrue(response["accepted"])
+        self.assertEqual(response["mode"], "execute")
+        self.assertEqual(self.bridge.status("team-one")["mode"], "execute")
+        turn_start = next(
+            item for item in reversed(connection.sent)
+            if item.get("method") == "turn/start"
+        )
+        self.assertEqual(turn_start["params"]["sandboxPolicy"], {
+            "type": "workspaceWrite",
+            "writableRoots": [str(self.project.resolve())],
+            "networkAccess": False,
+        })
+        binding_files = list((self.root / "runtime" / "bindings").glob("*.json"))
+        binding = json.loads(binding_files[0].read_text())
+        self.assertEqual(binding["mode"], "execute")
 
     def test_binding_resumes_thread_and_rejects_project_switch(self):
         self.start()
