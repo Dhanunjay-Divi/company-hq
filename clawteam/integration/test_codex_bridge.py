@@ -101,6 +101,19 @@ class CodexBridgeTest(unittest.TestCase):
             "gpt-5.6-luna",
         )
 
+    def finish_plan_and_begin_execution(self, team="team-one"):
+        connection = self.factory.connections[0]
+        turn_id = self.bridge.status(team)["turnId"]
+        connection.emit({
+            "method": "turn/completed",
+            "params": {
+                "threadId": self.bridge.status(team)["threadId"],
+                "turn": {"id": turn_id, "status": "completed"},
+            },
+        })
+        self.bridge.begin_execution(team)
+        return connection
+
     def test_start_uses_safe_policy_and_persists_exact_binding(self):
         status = self.start()
         connection = self.factory.connections[0]
@@ -161,8 +174,59 @@ class CodexBridgeTest(unittest.TestCase):
         binding = json.loads(binding_files[0].read_text())
         self.assertEqual(binding["mode"], "execute")
 
+    def test_interrupted_plan_does_not_unlock_execution(self):
+        self.start()
+        connection = self.factory.connections[0]
+        connection.emit({
+            "method": "turn/completed",
+            "params": {
+                "threadId": "thr-1",
+                "turn": {"id": "turn-1-1", "status": "interrupted"},
+            },
+        })
+        self.assertEqual(self.bridge.status("team-one")["state"], "idle")
+        with self.assertRaisesRegex(BridgeError, "complete successfully"):
+            self.bridge.begin_execution("team-one")
+        self.assertEqual(self.bridge.status("team-one")["mode"], "plan")
+
+    def test_execution_transition_is_atomic_when_binding_write_fails(self):
+        self.start()
+        connection = self.factory.connections[0]
+        connection.emit({
+            "method": "turn/completed",
+            "params": {
+                "threadId": "thr-1",
+                "turn": {"id": "turn-1-1", "status": "completed"},
+            },
+        })
+        with patch.object(self.bridge, "_write_binding", side_effect=OSError("disk full")):
+            with self.assertRaisesRegex(OSError, "disk full"):
+                self.bridge.begin_execution("team-one")
+        self.assertEqual(self.bridge.status("team-one")["mode"], "plan")
+
+    def test_approval_requests_are_rejected_during_planning(self):
+        self.start()
+        connection = self.factory.connections[0]
+        connection.emit({
+            "id": 88,
+            "method": "item/commandExecution/requestApproval",
+            "params": {
+                "threadId": "thr-1",
+                "turnId": "turn-1-1",
+                "itemId": "planning-write",
+                "command": "touch must-not-run",
+                "cwd": str(self.project),
+            },
+        })
+        self.assertEqual(connection.sent[-1], {
+            "id": 88, "result": {"decision": "decline"}
+        })
+        self.assertEqual(self.bridge.status("team-one")["pendingApprovals"], [])
+        self.assertEqual(self.bridge.status("team-one")["state"], "running")
+
     def test_binding_resumes_thread_and_rejects_project_switch(self):
         self.start()
+        self.finish_plan_and_begin_execution()
         self.bridge.shutdown_all()
         second_factory = FakeFactory()
         second = CodexBridge(
@@ -176,6 +240,7 @@ class CodexBridgeTest(unittest.TestCase):
             "team-one", self.project, "Continue.", "gpt-5.6-luna"
         )
         self.assertEqual(status["threadId"], "thr-1")
+        self.assertEqual(status["mode"], "execute")
         methods = [item.get("method") for item in second_factory.connections[0].sent]
         self.assertIn("thread/resume", methods)
         other = self.root / "other"
@@ -213,13 +278,14 @@ class CodexBridgeTest(unittest.TestCase):
 
     def test_stop_prevents_a_pending_approval_from_running(self):
         self.start()
-        connection = self.factory.connections[0]
+        connection = self.finish_plan_and_begin_execution()
+        active_turn = self.bridge.status("team-one")["turnId"]
         connection.emit({
             "id": 89,
             "method": "item/commandExecution/requestApproval",
             "params": {
                 "threadId": "thr-1",
-                "turnId": "turn-1-1",
+                "turnId": active_turn,
                 "itemId": "item-stop",
                 "command": "echo should-not-run",
                 "cwd": str(self.project),
@@ -237,13 +303,14 @@ class CodexBridgeTest(unittest.TestCase):
 
     def test_approval_is_team_and_turn_bound_and_never_autoapproved(self):
         self.start()
-        connection = self.factory.connections[0]
+        connection = self.finish_plan_and_begin_execution()
+        active_turn = self.bridge.status("team-one")["turnId"]
         connection.emit({
             "id": 90,
             "method": "item/commandExecution/requestApproval",
             "params": {
                 "threadId": "thr-1",
-                "turnId": "turn-1-1",
+                "turnId": active_turn,
                 "itemId": "item-1",
                 "reason": "Needs Bearer secret-token-value",
                 "command": (
@@ -279,7 +346,7 @@ class CodexBridgeTest(unittest.TestCase):
             "method": "item/fileChange/requestApproval",
             "params": {
                 "threadId": "other-thread",
-                "turnId": "turn-1-1",
+                "turnId": active_turn,
                 "itemId": "item-2",
                 "startedAtMs": 2,
             },
