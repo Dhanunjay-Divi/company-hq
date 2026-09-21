@@ -121,6 +121,7 @@ class CodexBridgeTest(unittest.TestCase):
         self.assertEqual(status["threadId"], "thr-1")
         self.assertEqual(status["turnId"], "turn-1-1")
         self.assertEqual(status["mode"], "plan")
+        self.assertFalse(status["planReady"])
 
         methods = [item.get("method") for item in connection.sent]
         self.assertEqual(
@@ -130,7 +131,7 @@ class CodexBridgeTest(unittest.TestCase):
         self.assertEqual(thread_params["cwd"], str(self.project.resolve()))
         self.assertEqual(thread_params["approvalPolicy"], "on-request")
         self.assertEqual(thread_params["approvalsReviewer"], "user")
-        self.assertEqual(thread_params["sandbox"], "workspace-write")
+        self.assertEqual(thread_params["sandbox"], "read-only")
         self.assertNotIn("config", thread_params)
         self.assertIn("Use registered Ruflo", thread_params["developerInstructions"])
         self.assertIn("read-only planning mode", thread_params["developerInstructions"])
@@ -143,6 +144,7 @@ class CodexBridgeTest(unittest.TestCase):
         self.assertEqual(binding["projectRoot"], str(self.project.resolve()))
         self.assertEqual(binding["threadId"], "thr-1")
         self.assertEqual(binding["mode"], "plan")
+        self.assertFalse(binding["planReady"])
 
     def test_plan_must_finish_before_execution_and_then_enables_workspace_write(self):
         self.start()
@@ -157,10 +159,12 @@ class CodexBridgeTest(unittest.TestCase):
                 "turn": {"id": "turn-1-1", "status": "completed"},
             },
         })
+        self.assertTrue(self.bridge.status("team-one")["planReady"])
         response = self.bridge.begin_execution("team-one")
         self.assertTrue(response["accepted"])
         self.assertEqual(response["mode"], "execute")
         self.assertEqual(self.bridge.status("team-one")["mode"], "execute")
+        self.assertFalse(self.bridge.status("team-one")["planReady"])
         turn_start = next(
             item for item in reversed(connection.sent)
             if item.get("method") == "turn/start"
@@ -173,6 +177,7 @@ class CodexBridgeTest(unittest.TestCase):
         binding_files = list((self.root / "runtime" / "bindings").glob("*.json"))
         binding = json.loads(binding_files[0].read_text())
         self.assertEqual(binding["mode"], "execute")
+        self.assertFalse(binding["planReady"])
 
     def test_interrupted_plan_does_not_unlock_execution(self):
         self.start()
@@ -185,6 +190,7 @@ class CodexBridgeTest(unittest.TestCase):
             },
         })
         self.assertEqual(self.bridge.status("team-one")["state"], "idle")
+        self.assertFalse(self.bridge.status("team-one")["planReady"])
         with self.assertRaisesRegex(BridgeError, "complete successfully"):
             self.bridge.begin_execution("team-one")
         self.assertEqual(self.bridge.status("team-one")["mode"], "plan")
@@ -241,6 +247,7 @@ class CodexBridgeTest(unittest.TestCase):
         )
         self.assertEqual(status["threadId"], "thr-1")
         self.assertEqual(status["mode"], "execute")
+        self.assertFalse(status["planReady"])
         methods = [item.get("method") for item in second_factory.connections[0].sent]
         self.assertIn("thread/resume", methods)
         other = self.root / "other"
@@ -261,7 +268,9 @@ class CodexBridgeTest(unittest.TestCase):
                 "turn": {"id": "turn-1-1", "status": "completed"},
             },
         })
+        self.assertTrue(self.bridge.status("team-one")["planReady"])
         response = self.bridge.send("team-one", "Next task.")
+        self.assertFalse(self.bridge.status("team-one")["planReady"])
         self.assertEqual(response["mode"], "turn/start")
         self.assertEqual(response["turnId"], "turn-1-2")
 
