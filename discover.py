@@ -19,7 +19,7 @@ if str(INTEGRATION) not in sys.path:
 from runtime_config import capabilities_path
 from provider_registry import inventory as provider_inventory
 TTL = 24 * 60 * 60
-CLIENTS = {'codex': ('codex',), 'claude': ('claude',), 'cursor': ('cursor-agent', 'agent'),
+CLIENTS = {'codex': ('codex',), 'claude': ('claude',), 'cursor': ('cursor-agent',),
            'kimi': ('kimi',), 'opencode': ('opencode',), 'grok': ('grok',), 'glm': ('glm',),
            'ollama': ('ollama',)}
 

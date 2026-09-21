@@ -8,7 +8,6 @@ import plistlib
 import shutil
 
 
-_APP_ROOTS = (Path("/Applications"), Path.home() / "Applications", Path("/Applications/Chrome Apps.localized"))
 _PROVIDERS = (
     ("codex", "Codex", ("codex",), "ChatGPT.app", "com.openai.chat"),
     ("claude", "Claude", ("claude",), "Claude.app", "com.anthropic.claudefordesktop"),
@@ -18,13 +17,53 @@ _PROVIDERS = (
     ("grok", "Grok Bot", ("grok",), "Grok Bot.app", "com.anysphere.sand"),
     ("ollama", "Ollama", ("ollama",), "Ollama.app", None),
 )
+_CODEX_RESOURCE_CLI = Path("/Applications/ChatGPT.app/Contents/Resources/codex")
 
 
 def _executable(path: str | Path | None) -> str | None:
     if not path:
         return None
     candidate = Path(path).expanduser()
-    return str(candidate) if candidate.is_file() and os.access(candidate, os.X_OK) else None
+    try:
+        resolved = candidate.resolve(strict=True)
+    except OSError:
+        return None
+    parts = resolved.parts
+    if ".app" in "".join(parts).lower() and "Contents" in parts and "MacOS" in parts:
+        return None
+    return str(resolved) if resolved.is_file() and os.access(resolved, os.X_OK) else None
+
+
+def _cli_directories(home: Path) -> tuple[Path, ...]:
+    return (
+        home / ".local" / "bin", home / ".cargo" / "bin", home / "bin",
+        Path("/opt/homebrew/bin"), Path("/usr/local/bin"),
+    )
+
+
+def _cli_path(provider_id: str, names: tuple[str, ...], environment: dict[str, str], home: Path, which) -> str | None:
+    override = _executable(environment.get(f"COMPANY_HQ_{provider_id.upper()}_PATH"))
+    if override:
+        return override
+    for name in names:
+        found = _executable(which(name))
+        if found:
+            return found
+    for directory in _cli_directories(home):
+        for name in names:
+            found = _executable(directory / name)
+            if found:
+                return found
+    special = {
+        "claude": (home / ".claude" / "local" / "claude",),
+        "kimi": (home / ".local" / "share" / "uv" / "tools" / "kimi-cli" / "bin" / "kimi",),
+        "codex": (_CODEX_RESOURCE_CLI,),
+    }
+    for candidate in special.get(provider_id, ()):
+        found = _executable(candidate)
+        if found:
+            return found
+    return None
 
 
 def _desktop_app(roots: tuple[Path, ...], name: str, bundle_id: str | None) -> str | None:
@@ -44,19 +83,17 @@ def _desktop_app(roots: tuple[Path, ...], name: str, bundle_id: str | None) -> s
 
 
 def inventory(*, environ: dict[str, str] | None = None, app_roots: tuple[Path, ...] | None = None,
-              which=shutil.which, now: dt.datetime | None = None) -> dict:
+              which=shutil.which, now: dt.datetime | None = None, home: Path | None = None) -> dict:
     """Return local presence only; authentication and provider execution remain untouched."""
     environment = os.environ if environ is None else environ
-    roots = _APP_ROOTS if app_roots is None else app_roots
+    user_home = Path.home() if home is None else home
+    roots = (
+        Path("/Applications"), user_home / "Applications",
+        user_home / "Applications" / "Chrome Apps.localized", Path("/Applications/Chrome Apps.localized"),
+    ) if app_roots is None else app_roots
     providers = []
     for provider_id, label, names, app_name, bundle_id in _PROVIDERS:
-        override = _executable(environment.get(f"COMPANY_HQ_{provider_id.upper()}_PATH"))
-        cli_path = override
-        if not cli_path:
-            for name in names:
-                cli_path = _executable(which(name))
-                if cli_path:
-                    break
+        cli_path = _cli_path(provider_id, names, environment, user_home, which)
         desktop_path = _desktop_app(roots, app_name, bundle_id)
         providers.append({
             "id": provider_id,
