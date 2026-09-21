@@ -82,6 +82,12 @@ def _validate_model(model: str) -> str:
     return model
 
 
+def _validate_mode(mode: str) -> str:
+    if mode not in {"plan", "execute"}:
+        raise BridgeError("mode must be plan or execute")
+    return mode
+
+
 def _numeric_tree(value: object) -> object:
     if isinstance(value, bool):
         return None
@@ -210,6 +216,7 @@ class _TeamSession:
     model: str
     connection: Any
     events: deque[dict[str, Any]]
+    mode: str = "plan"
     state: str = "starting"
     thread_id: str | None = None
     turn_id: str | None = None
@@ -272,6 +279,8 @@ class CodexBridge:
             raise BridgeError("runtime binding is invalid")
         if value.get("threadId") is not None and not isinstance(value["threadId"], str):
             raise BridgeError("runtime binding is invalid")
+        if value.get("mode") not in {None, "plan", "execute"}:
+            raise BridgeError("runtime binding is invalid")
         return value
 
     def _write_binding(
@@ -280,6 +289,7 @@ class CodexBridge:
         project: Path,
         thread_id: str | None = None,
         model: str | None = None,
+        mode: str | None = None,
     ) -> None:
         path = self._binding_path(team)
         previous = self._read_binding(team) or {}
@@ -288,6 +298,7 @@ class CodexBridge:
             "projectRoot": str(project),
             "threadId": thread_id if thread_id is not None else previous.get("threadId"),
             "model": model if model is not None else previous.get("model"),
+            "mode": mode if mode is not None else previous.get("mode"),
             "updatedAtMs": _now_ms(),
         }
         temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
@@ -315,11 +326,14 @@ class CodexBridge:
                 self._write_binding(team, resolved)
         return resolved, binding
 
-    def _new_session(self, team: str, project: Path, model: str) -> _TeamSession:
+    def _new_session(
+        self, team: str, project: Path, model: str, mode: str
+    ) -> _TeamSession:
         session = _TeamSession(
             team=team,
             project=project,
             model=model,
+            mode=mode,
             connection=self.connection_factory(self.codex_path),
             events=deque(maxlen=self.max_events),
         )
@@ -363,12 +377,20 @@ class CodexBridge:
     def _notify(self, session: _TeamSession, method: str, params: dict[str, Any]) -> None:
         session.connection.send({"method": method, "params": params})
 
-    def start(self, team: str, project: str | Path, prompt: str, model: str) -> dict[str, Any]:
+    def start(
+        self,
+        team: str,
+        project: str | Path,
+        prompt: str,
+        model: str,
+        mode: str = "plan",
+    ) -> dict[str, Any]:
         team = _validate_team(team)
         prompt = _validate_prompt(prompt)
         model = _validate_model(model)
+        mode = _validate_mode(mode)
         project_path, binding = self._bind_project(team, Path(project))
-        session = self._new_session(team, project_path, model)
+        session = self._new_session(team, project_path, model, mode)
         try:
             self._rpc(session, "initialize", {
                 "clientInfo": {
@@ -384,7 +406,15 @@ class CodexBridge:
                 "approvalPolicy": "on-request",
                 "approvalsReviewer": "user",
                 "sandbox": "workspace-write",
-                "developerInstructions": _supervisor_instructions(team, project_path),
+                "developerInstructions": _supervisor_instructions(team, project_path)
+                + (
+                    "\nThis session begins in read-only planning mode. Clarify only material unknowns, "
+                    "inspect efficiently, and return a concise plan with deliverables, owners, likely "
+                    "model tier, verification, risks, and user decisions. Do not attempt project writes "
+                    "until Company HQ explicitly changes the session to execution mode."
+                    if mode == "plan"
+                    else ""
+                ),
             }
             previous_thread = binding.get("threadId") if binding else None
             if isinstance(previous_thread, str) and previous_thread:
@@ -401,8 +431,11 @@ class CodexBridge:
                 session.thread_id = thread_id
                 session.state = "idle"
             with self._binding_lock:
-                self._write_binding(team, project_path, thread_id, model)
-            self._event(session, "thread.started", {"text": "Native supervisor connected"})
+                self._write_binding(team, project_path, thread_id, model, mode)
+            self._event(session, "thread.started", {
+                "text": "Native supervisor connected",
+                "mode": mode,
+            })
             self._start_turn(session, prompt)
             return self.status(team)
         except Exception as exc:
@@ -423,11 +456,15 @@ class CodexBridge:
             "model": session.model,
             "approvalPolicy": "on-request",
             "approvalsReviewer": "user",
-            "sandboxPolicy": {
-                "type": "workspaceWrite",
-                "writableRoots": [str(session.project)],
-                "networkAccess": False,
-            },
+            "sandboxPolicy": (
+                {"type": "readOnly"}
+                if session.mode == "plan"
+                else {
+                    "type": "workspaceWrite",
+                    "writableRoots": [str(session.project)],
+                    "networkAccess": False,
+                }
+            ),
         })
         turn = result.get("turn")
         turn_id = turn.get("id") if isinstance(turn, dict) else None
@@ -437,8 +474,49 @@ class CodexBridge:
             session.turn_id = turn_id
             session.state = "idle" if turn_id in session.completed_turns else "running"
             session.error = None
-        self._event(session, "turn.started", {"text": "Supervisor turn started"})
+        self._event(session, "turn.started", {
+            "text": "Supervisor turn started",
+            "mode": session.mode,
+        })
         return turn_id
+
+    def begin_execution(
+        self,
+        team: str,
+        prompt: str = (
+            "The user approved the current plan. Begin bounded execution now. "
+            "Use the smallest capable authorized workers, reuse relevant indexed "
+            "context before broad file exploration, verify changes, and stop for "
+            "user approval when an action requires it."
+        ),
+    ) -> dict[str, Any]:
+        session = self._require_session(_validate_team(team))
+        prompt = _validate_prompt(prompt)
+        with session.operation_lock:
+            with session.lock:
+                if session.state != "idle" or not session.thread_id:
+                    raise BridgeError(
+                        "wait for the planning turn to finish before starting execution"
+                    )
+                if session.mode != "plan":
+                    raise BridgeError("execution is already enabled for this session")
+                session.mode = "execute"
+                thread_id = session.thread_id
+            with self._binding_lock:
+                self._write_binding(
+                    team, session.project, session.thread_id, session.model, "execute"
+                )
+            self._event(session, "mode.changed", {
+                "text": "Plan approved; execution enabled",
+                "mode": "execute",
+            })
+            turn_id = self._start_turn(session, prompt)
+        return {
+            "accepted": True,
+            "mode": "execute",
+            "threadId": thread_id,
+            "turnId": turn_id,
+        }
 
     def send(self, team: str, prompt: str) -> dict[str, Any]:
         session = self._require_session(_validate_team(team))
@@ -522,6 +600,7 @@ class CodexBridge:
                 "connected": False,
                 "project": binding.get("projectRoot") if binding else None,
                 "model": binding.get("model") if binding else None,
+                "mode": binding.get("mode", "plan") if binding else "plan",
                 "threadId": binding.get("threadId") if binding else None,
                 "turnId": None,
                 "lastEventSeq": 0,
@@ -535,6 +614,7 @@ class CodexBridge:
                 "connected": bool(session.connection.running()),
                 "project": str(session.project),
                 "model": session.model,
+                "mode": session.mode,
                 "threadId": session.thread_id,
                 "turnId": session.turn_id,
                 "lastEventSeq": session.next_event_seq - 1,
