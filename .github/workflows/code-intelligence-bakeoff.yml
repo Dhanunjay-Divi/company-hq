@@ -53,12 +53,14 @@ jobs:
           npm install --prefix "$RUNNER_TEMP/codegraph" --ignore-scripts             @colbymchenry/codegraph@1.6.0
           echo "CODEGRAPH_BIN=$RUNNER_TEMP/codegraph/node_modules/.bin/codegraph" >> "$GITHUB_ENV"
 
-      - name: Install pinned Graft without lifecycle scripts
+      - name: Install pinned Graft from reviewed lockfile
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/graft"
-          npm install --prefix "$RUNNER_TEMP/graft" --ignore-scripts             @nanonets/graft@0.18.0
+          cp graft-0.18.0/package.json "$RUNNER_TEMP/graft/package.json"
+          cp graft-0.18.0/package-lock.json "$RUNNER_TEMP/graft/package-lock.json"
+          npm ci --prefix "$RUNNER_TEMP/graft" --ignore-scripts
           echo "COMPANY_HQ_GRAFT_INSTALL=$RUNNER_TEMP/graft" >> "$GITHUB_ENV"
 
       - name: Install verified Codebase Memory MCP
