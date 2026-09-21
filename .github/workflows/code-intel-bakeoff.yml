@@ -1,77 +1,89 @@
-name: Code intelligence bakeoff
+name: Code intelligence evidence v2
 
 on:
   push:
-    branches: [arch/best-of-all-bakeoff]
+    branches: [fix/reproducible-bakeoff-evidence]
     paths:
-      - "benchmarks/code-intel-fixture/**"
+      - "scripts/bakeoff_evidence.py"
       - "scripts/run_code_intel_bakeoff.py"
+      - "tests/test_bakeoff*.py"
+      - "benchmarks/code-intel-fixture/**"
       - ".github/workflows/code-intel-bakeoff.yml"
-      - "graft.py"
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: code-intel-bakeoff-${{ github.ref }}
+  group: code-intel-evidence-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   compare:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
-
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-
-      - name: Configure isolated benchmark state
-        run: echo "COMPANY_HQ_STATE_ROOT=$RUNNER_TEMP/company-hq-state" >> "$GITHUB_ENV"
-
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
-
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "24"
-
-      - name: Install pinned candidates without provider credentials
+      - name: Test the measurement gates before testing candidates
+        run: python -m unittest discover -s tests -p 'test_bakeoff*.py' -v
+      - name: Prepare external evidence directory
+        run: mkdir -p "$RUNNER_TEMP/hq-code-evidence"
+      - name: Install pinned Graphify in its own environment
+        continue-on-error: true
+        run: |
+          python -m venv "$RUNNER_TEMP/graphify"
+          "$RUNNER_TEMP/graphify/bin/pip" install --only-binary=:all: --disable-pip-version-check graphifyy==0.9.65
+          "$RUNNER_TEMP/graphify/bin/pip" freeze > "$RUNNER_TEMP/hq-code-evidence/graphify-dependencies.txt"
+          echo "BAKEOFF_GRAPHIFY=$RUNNER_TEMP/graphify/bin/graphify" >> "$GITHUB_ENV"
+      - name: Install pinned CodeGraph without install scripts
+        continue-on-error: true
+        run: |
+          npm install --prefix "$RUNNER_TEMP/codegraph" --ignore-scripts --no-audit --no-fund @colbymchenry/codegraph@1.6.0
+          cp "$RUNNER_TEMP/codegraph/package-lock.json" "$RUNNER_TEMP/hq-code-evidence/codegraph-lock.json"
+          echo "BAKEOFF_CODEGRAPH=$RUNNER_TEMP/codegraph/node_modules/.bin/codegraph" >> "$GITHUB_ENV"
+      - name: Install Graft from the repository lockfile
+        continue-on-error: true
+        run: |
+          mkdir -p "$RUNNER_TEMP/graft"
+          cp graft-0.18.0/package.json graft-0.18.0/package-lock.json "$RUNNER_TEMP/graft/"
+          npm ci --prefix "$RUNNER_TEMP/graft" --ignore-scripts --no-audit --no-fund
+          echo "BAKEOFF_GRAFT_INSTALL=$RUNNER_TEMP/graft" >> "$GITHUB_ENV"
+      - name: Verify and unpack Codebase Memory
+        continue-on-error: true
+        run: |
+          archive="$RUNNER_TEMP/cbm.tar.gz"
+          curl -fsSL "https://github.com/DeusData/codebase-memory-mcp/releases/download/v0.10.8/codebase-memory-mcp-linux-amd64-portable.tar.gz" -o "$archive"
+          echo "6eef49652bc0c7820f43114125044d40bf7f4d97c11b2592f6b0f6a307702325  $archive" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/cbm"
+          tar -xzf "$archive" -C "$RUNNER_TEMP/cbm"
+          binary="$(find "$RUNNER_TEMP/cbm" -type f -name codebase-memory-mcp -print -quit)"
+          test -n "$binary"
+          chmod +x "$binary"
+          echo "BAKEOFF_CODEBASE_MEMORY=$binary" >> "$GITHUB_ENV"
+      - name: Run repeated structural cases with network disabled
         shell: bash
         run: |
-          set -u
-          python -m pip install --disable-pip-version-check "graphifyy==0.9.65"
-          echo "BAKEOFF_GRAPHIFY=$(command -v graphify)" >> "$GITHUB_ENV"
-
-          mkdir -p "$RUNNER_TEMP/codegraph-pkg"
-          npm install --prefix "$RUNNER_TEMP/codegraph-pkg" --ignore-scripts --no-audit --no-fund "@colbymchenry/codegraph@1.6.0"
-          echo "BAKEOFF_CODEGRAPH=$RUNNER_TEMP/codegraph-pkg/node_modules/.bin/codegraph" >> "$GITHUB_ENV"
-
-          cbm_archive="$RUNNER_TEMP/codebase-memory-mcp.tar.gz"
-          curl -fsSL "https://github.com/DeusData/codebase-memory-mcp/releases/download/v0.10.8/codebase-memory-mcp-linux-amd64-portable.tar.gz" -o "$cbm_archive"
-          echo "6eef49652bc0c7820f43114125044d40bf7f4d97c11b2592f6b0f6a307702325  $cbm_archive" | sha256sum -c -
-          mkdir -p "$RUNNER_TEMP/cbm-bin"
-          tar -xzf "$cbm_archive" -C "$RUNNER_TEMP/cbm-bin"
-          cbm_bin="$(find "$RUNNER_TEMP/cbm-bin" -type f -name codebase-memory-mcp -print -quit)"
-          test -n "$cbm_bin"
-          chmod +x "$cbm_bin"
-          echo "BAKEOFF_CODEBASE_MEMORY=$cbm_bin" >> "$GITHUB_ENV"
-
-          mkdir -p "$RUNNER_TEMP/graft-pkg"
-          npm install --prefix "$RUNNER_TEMP/graft-pkg" --ignore-scripts --no-audit --no-fund "@nanonets/graft@0.18.0"
-          echo "BAKEOFF_GRAFT_INSTALL=$RUNNER_TEMP/graft-pkg" >> "$GITHUB_ENV"
-
-      - name: Run model-free structural benchmark
-        run: python scripts/run_code_intel_bakeoff.py
-
-      - name: Publish result summary
-        shell: bash
-        run: |
-          echo '## Model-free code-intelligence bakeoff' >> "$GITHUB_STEP_SUMMARY"
-          cat benchmarks/code-intel-results.json >> "$GITHUB_STEP_SUMMARY"
-
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+          set -euo pipefail
+          sudo unshare --net -- setpriv --reuid="$(id -u)" --regid="$(id -g)" --init-groups \
+            env "PATH=$PATH" "LD_LIBRARY_PATH=${LD_LIBRARY_PATH:-}" \
+            "BAKEOFF_GRAPHIFY=${BAKEOFF_GRAPHIFY:-}" "BAKEOFF_CODEGRAPH=${BAKEOFF_CODEGRAPH:-}" \
+            "BAKEOFF_GRAFT_INSTALL=${BAKEOFF_GRAFT_INSTALL:-}" "BAKEOFF_CODEBASE_MEMORY=${BAKEOFF_CODEBASE_MEMORY:-}" \
+            "BENCHMARK_SOURCE_SHA=$GITHUB_SHA" "BENCHMARK_RUN_URL=https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            "$(command -v python)" scripts/run_code_intel_bakeoff.py \
+            --output-dir "$RUNNER_TEMP/hq-code-evidence" --repetitions 3
+      - name: Retain raw evidence even when selection is blocked
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: code-intel-bakeoff
-          path: benchmarks/code-intel-results.json
-          if-no-files-found: error
+          name: code-intel-evidence-v2
+          path: ${{ runner.temp }}/hq-code-evidence
+          if-no-files-found: warn
+          retention-days: 14
