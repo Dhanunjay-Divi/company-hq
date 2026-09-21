@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -56,9 +57,10 @@ def clawteam_data_dir() -> Path:
     testing = os.environ.get("CLAWTEAM_INTEGRATION_TESTING") == "1"
     test_override = os.environ.get("CLAWTEAM_INTEGRATION_TEST_DATA_DIR") if testing else None
     if test_override:
-        return _expand(test_override)
+        return validate_component_state_root(_expand(test_override), "clawteam")
     base = state_root()
-    return base / ("demo/clawteam" if demo_mode() else "clawteam")
+    candidate = base / ("demo/clawteam" if demo_mode() else "clawteam")
+    return validate_component_state_root(candidate, "clawteam")
 
 
 def runtime_dir(data_dir: Path | None = None) -> Path:
@@ -70,9 +72,18 @@ def routing_path() -> Path:
     return _expand(raw) if raw else REPO_ROOT / "routing.json"
 
 
+def validate_state_file_path(path: Path, label: str) -> Path:
+    resolved = path.expanduser().resolve()
+    if resolved.exists() and resolved.is_dir():
+        raise ConfigurationError(f"{label} must be a file path, not a directory")
+    validate_component_state_root(resolved.parent, label)
+    return resolved
+
+
 def saved_projects_path() -> Path:
     raw = os.environ.get("COMPANY_HQ_SAVED_PROJECTS_PATH")
-    return _expand(raw) if raw else state_root() / "saved-projects.json"
+    candidate = _expand(raw) if raw else state_root() / "saved-projects.json"
+    return validate_state_file_path(candidate, "saved-projects")
 
 
 _COMPONENT_ENV = {
@@ -129,7 +140,8 @@ def component_state_root(component: str) -> Path:
 
 def capabilities_path() -> Path:
     raw = os.environ.get("COMPANY_HQ_CAPABILITIES_PATH")
-    return _expand(raw) if raw else state_root() / "capabilities.json"
+    candidate = _expand(raw) if raw else state_root() / "capabilities.json"
+    return validate_state_file_path(candidate, "capabilities")
 
 
 def ruflo_launcher() -> Path:
@@ -177,7 +189,7 @@ def frontend_dist() -> Path:
 
 
 def demo_project_root() -> Path:
-    return state_root() / "demo" / "project"
+    return validate_component_state_root(state_root() / "demo" / "project", "demo")
 
 
 def node_executable() -> Path | None:
@@ -205,6 +217,44 @@ def _availability(path: Path | None, *, executable: bool = False) -> dict[str, A
     }
 
 
+def _graft_availability() -> dict[str, Any]:
+    install = graft_install_root()
+    graft_bin = install / "node_modules" / ".bin" / (
+        "graft.cmd" if os.name == "nt" else "graft"
+    )
+    cli = _availability(graft_bin, executable=True)
+    if not cli["available"]:
+        return cli
+    node = node_executable()
+    node_status = _availability(node, executable=True)
+    if not node_status["available"]:
+        return {"available": False, "path": str(graft_bin), "reason": "Node.js is unavailable"}
+    package_root = install / "node_modules" / "@nanonets" / "graft"
+    if not package_root.is_dir():
+        return {"available": False, "path": str(graft_bin), "reason": "Graft package is incomplete"}
+    probe = (
+        "const root=process.argv[1];"
+        "const p=require.resolve('tree-sitter-kotlin',{paths:[root]});"
+        "require(p);"
+    )
+    try:
+        completed = subprocess.run(
+            [str(node), "-e", probe, str(package_root)],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=4,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return {"available": False, "path": str(graft_bin), "reason": f"Graft readiness probe failed: {exc}"}
+    if completed.returncode != 0:
+        detail = (completed.stderr or "native parser unavailable").strip().splitlines()[-1][:240]
+        return {"available": False, "path": str(graft_bin), "reason": f"Graft native runtime unavailable: {detail}"}
+    return {"available": True, "path": str(graft_bin), "reason": None}
+
+
 def _compound_availability(
     launcher: Path,
     required: list[tuple[Path, bool]],
@@ -228,9 +278,6 @@ def health_snapshot(data_dir: Path | None = None) -> dict[str, Any]:
     state = Path(data_dir).resolve() if data_dir else clawteam_data_dir().resolve()
     routing = routing_path()
     ruflo = ruflo_launcher()
-    graft_bin = graft_install_root() / "node_modules" / ".bin" / (
-        "graft.cmd" if os.name == "nt" else "graft"
-    )
     cbm = codebase_memory_launcher()
     cbm_binary = cbm.parent / "codebase-memory-mcp"
     cbm_guard = cbm.parent / "mcp_guard.py"
@@ -258,7 +305,7 @@ def health_snapshot(data_dir: Path | None = None) -> dict[str, Any]:
                     (sandbox, True),
                 ],
             ),
-            "graft": _availability(graft_bin, executable=True),
+            "graft": _graft_availability(),
             "codebaseMemory": _compound_availability(
                 cbm, [(cbm_binary, True), (cbm_guard, False)]
             ),
