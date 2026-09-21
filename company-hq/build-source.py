@@ -35,8 +35,10 @@ INTEGRATION_FILES = (
     "codex_bridge.py",
     "company_profile.py",
     "hq_api.py",
+    "runtime_config.py",
     "secure_board.py",
     "test_codex_bridge.py",
+    "test_runtime_config.py",
     "test_secure_board.py",
 )
 SCHEMA_DIR = "codex-app-server-schema-0.154.0-alpha.6.2"
