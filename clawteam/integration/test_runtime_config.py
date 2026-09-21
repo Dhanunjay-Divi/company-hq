@@ -23,6 +23,15 @@ class RuntimeConfigTest(unittest.TestCase):
             with self.assertRaises(config.ConfigurationError):
                 config.state_root()
 
+    def test_global_state_root_inside_git_checkout_is_rejected(self):
+        with tempfile.TemporaryDirectory(prefix="company-hq-git-state-") as temp:
+            checkout = Path(temp) / "product"
+            (checkout / ".git").mkdir(parents=True)
+            requested = checkout / ".company-hq-state"
+            with patch.dict(os.environ, {"COMPANY_HQ_STATE_ROOT": str(requested)}, clear=False):
+                with self.assertRaises(config.ConfigurationError):
+                    config.state_root()
+
     def test_fixture_override_remains_test_only_and_isolated(self):
         with tempfile.TemporaryDirectory(prefix="company-hq-fixture-") as temp:
             env = {
