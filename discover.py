@@ -100,7 +100,9 @@ def discover(refresh=False, base=BASE):
     policy = json.loads((base / 'routing.json').read_text())
     paths = {provider: next((shutil.which(name) for name in names if shutil.which(name)), None)
              for provider, names in CLIENTS.items()}
-    cache = capabilities_path(); cache.parent.mkdir(parents=True, exist_ok=True, mode=0o700); now = time.time()
+    resolved_base = Path(base).resolve()
+    cache = capabilities_path() if resolved_base == BASE.resolve() else resolved_base / "capabilities.json"
+    cache.parent.mkdir(parents=True, exist_ok=True, mode=0o700); now = time.time()
     if not refresh:
         try:
             value = json.loads(cache.read_text())
