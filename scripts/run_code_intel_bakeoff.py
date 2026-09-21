@@ -13,6 +13,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import select
 import subprocess
 import sys
 import tempfile
@@ -139,6 +140,39 @@ def candidate_codegraph(base: Path, env: dict[str, str]):
     }
 
 
+def _mcp_rpc(proc, request_id, method, params, timeout=120):
+    proc.stdin.write(json.dumps({
+        "jsonrpc": "2.0",
+        "id": request_id,
+        "method": method,
+        "params": params,
+    }, separators=(",", ":")) + "\n")
+    proc.stdin.flush()
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if not select.select([proc.stdout], [], [], 0.25)[0]:
+            if proc.poll() is not None:
+                raise RuntimeError(f"MCP process exited early: {proc.returncode}")
+            continue
+        line = proc.stdout.readline()
+        if not line:
+            raise RuntimeError("MCP process closed stdout")
+        value = json.loads(line)
+        if value.get("id") == request_id:
+            if value.get("error"):
+                raise RuntimeError(str(value["error"]))
+            return value.get("result", {})
+    raise TimeoutError(f"MCP request timed out: {method}")
+
+
+def _mcp_text(result):
+    return "\n".join(
+        item.get("text", "")
+        for item in result.get("content", [])
+        if isinstance(item, dict) and item.get("type") == "text"
+    )
+
+
 def candidate_codebase_memory(base: Path, env: dict[str, str]):
     exe = os.environ.get("BAKEOFF_CODEBASE_MEMORY")
     if not exe:
@@ -156,30 +190,99 @@ def candidate_codebase_memory(base: Path, env: dict[str, str]):
         "CBM_LOG_LEVEL": "warn",
     }
     before = source_digest(project)
-    build_args = json.dumps(
-        {"repo_path": str(project.resolve()), "mode": "full", "persistence": False},
-        separators=(",", ":"),
+    proc = subprocess.Popen(
+        [exe, "--ui=false"],
+        cwd=base,
+        env=local_env,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        bufsize=1,
     )
-    build = run([exe, "cli", "index_repository", build_args], cwd=base, env=local_env)
-    query_args = json.dumps(
-        {"semantic_query": ["session", "authorization", "permission"], "limit": 20},
-        separators=(",", ":"),
-    )
-    query = run([exe, "cli", "search_graph", query_args], cwd=base, env=local_env) if build["ok"] else {
-        "ok": False, "stdout": "", "stderr": "build failed", "seconds": 0
-    }
-    hits, score = score_output(query["stdout"] + "\n" + query["stderr"])
+    build_started = query_started = None
+    build_result = query_result = {}
+    build_text = query_text = ""
+    error = None
+    try:
+        _mcp_rpc(proc, 1, "initialize", {
+            "protocolVersion": "2024-11-05",
+            "capabilities": {},
+            "clientInfo": {"name": "company-hq-bakeoff", "version": "1"},
+        }, timeout=30)
+        proc.stdin.write(json.dumps({
+            "jsonrpc": "2.0",
+            "method": "notifications/initialized",
+        }) + "\n")
+        proc.stdin.flush()
+
+        build_started = time.perf_counter()
+        build_result = _mcp_rpc(proc, 2, "tools/call", {
+            "name": "index_repository",
+            "arguments": {
+                "repo_path": str(project.resolve()),
+                "name": "company-hq-fixture",
+                "mode": "full",
+                "persistence": False,
+            },
+        }, timeout=180)
+        build_seconds = round(time.perf_counter() - build_started, 3)
+        build_text = _mcp_text(build_result)
+
+        query_started = time.perf_counter()
+        query_result = _mcp_rpc(proc, 3, "tools/call", {
+            "name": "search_graph",
+            "arguments": {
+                "project": "company-hq-fixture",
+                "semantic_query": ["session", "authorization", "permission"],
+                "limit": 20,
+            },
+        }, timeout=90)
+        query_seconds = round(time.perf_counter() - query_started, 3)
+        query_text = _mcp_text(query_result)
+        query_error = bool(query_result.get("isError"))
+        build_error = bool(build_result.get("isError"))
+    except Exception as exc:
+        error = str(exc)
+        build_seconds = round(time.perf_counter() - build_started, 3) if build_started else 0
+        query_seconds = round(time.perf_counter() - query_started, 3) if query_started else 0
+        build_error = True
+        query_error = True
+    finally:
+        if proc.stdin:
+            proc.stdin.close()
+        try:
+            proc.terminate()
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait(timeout=5)
+        stderr = proc.stderr.read() if proc.stderr else ""
+        if proc.stdout:
+            proc.stdout.close()
+        if proc.stderr:
+            proc.stderr.close()
+
+    combined = query_text + "\n" + (error or "") + "\n" + stderr
+    hits, score = score_output(combined)
     return {
         "available": True,
         "version": "0.10.8",
-        "build": {k: v for k, v in build.items() if k not in ("stdout", "stderr")},
-        "query": {k: v for k, v in query.items() if k not in ("stdout", "stderr")},
-        "query_output_bytes": len((query["stdout"] + query["stderr"]).encode()),
+        "build": {
+            "ok": not build_error,
+            "seconds": build_seconds,
+        },
+        "query": {
+            "ok": not query_error,
+            "seconds": query_seconds,
+        },
+        "query_output_bytes": len(combined.encode()),
         "expected_hits": hits,
         "correctness_score": score,
         "source_unchanged": before == source_digest(project),
         "project_pollution": pollution(project),
-        "output_excerpt": (query["stdout"] + query["stderr"])[-3000:],
+        "output_excerpt": combined[-3000:],
+        "error": error,
     }
 
 
