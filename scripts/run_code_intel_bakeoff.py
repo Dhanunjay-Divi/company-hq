@@ -22,6 +22,7 @@ import time
 from pathlib import Path
 
 from bakeoff_evidence import assess, changes, coverage, exit_code, medians, selection_status, snapshot, text
+from bakeoff_locations import location_pattern
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = ROOT / 'benchmarks' / 'code-intel-fixture'
@@ -169,7 +170,7 @@ def evaluate(name: str, base: Path, output: Path, repetitions: int) -> dict:
                 for attempt in range(repetitions):
                     if mcp:
                         result = mcp.tool(trace, {'project': 'fixture', 'function_name': seed, 'direction': 'both', 'depth': 2})
-                        locations = mcp.tool('search_graph', {'project': 'fixture', 'name_pattern': '|'.join(x for x in expected if '/' not in x), 'limit': 20})
+                        locations = mcp.tool('search_graph', {'project': 'fixture', 'name_pattern': location_pattern(seed, result['stdout']), 'limit': 20})
                         result['ok'] = result['ok'] and locations['ok']
                         result['stdout'] += '\n' + locations['stdout']
                         result['seconds'] += locations['seconds']
