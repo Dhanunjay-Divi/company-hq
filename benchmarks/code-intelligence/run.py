@@ -34,7 +34,11 @@ PROVIDER_ENV = (
 )
 
 
-def child_env(extra: dict[str, str] | None = None) -> dict[str, str]:
+def child_env(
+    extra: dict[str, str] | None = None,
+    *,
+    isolated_home: Path | None = None,
+) -> dict[str, str]:
     env = os.environ.copy()
     for key in PROVIDER_ENV:
         env.pop(key, None)
@@ -45,9 +49,27 @@ def child_env(extra: dict[str, str] | None = None) -> dict[str, str]:
         "CODEGRAPH_NO_DAEMON": "1",
         "NO_COLOR": "1",
     })
+    if isolated_home is not None:
+        home = isolated_home.resolve()
+        for directory in (home, home / ".config", home / ".cache", home / ".local" / "state"):
+            directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+        env.update({
+            "HOME": str(home),
+            "XDG_CONFIG_HOME": str(home / ".config"),
+            "XDG_CACHE_HOME": str(home / ".cache"),
+            "XDG_STATE_HOME": str(home / ".local" / "state"),
+        })
     if extra:
         env.update(extra)
     return env
+
+
+def _captured_text(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return str(value)
 
 
 def run(
@@ -80,8 +102,8 @@ def run(
             "command": command,
             "returncode": 124 if isinstance(exc, subprocess.TimeoutExpired) else 127,
             "seconds": round(time.perf_counter() - started, 4),
-            "stdout": getattr(exc, "stdout", "") or "",
-            "stderr": str(exc),
+            "stdout": _captured_text(getattr(exc, "stdout", "")),
+            "stderr": _captured_text(getattr(exc, "stderr", "")) or str(exc),
         }
 
 
@@ -96,20 +118,40 @@ def snapshot(root: Path) -> dict[str, str]:
 
 
 def prepare_fixture(work: Path, candidate: str) -> tuple[Path, dict[str, str]]:
-    project = work / candidate / "project"
+    candidate_root = work / candidate
+    if candidate_root.exists():
+        shutil.rmtree(candidate_root)
+    project = candidate_root / "project"
     shutil.copytree(FIXTURE, project)
-    subprocess.run(["git", "init", "-q"], cwd=project, check=True)
-    subprocess.run(["git", "config", "user.email", "bench@company-hq.local"], cwd=project, check=True)
-    subprocess.run(["git", "config", "user.name", "Company HQ Benchmark"], cwd=project, check=True)
-    subprocess.run(["git", "add", "."], cwd=project, check=True)
-    subprocess.run(["git", "commit", "-qm", "fixture"], cwd=project, check=True)
+
+    git_home = candidate_root / "git-home"
+    template = candidate_root / "empty-git-template"
+    git_home.mkdir(parents=True, mode=0o700)
+    template.mkdir(parents=True)
+    git_env = os.environ.copy()
+    git_env.update({
+        "HOME": str(git_home),
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_CONFIG_GLOBAL": os.devnull,
+    })
+    for key in list(git_env):
+        if key.startswith("GIT_CONFIG_") and key not in {"GIT_CONFIG_NOSYSTEM", "GIT_CONFIG_GLOBAL"}:
+            git_env.pop(key, None)
+
+    subprocess.run(["git", "init", "-q", f"--template={template}"], cwd=project, env=git_env, check=True)
+    subprocess.run(["git", "config", "user.email", "bench@company-hq.local"], cwd=project, env=git_env, check=True)
+    subprocess.run(["git", "config", "user.name", "Company HQ Benchmark"], cwd=project, env=git_env, check=True)
+    subprocess.run(["git", "config", "commit.gpgSign", "false"], cwd=project, env=git_env, check=True)
+    subprocess.run(["git", "config", "core.hooksPath", os.devnull], cwd=project, env=git_env, check=True)
+    subprocess.run(["git", "add", "."], cwd=project, env=git_env, check=True)
+    subprocess.run(["git", "commit", "--no-verify", "-qm", "fixture"], cwd=project, env=git_env, check=True)
     return project, snapshot(project)
 
 
 def executable(env_name: str, fallback: str) -> str | None:
     raw = os.environ.get(env_name)
     if raw:
-        path = Path(raw).expanduser()
+        path = Path(raw).expanduser().resolve()
         return str(path) if path.exists() else None
     return shutil.which(fallback)
 
@@ -150,7 +192,7 @@ def graphify(project: Path, state: Path) -> tuple[list[dict[str, Any]], bool, st
         return [], False, "graphify executable not installed"
     out = state / "graphify-out"
     out.parent.mkdir(parents=True, exist_ok=True)
-    env = child_env({"GRAPHIFY_OUT": str(out)})
+    env = child_env({"GRAPHIFY_OUT": str(out)}, isolated_home=state / "home")
     commands = [
         run([binary, "extract", str(project)], cwd=project, env=env, timeout=120),
     ]
@@ -175,7 +217,7 @@ def codegraph(project: Path, state: Path) -> tuple[list[dict[str, Any]], bool, s
     env = child_env({
         "CODEGRAPH_INSTALL_DIR": str(install),
         "CODEGRAPH_DIR": ".codegraph-bench",
-    })
+    }, isolated_home=state / "home")
     commands = [run([binary, "init", str(project)], cwd=project, env=env, timeout=120)]
     if commands[-1]["returncode"] == 0:
         commands.extend([
@@ -197,7 +239,7 @@ def graft(project: Path, state: Path) -> tuple[list[dict[str, Any]], bool, str |
     env = child_env({
         "COMPANY_HQ_GRAFT_INSTALL": install,
         "COMPANY_HQ_GRAFT_STATE_ROOT": str(state / "graft-state"),
-    })
+    }, isolated_home=state / "home")
     commands = [run([sys.executable, str(wrapper), "build", str(project)], cwd=ROOT, env=env, timeout=120)]
     if commands[-1]["returncode"] == 0:
         commands.append(run([
@@ -258,15 +300,15 @@ def cbm(project: Path, state: Path) -> tuple[list[dict[str, Any]], bool, str | N
     binary = executable("CBM_BIN", "codebase-memory-mcp")
     if not binary:
         return [], False, "codebase-memory-mcp executable not installed"
-    # CBM uses Unix-domain coordination endpoints. Keep their paths short and
-    # owner-private; a deep CI path can exceed the socket limit before the
-    # graph is exercised.
-    short_root = Path(tempfile.mkdtemp(prefix="hq-cbm-", dir="/tmp"))
+    # The caller gives CBM a deliberately short external state root because
+    # its Unix-domain coordination endpoints can exceed socket path limits.
+    short_root = state
     cache = short_root / "c"
     runtime = short_root / "r"
     config = short_root / "x"
     scratch = short_root / "t"
-    for directory in (short_root, cache, runtime, config, scratch):
+    home = short_root / "h"
+    for directory in (short_root, cache, runtime, config, scratch, home):
         directory.mkdir(parents=True, exist_ok=True, mode=0o700)
         directory.chmod(0o700)
     env = child_env({
@@ -275,7 +317,7 @@ def cbm(project: Path, state: Path) -> tuple[list[dict[str, Any]], bool, str | N
         "XDG_CONFIG_HOME": str(config),
         "TMPDIR": str(scratch),
         "CBM_LOG_LEVEL": "error",
-    })
+    }, isolated_home=home)
     proc = subprocess.Popen(
         [binary, "--ui=false"],
         cwd=project,
@@ -367,6 +409,39 @@ def cbm(project: Path, state: Path) -> tuple[list[dict[str, Any]], bool, str | N
         thread.join(timeout=1)
 
 
+def relationship_evidence(candidate: str, text: str) -> bool:
+    lower = text.lower()
+    if "no path" in lower or "not found" in lower:
+        return False
+    if candidate == "graphify":
+        return bool(re.search(
+            r"shortest path[^\n]*:\s*\n\s*login_request\(\).*?--calls.*?"
+            r"authenticate\(\).*?--calls.*?verify_token\(\)",
+            lower,
+            re.S,
+        ))
+    if candidate == "codegraph":
+        return bool(re.search(
+            r"flow.*?login_request.*?calls.*?authenticate.*?calls.*?verify_token",
+            lower,
+            re.S,
+        ))
+    if candidate == "codebase-memory-mcp":
+        return (
+            "function: verify_token" in lower
+            and "direction: inbound" in lower
+            and re.search(r"\bauthenticate\s+1\b", lower) is not None
+            and re.search(r"\blogin_request\s+2\b", lower) is not None
+        )
+    if candidate == "graft":
+        return bool(re.search(
+            r"login_request.*?(?:calls|->).*?authenticate.*?(?:calls|->).*?verify_token",
+            lower,
+            re.S,
+        ))
+    return False
+
+
 ADAPTERS: dict[str, Callable[[Path, Path], tuple[list[dict[str, Any]], bool, str | None]]] = {
     "graphify": graphify,
     "codegraph": codegraph,
@@ -386,6 +461,7 @@ def result_for(
 ) -> dict[str, Any]:
     after = snapshot(project)
     added = sorted(set(after) - set(before))
+    removed = sorted(set(before) - set(after))
     changed = sorted(path for path in set(before) & set(after) if before[path] != after[path])
     text = aggregate(commands)
     lower = text.lower()
@@ -394,9 +470,7 @@ def result_for(
         "authenticate": "authenticate" in lower,
         "login_request": "login_request" in lower,
     }
-    relationship = sum(symbols.values()) == 3 and any(
-        marker in lower for marker in ("call", "caller", "path", "->", "edge", "inbound")
-    )
+    relationship = sum(symbols.values()) == 3 and relationship_evidence(candidate, text)
     query_commands = commands[1:] if len(commands) > 1 else []
     query_seconds = round(sum(float(x["seconds"]) for x in query_commands), 4)
     query_output = aggregate(query_commands)
@@ -413,8 +487,9 @@ def result_for(
         "relationship_evidence": relationship,
         "repo_pollution": {
             "added_paths": added,
+            "removed_paths": removed,
             "changed_paths": changed,
-            "clean": not added and not changed,
+            "clean": not added and not removed and not changed,
         },
         "state_bytes": sum(p.stat().st_size for p in state.rglob("*") if p.is_file()) if state.exists() else 0,
         "commands": [
@@ -482,13 +557,23 @@ def main() -> int:
     try:
         for candidate in selected:
             project, before = prepare_fixture(work, candidate)
-            state = work / candidate / "state"
-            state.mkdir(parents=True, exist_ok=True)
+            external_state = False
+            if candidate == "codebase-memory-mcp":
+                state = Path(tempfile.mkdtemp(prefix="hq-cbm-", dir="/tmp"))
+                state.chmod(0o700)
+                external_state = True
+            else:
+                state = work / candidate / "state"
+                state.mkdir(parents=True, exist_ok=True)
             try:
-                commands, indexed, reason = ADAPTERS[candidate](project, state)
-            except Exception as exc:
-                commands, indexed, reason = [], False, f"adapter exception: {exc}"
-            results.append(result_for(candidate, project, before, state, commands, indexed, reason))
+                try:
+                    commands, indexed, reason = ADAPTERS[candidate](project, state)
+                except Exception as exc:
+                    commands, indexed, reason = [], False, f"adapter exception: {exc}"
+                results.append(result_for(candidate, project, before, state, commands, indexed, reason))
+            finally:
+                if external_state:
+                    shutil.rmtree(state, ignore_errors=True)
 
         payload = {
             "schema": 1,
