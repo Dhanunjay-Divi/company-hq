@@ -48,7 +48,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          wheel="$RUNNER_TEMP/headroom.whl"
+          wheel="$RUNNER_TEMP/headroom_ai-0.37.0-cp310-abi3-manylinux_2_28_x86_64.whl"
           venv="$RUNNER_TEMP/headroom"
           curl --fail --location --silent --show-error             "https://github.com/headroomlabs-ai/headroom/releases/download/v0.37.0/headroom_ai-0.37.0-cp310-abi3-manylinux_2_28_x86_64.whl"             --output "$wheel"
           echo "2efc5cdf681a10c5fc7a2a271a471179c409074537045f682b10e4d724976f46  $wheel" | sha256sum --check -
