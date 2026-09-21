@@ -9,6 +9,7 @@ This public repository preserves the shared toolkit source built on 13–14 Sept
 - [Implementation handoff and acceptance criteria](docs/IMPLEMENTER-HANDOFF.md)
 - [What works and what remains](docs/STATUS.md)
 - [Architecture and source map](docs/ARCHITECTURE.md)
+- [Best-of-repositories architecture](docs/BEST-OF-STACK.md)
 - [New upstream candidates: ECC, gstack, Superpowers and the 40-repo list](docs/UPSTREAM-REVIEW.md)
 - [Reviewer instructions](docs/REVIEWER.md)
 - [Portable setup and isolation](docs/PORTABILITY.md)
@@ -65,7 +66,7 @@ The original live installation remains a separate deployment target. Running thi
 
 ## Cost and data
 
-Opening the board does not start an agent. Pressing Start working does. Native work uses the existing account and may consume its allowance; the prototype has reported token counts, not a complete bill or enforced spending budget. Multiple agents are not automatically cheaper. Keep simple work with one agent, use bounded smaller workers, and retain concise shared decisions.
+Opening the board does not start an agent. The first real supervisor turn is read-only planning; Company HQ enables workspace writes only after the separate **Approve plan & start execution** action. Native work uses the existing account and may consume its allowance; the prototype has reported token counts, not a complete bill or enforced spending budget. Multiple agents are not automatically cheaper. Keep simple work with one agent, use bounded smaller workers, and retain concise shared decisions.
 
 No credentials, Codex conversations, runtime bindings, local task/message databases, user project lists, product files, downloaded binaries, virtual environments or dependency caches are intentionally included.
 
