@@ -24,6 +24,12 @@ def validate_profile(value: object, names: set[str]) -> dict:
     if project and not Path(project).is_absolute():
         raise ValueError('Project folder must be an absolute path')
     result['projectRoot'] = project
+    workspace_kind = value.get('workspaceKind', 'project')
+    if workspace_kind not in {'managed', 'project'}:
+        raise ValueError('Workspace kind must be managed or project')
+    if workspace_kind == 'managed' and not project:
+        raise ValueError('Managed workspace must have a private workspace folder')
+    result['workspaceKind'] = workspace_kind
     entries = value.get('members', {})
     if not isinstance(entries, dict) or not set(entries).issubset(names):
         raise ValueError('Company profile must reference registered members only')
@@ -56,7 +62,7 @@ def validate_profile(value: object, names: set[str]) -> dict:
 def load_profile(state: Path, team: str, names: set[str]) -> dict:
     path = profile_path(state, team)
     if not path.exists():
-        return {'members': {}, 'projectLabel': team, 'goal': ''}
+        return {'members': {}, 'projectLabel': team, 'goal': '', 'projectRoot': '', 'workspaceKind': 'project'}
     if path.is_symlink() or path.stat().st_size > 65536:
         raise ValueError('Company profile must be a regular small local file')
     return validate_profile(json.loads(path.read_text()), names)

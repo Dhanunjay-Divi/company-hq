@@ -738,7 +738,13 @@ class CodexBridge:
             session.connection.close()
             raise
 
-    def _start_turn(self, session: _TeamSession, prompt: str) -> str:
+    def _start_turn(
+        self,
+        session: _TeamSession,
+        prompt: str,
+        *,
+        record_user_message: bool = True,
+    ) -> str:
         if not session.thread_id:
             raise BridgeError("team has no native Codex thread")
         self._budget.authorize(session.team)
@@ -780,6 +786,11 @@ class CodexBridge:
                     session.mode,
                     plan_ready=False,
                 )
+        # The native runtime accepted this exact input. Emit it only after the
+        # response supplies a valid turn ID, so a rejected start is never shown
+        # as a user message and the entry has the correct conversation turn.
+        if record_user_message:
+            self._event(session, "message.user", {"text": _safe_text(prompt)}, turn_id=turn_id)
         self._event(session, "turn.started", {
             "text": "Supervisor turn started",
             "mode": session.mode,
@@ -833,7 +844,7 @@ class CodexBridge:
                 "text": "Plan approved; execution enabled",
                 "mode": "execute",
             })
-            turn_id = self._start_turn(session, prompt)
+            turn_id = self._start_turn(session, prompt, record_user_message=False)
         return {
             "accepted": True,
             "mode": "execute",
@@ -859,6 +870,7 @@ class CodexBridge:
                 })
                 if result.get("turnId") != turn_id:
                     raise BridgeProtocolError("native Codex steered a different turn")
+                self._event(session, "message.user", {"text": _safe_text(prompt)}, turn_id=turn_id)
                 mode = "turn/steer"
             else:
                 turn_id = self._start_turn(session, prompt)

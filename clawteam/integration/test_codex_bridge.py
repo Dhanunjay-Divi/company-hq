@@ -262,9 +262,19 @@ class CodexBridgeTest(unittest.TestCase):
     def test_send_steers_active_turn_and_starts_next_idle_turn(self):
         self.start()
         connection = self.factory.connections[0]
+        initial_events = self.bridge.events("team-one")["events"]
+        self.assertEqual(
+            [(event["type"], event["data"].get("text")) for event in initial_events if event["type"] == "message.user"],
+            [("message.user", "Reply with a short status.")],
+        )
         response = self.bridge.send("team-one", "More detail.")
         self.assertEqual(response["mode"], "turn/steer")
         self.assertEqual(response["turnId"], "turn-1-1")
+        user_events = [event for event in self.bridge.events("team-one")["events"] if event["type"] == "message.user"]
+        self.assertEqual(
+            [(event["turnId"], event["data"]["text"]) for event in user_events],
+            [("turn-1-1", "Reply with a short status."), ("turn-1-1", "More detail.")],
+        )
         connection.emit({
             "method": "turn/completed",
             "params": {
@@ -277,6 +287,19 @@ class CodexBridgeTest(unittest.TestCase):
         self.assertFalse(self.bridge.status("team-one")["planReady"])
         self.assertEqual(response["mode"], "turn/start")
         self.assertEqual(response["turnId"], "turn-1-2")
+        user_events = [event for event in self.bridge.events("team-one")["events"] if event["type"] == "message.user"]
+        self.assertEqual(
+            [(event["turnId"], event["data"]["text"]) for event in user_events],
+            [("turn-1-1", "Reply with a short status."), ("turn-1-1", "More detail."), ("turn-1-2", "Next task.")],
+        )
+
+    def test_rejected_steer_does_not_emit_a_user_message(self):
+        self.start()
+        with patch.object(self.bridge, "_rpc", return_value={"turnId": "wrong-turn"}):
+            with self.assertRaisesRegex(BridgeError, "different turn"):
+                self.bridge.send("team-one", "Must not appear.")
+        user_events = [event for event in self.bridge.events("team-one")["events"] if event["type"] == "message.user"]
+        self.assertEqual([event["data"]["text"] for event in user_events], ["Reply with a short status."])
 
     def test_stop_interrupts_only_the_active_team_turn(self):
         self.start()

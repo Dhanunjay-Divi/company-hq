@@ -247,6 +247,55 @@ def project_for(state, name):
     return str(path)
 
 
+def _project_folder(value):
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError('Choose an existing project folder')
+    folder = Path(value).expanduser().resolve()
+    if not folder.is_dir() or folder in {Path('/'), Path.home()}:
+        raise ValueError('Choose an existing project folder')
+    return folder
+
+
+def _managed_workspace_folder(state, name):
+    """Create one private native-work directory beneath isolated app state."""
+    state_root = Path(state).resolve()
+    root = state_root / 'managed-workspaces'
+    root.mkdir(parents=True, exist_ok=True, mode=0o700)
+    if root.is_symlink() or root.resolve() != root or not root.resolve().is_relative_to(state_root):
+        raise ValueError('Managed workspace state is unsafe')
+    os.chmod(root, 0o700)
+    folder = root / name
+    folder.mkdir(mode=0o700)
+    resolved = folder.resolve()
+    if folder.is_symlink() or resolved.parent != root.resolve() or not resolved.is_dir():
+        raise ValueError('Managed workspace state is unsafe')
+    os.chmod(resolved, 0o700)
+    return resolved
+
+
+def _default_supervisor_model(routing):
+    """Choose only a reviewed routing-policy model, never provider discovery."""
+    reviewed = routing.get('reviewed_codex_models', [])
+    if not isinstance(reviewed, list):
+        raise ValueError('No reviewed Codex model is configured')
+    reviewed = [model for model in reviewed if isinstance(model, str)]
+    tier_name = routing.get('escalation', {}).get('start_tier', 'standard')
+    tier = routing.get('tiers', {}).get(tier_name, {})
+    candidate = tier.get('codex_model') if isinstance(tier, dict) else None
+    if candidate in reviewed:
+        return candidate
+    # Schema-1 compatibility while old checked-in routing policies are retired.
+    legacy = routing.get('preferred_supervisors', [])
+    if isinstance(legacy, list):
+        for entry in legacy:
+            candidate = entry.get('model') if isinstance(entry, dict) else None
+            if candidate in reviewed:
+                return candidate
+    if reviewed:
+        return reviewed[0]
+    raise ValueError('No reviewed Codex model is configured')
+
+
 def save_profile(state, name, profile, names):
     value = validate_profile(profile, names)
     path = profile_path(state, name); path.parent.mkdir(parents=True, exist_ok=True)
@@ -368,16 +417,33 @@ def handle_post(handler,state,path,body):
     try:
         if not isinstance(body,dict): raise ValueError('Request must be a JSON object')
         if path=='/api/workspaces':
-            label=body.get('label','').strip();project=body.get('project','').strip();goal=body.get('goal','').strip()
-            if not label or len(label)>120 or len(goal)>2000: raise ValueError('Enter a short project name and goal')
-            folder=Path(project).expanduser().resolve()
-            if not project or not folder.is_dir() or folder in {Path('/'),Path.home()}: raise ValueError('Choose an existing project folder')
+            raw_label=body.get('label','');raw_project=body.get('project','');raw_goal=body.get('goal','')
+            if not all(isinstance(value,str) for value in (raw_label,raw_project,raw_goal)):
+                raise ValueError('Workspace details must be text')
+            label=raw_label.strip() or 'New conversation';project=raw_project.strip();goal=raw_goal.strip()
+            if len(label)>120 or len(goal)>2000: raise ValueError('Enter a short project name and goal')
+            if not goal: goal=f'Discuss and plan {label}.'
             name=(re.sub('[^a-z0-9-]','-',label.lower()).strip('-')[:40] or 'project')+'-'+uuid.uuid4().hex[:6]
+            kind='project' if project else 'managed'
+            folder=_project_folder(project) if project else _managed_workspace_folder(state,name)
             TeamManager.create_team(name,'overall-head','not-started',description=goal,user='local',leader_agent_type='overall-head')
-            profile=save_profile(state,name,{'projectLabel':label,'projectRoot':str(folder),'goal':goal,'members':{'overall-head':{'displayName':'Overall head','department':'Direction & delivery','model':'','reportsTo':None}}},{'overall-head'})
+            profile=save_profile(state,name,{'projectLabel':label,'projectRoot':str(folder),'workspaceKind':kind,'goal':goal,'members':{'overall-head':{'displayName':'Overall head','department':'Direction & delivery','model':'','reportsTo':None}}},{'overall-head'})
             bridge(state).set_budget(name, 200000, True)
             handler._serve_json({'team':name,'company':profile,'started':False});return True
-        parts=path.strip('/').split('/');name=unquote(parts[2]);project=project_for(state,name)
+        parts=path.strip('/').split('/')
+        if len(parts)==4 and parts[:2]==['api','workspaces'] and parts[3]=='attach':
+            name=unquote(parts[2]);team=TeamManager.get_team(name)
+            if team is None: raise ValueError('Workspace not found')
+            profile=load_profile(state,name,{m.name for m in team.members})
+            if profile.get('workspaceKind') != 'managed':
+                raise ValueError('Only an unopened managed workspace can attach a project folder')
+            runtime=bridge(state).status(name)
+            if runtime.get('project') is not None or runtime.get('threadId') is not None:
+                raise ValueError('This workspace is already bound to its managed folder; start a new project workspace instead')
+            folder=_project_folder(body.get('project'))
+            profile=save_profile(state,name,{**profile,'projectRoot':str(folder),'workspaceKind':'project'}, {m.name for m in team.members})
+            handler._serve_json({'team':name,'company':profile,'attached':True});return True
+        name=unquote(parts[2]);project=project_for(state,name)
         if parts[1]=='budget':
             if len(parts)!=3: raise ValueError('Unknown budget route')
             budget=bridge(state).set_budget(name, body.get('limitTokens', body.get('maxTotalTokens', 200000)), body.get('enforced', True))
@@ -405,7 +471,7 @@ def handle_post(handler,state,path,body):
             if not isinstance(prompt,str) or not prompt.strip() or len(prompt)>24000: raise ValueError('Enter a message of at most 24000 characters')
             if action=='start':
                 routing=json.loads(routing_path().read_text());model=body.get('model','auto')
-                if model=='auto':model=routing['preferred_supervisors'][0]['model']
+                if model=='auto':model=_default_supervisor_model(routing)
                 if model not in routing['reviewed_codex_models']: raise ValueError('Choose a reviewed available Codex model')
                 result=client.start(name,project,prompt.strip(),model)
             else:result=client.send(name,prompt.strip())

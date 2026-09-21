@@ -193,6 +193,7 @@ class SecureBoardIntegrationTest(unittest.TestCase):
         with self.request("/api/company/"+name) as response:
             profile=json.load(response)
         self.assertEqual(profile["projectRoot"],str(folder.resolve()))
+        self.assertEqual(profile["workspaceKind"],"project")
         with self.request("/api/runtime/"+name+"/status") as response:
             native=json.load(response)
         self.assertEqual(native["state"],"offline")
@@ -222,6 +223,63 @@ class SecureBoardIntegrationTest(unittest.TestCase):
             },headers={"Origin":self.base})
         self.assertEqual(invalid.exception.code,400)
         invalid.exception.close()
+
+    def test_managed_workspace_is_unique_private_and_can_attach_before_native_binding(self):
+        created=[]
+        for label in ("Idea chat", "Idea chat"):
+            with self.request("/api/workspaces", method="POST", payload={
+                "label": label, "goal": ""
+            }, headers={"Origin": self.base}) as response:
+                created.append(json.load(response))
+        self.assertNotEqual(created[0]["team"], created[1]["team"])
+        first=created[0]
+        profile=first["company"]
+        self.assertEqual(profile["workspaceKind"], "managed")
+        managed=Path(profile["projectRoot"])
+        self.assertTrue(managed.is_dir())
+        self.assertTrue(managed.is_relative_to(self.state.resolve() / "managed-workspaces"))
+        self.assertFalse(managed.is_relative_to(ROOT.parent.parent))
+        self.assertEqual(profile["goal"], "Discuss and plan Idea chat.")
+        self.assertEqual(list(managed.iterdir()), [])
+        target=self.state.parent / "later-attached-project"
+        target.mkdir()
+        with self.request("/api/workspaces/"+first["team"]+"/attach", method="POST", payload={
+            "project": str(target)
+        }, headers={"Origin": self.base}) as response:
+            attached=json.load(response)
+        self.assertTrue(attached["attached"])
+        self.assertEqual(attached["company"]["workspaceKind"], "project")
+        self.assertEqual(attached["company"]["projectRoot"], str(target.resolve()))
+        self.assertEqual(list(target.iterdir()), [])
+
+    def test_managed_workspace_rejects_unsafe_state_link_and_post_binding_attachment(self):
+        managed_root=self.state / "managed-workspaces"
+        outside=self.state.parent / "unsafe-target"
+        outside.mkdir()
+        managed_root.parent.mkdir(parents=True, exist_ok=True)
+        managed_root.symlink_to(outside, target_is_directory=True)
+        with self.assertRaises(urllib.error.HTTPError) as unsafe:
+            self.request("/api/workspaces", method="POST", payload={"label":"Unsafe", "goal":""}, headers={"Origin":self.base})
+        self.assertEqual(unsafe.exception.code, 400)
+        unsafe.exception.close()
+        managed_root.unlink()
+        with self.request("/api/workspaces", method="POST", payload={"label":"Bound", "goal":""}, headers={"Origin":self.base}) as response:
+            created=json.load(response)
+        name=created["team"]
+        with self.request("/api/runtime/"+name+"/status") as response:
+            self.assertIsNone(json.load(response)["project"])
+        runtime=self.state / "runtime" / "bindings"
+        runtime.mkdir(parents=True, exist_ok=True)
+        # A durable binding, even without a live process, must never be rewritten.
+        import hashlib
+        binding=runtime / (hashlib.sha256(name.encode()).hexdigest()+".json")
+        binding.write_text(json.dumps({"team":name,"projectRoot":created["company"]["projectRoot"],"threadId":None,"mode":"plan","planReady":False}))
+        target=self.state.parent / "must-not-attach"
+        target.mkdir()
+        with self.assertRaises(urllib.error.HTTPError) as bound:
+            self.request("/api/workspaces/"+name+"/attach", method="POST", payload={"project":str(target)}, headers={"Origin":self.base})
+        self.assertEqual(bound.exception.code,400)
+        bound.exception.close()
 
 
 class TeamUILifecycleTest(unittest.TestCase):
