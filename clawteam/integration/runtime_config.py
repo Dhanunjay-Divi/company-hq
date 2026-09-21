@@ -206,6 +206,14 @@ def node_executable() -> Path | None:
     return Path(found).resolve() if found else None
 
 
+def external_executable(env_name: str, command: str) -> Path | None:
+    raw = os.environ.get(env_name)
+    if raw:
+        return _expand(raw)
+    found = shutil.which(command)
+    return Path(found).resolve() if found else None
+
+
 def sandbox_executable() -> Path:
     raw = os.environ.get("COMPANY_HQ_SANDBOX_EXEC")
     return _expand(raw) if raw else Path("/usr/bin/sandbox-exec")
@@ -299,6 +307,18 @@ def health_snapshot(data_dir: Path | None = None) -> dict[str, Any]:
     node = node_executable()
     sandbox = sandbox_executable()
     codex = codex_executable()
+    external = {
+        "claude": external_executable("COMPANY_HQ_CLAUDE_PATH", "claude"),
+        "opencode": external_executable("COMPANY_HQ_OPENCODE_PATH", "opencode"),
+        "codeGraph": external_executable("COMPANY_HQ_CODEGRAPH_PATH", "codegraph"),
+        "serena": external_executable("COMPANY_HQ_SERENA_PATH", "serena"),
+        "graphify": external_executable("COMPANY_HQ_GRAPHIFY_PATH", "graphify"),
+        "rtk": external_executable("COMPANY_HQ_RTK_PATH", "rtk"),
+        "headroom": external_executable("COMPANY_HQ_HEADROOM_PATH", "headroom"),
+        "kimi": external_executable("COMPANY_HQ_KIMI_PATH", "kimi"),
+        "grok": external_executable("COMPANY_HQ_GROK_PATH", "grok"),
+        "glm": external_executable("COMPANY_HQ_GLM_PATH", "glm"),
+    }
     return {
         "schema": 1,
         "mode": "demo" if demo_mode() else "normal",
@@ -329,5 +349,9 @@ def health_snapshot(data_dir: Path | None = None) -> dict[str, Any]:
                     cbm, [(cbm_binary, True), (cbm_guard, False)]
                 ),
             ),
+            **{
+                key: _availability(path, executable=True)
+                for key, path in external.items()
+            },
         },
     }
