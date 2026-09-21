@@ -84,29 +84,44 @@ def parse_review(text: str) -> dict[str, Any]:
     raise ReviewError("reviewer response was not valid review JSON")
 
 
-def _claude_review(prompt: str) -> dict[str, Any]:
+def _claude_review(prompt: str, risk: str) -> dict[str, Any]:
     executable = shutil.which("claude")
     if not executable:
         raise ReviewError("Claude Code is not installed")
-    model = os.environ.get("COMPANY_HQ_CLAUDE_REVIEW_MODEL", "opus").strip() or "opus"
-    with tempfile.TemporaryDirectory(prefix="company-hq-review-claude-") as temp:
-        completed = subprocess.run(
-            [executable, "-p", prompt, "--output-format", "json", "--model", model,
-             "--permission-mode", "plan", "--max-turns", "1"],
-            cwd=temp, stdin=subprocess.DEVNULL, capture_output=True, text=True,
-            timeout=120, check=False,
-        )
-    if completed.returncode != 0:
-        detail = (completed.stderr or completed.stdout or "Claude review failed").strip()[-1000:]
-        raise ReviewError(detail)
-    try:
-        envelope = json.loads(completed.stdout)
-    except json.JSONDecodeError:
-        envelope = None
-    result_text = envelope.get("result") if isinstance(envelope, dict) else None
-    review = parse_review(result_text if isinstance(result_text, str) else completed.stdout)
-    review.update({"providerFamily": "anthropic", "model": model, "crossFamily": True, "backend": "claude-code"})
-    return review
+    override = os.environ.get("COMPANY_HQ_CLAUDE_REVIEW_MODEL", "").strip()
+    if override:
+        models = [override]
+    elif risk == "high":
+        models = ["claude-fable-5", "opus"]
+    elif risk == "medium":
+        models = ["opus", "sonnet"]
+    else:
+        models = ["sonnet"]
+    failures: list[str] = []
+    for model in models:
+        with tempfile.TemporaryDirectory(prefix="company-hq-review-claude-") as temp:
+            completed = subprocess.run(
+                [executable, "-p", prompt, "--output-format", "json", "--model", model,
+                 "--permission-mode", "plan", "--max-turns", "1"],
+                cwd=temp, stdin=subprocess.DEVNULL, capture_output=True, text=True,
+                timeout=120, check=False,
+            )
+        if completed.returncode != 0:
+            failures.append((completed.stderr or completed.stdout or "Claude review failed").strip()[-500:])
+            continue
+        try:
+            envelope = json.loads(completed.stdout)
+        except json.JSONDecodeError:
+            envelope = None
+        result_text = envelope.get("result") if isinstance(envelope, dict) else None
+        try:
+            review = parse_review(result_text if isinstance(result_text, str) else completed.stdout)
+        except ReviewError as exc:
+            failures.append(str(exc))
+            continue
+        review.update({"providerFamily": "anthropic", "model": model, "crossFamily": True, "backend": "claude-code"})
+        return review
+    raise ReviewError("Claude review unavailable: " + " | ".join(failures))
 
 
 def _opencode_family(model: str) -> str:
@@ -187,7 +202,8 @@ def review_plan(plan: dict[str, Any], *, executor_family: str = "openai", allow_
 
     prompt = review_prompt(plan)
     errors: list[str] = []
-    for reviewer in (lambda: _claude_review(prompt),
+    risk = str(plan.get("risk", {}).get("level", "low"))
+    for reviewer in (lambda: _claude_review(prompt, risk),
                      lambda: _opencode_review(prompt, executor_family),
                      lambda: _codex_review(prompt, plan)):
         try:
