@@ -42,6 +42,18 @@ _EXT_FACETS = {
     ".rs": {"backend"}, ".cs": {"backend"}, ".php": {"backend"}, ".rb": {"backend"},
     ".sql": {"data"}, ".ipynb": {"data", "research"},
 }
+_TOOL_HEALTH_KEYS = {
+    "codegraph": "codeGraph",
+    "serena": "serena",
+    "graphify": "graphify",
+    "codebase-memory": "codebaseMemory",
+    "graft": "graft",
+    "ruflo": "rufloMemory",
+    "rtk": "rtk",
+    "headroom": "headroom",
+    "playwright": "playwright",
+}
+
 _NAME_FACETS = {
     "dockerfile": {"devops"}, "docker-compose.yml": {"devops"},
     "docker-compose.yaml": {"devops"}, "terraform.tf": {"devops"},
@@ -204,12 +216,24 @@ def _choose_skills(facets: set[str], catalog: dict[str, Any]) -> list[dict[str, 
     ]
 
 
-def _choose_tools(facets: set[str], catalog: dict[str, Any]) -> list[dict[str, Any]]:
+def _choose_tools(
+    facets: set[str],
+    catalog: dict[str, Any],
+    capability_status: dict[str, Any] | None = None,
+) -> tuple[list[dict[str, Any]], list[str]]:
     candidates: list[tuple[int, int, str, dict[str, Any]]] = []
+    unavailable: list[str] = []
     for tool in catalog.get("tools", []):
         overlap = facets & set(tool.get("facets", []))
-        if overlap:
-            candidates.append((len(overlap), int(tool.get("preference", 0)), tool["id"], tool))
+        if not overlap:
+            continue
+        health_key = _TOOL_HEALTH_KEYS.get(tool["id"])
+        if capability_status is not None and health_key:
+            info = capability_status.get(health_key, {})
+            if not isinstance(info, dict) or not info.get("available"):
+                unavailable.append(tool["id"])
+                continue
+        candidates.append((len(overlap), int(tool.get("preference", 0)), tool["id"], tool))
     candidates.sort(key=lambda row: (-row[0], -row[1], row[2]))
 
     selected: list[dict[str, Any]] = []
@@ -240,10 +264,14 @@ def _choose_tools(facets: set[str], catalog: dict[str, Any]) -> list[dict[str, A
         groups.add(group)
         if len(selected) >= 5:
             break
-    return selected
+    return selected, sorted(set(unavailable))
 
 
-def route_task(goal: str, project: Path | None = None) -> dict[str, Any]:
+def route_task(
+    goal: str,
+    project: Path | None = None,
+    capability_status: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     if not isinstance(goal, str) or not goal.strip():
         raise ValueError("goal must be non-empty text")
     if len(goal) > 24_000:
@@ -269,7 +297,7 @@ def route_task(goal: str, project: Path | None = None) -> dict[str, Any]:
 
     agents = _choose_agents(facets, catalog, build_request)
     skills = _choose_skills(facets, catalog)
-    tools = _choose_tools(facets, catalog)
+    tools, unavailable_tools = _choose_tools(facets, catalog, capability_status)
 
     review_policy = model_policy["preflight_review"][f"{risk}_risk"]
     return {
@@ -288,6 +316,7 @@ def route_task(goal: str, project: Path | None = None) -> dict[str, Any]:
         "agents": agents,
         "skills": skills,
         "tools": tools,
+        "unavailableToolCandidates": unavailable_tools,
         "preflightReview": {
             "required": bool(build_request),
             "crossFamily": review_policy["cross_family"],
