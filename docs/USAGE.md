@@ -25,9 +25,11 @@ Open the URL printed by the command. Connect the project folder you want Company
 Useful commands:
 
 ```sh
-python3 scripts/hq.py status
-python3 scripts/hq.py stop
-python3 scripts/hq.py check
+python3 scripts/hq.py status          # real local app
+python3 scripts/hq.py stop            # stop real local app
+python3 scripts/hq.py status --demo   # demo app
+python3 scripts/hq.py stop --demo     # stop demo app
+python3 scripts/hq.py check           # model-free validation
 ```
 
 `status` tells you whether the local app is running. `stop` closes it. `check` runs the model-free validation suite.
