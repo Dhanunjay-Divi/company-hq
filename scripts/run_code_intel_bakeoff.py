@@ -1,348 +1,220 @@
 #!/usr/bin/env python3
-"""Model-free comparison of structural code-intelligence candidates.
+"""Credential-free structural smoke tests; not an end-to-end model benchmark.
 
-The benchmark intentionally uses a tiny synthetic fixture with known call
-relationships. It measures whether each tool can surface the expected symbols,
-how much output it emits, wall-clock latency, and whether it writes inside the
-fixture repository. It never supplies model/provider credentials.
+Use only disposable fixtures. Run under an OS network sandbox in CI. A successful
+run identifies smoke-test candidates, never a universally best integration.
 """
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
 import os
-from pathlib import Path
+import platform
+import queue
 import shutil
-import select
+import signal
 import subprocess
 import sys
 import tempfile
+import threading
 import time
+from pathlib import Path
+
+from bakeoff_evidence import assess, changes, coverage, exit_code, medians, selection_status, snapshot, text
 
 ROOT = Path(__file__).resolve().parents[1]
-FIXTURE = ROOT / "benchmarks" / "code-intel-fixture"
-QUESTION = "where is session authorization checked?"
-EXPECTED = ("authorize_session", "check_permission", "get_report")
+FIXTURE = ROOT / 'benchmarks' / 'code-intel-fixture'
+FILES = ('auth/session.py', 'api/reports.py', 'billing/invoice.ts')
+CASES = (
+    ('authorization', 'authorize_session', ['authorize_session', 'check_permission', 'get_report', 'auth/session.py', 'api/reports.py']),
+    ('typescript', 'invoiceTotal', ['invoiceTotal', 'calculateTax', 'renderInvoice', 'billing/invoice.ts']),
+)
+PINS = {'graphify': 'graphifyy==0.9.65', 'codegraph': '@colbymchenry/codegraph@1.6.0',
+        'graft': '@nanonets/graft@0.18.0', 'codebase_memory': 'v0.10.8'}
 
 
-def run(command, *, cwd, env, timeout=120):
-    started = time.perf_counter()
-    try:
-        p = subprocess.run(
-            command,
-            cwd=cwd,
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            check=False,
-        )
-        return {
-            "ok": p.returncode == 0,
-            "returncode": p.returncode,
-            "stdout": p.stdout,
-            "stderr": p.stderr,
-            "seconds": round(time.perf_counter() - started, 3),
-        }
-    except subprocess.TimeoutExpired as exc:
-        return {
-            "ok": False,
-            "returncode": None,
-            "stdout": exc.stdout or "",
-            "stderr": (exc.stderr or "") + "\nTIMEOUT",
-            "seconds": round(time.perf_counter() - started, 3),
-        }
+def environment(base: Path) -> dict[str, str]:
+    """Only synthetic candidate processes get an empty HOME. Never alter os.environ."""
+    home = base / 'empty-home'; home.mkdir(parents=True, mode=0o700)
+    env = {k: os.environ[k] for k in ('PATH', 'LD_LIBRARY_PATH', 'SYSTEMROOT', 'WINDIR') if k in os.environ}
+    env.update(HOME=str(home), XDG_CONFIG_HOME=str(base / 'config'),
+               XDG_CACHE_HOME=str(base / 'cache'), XDG_STATE_HOME=str(base / 'state'),
+               LANG='C.UTF-8', PYTHONNOUSERSITE='1', PYTHONDONTWRITEBYTECODE='1',
+               GIT_CONFIG_NOSYSTEM='1', GIT_CONFIG_GLOBAL=os.devnull,
+               CODEGRAPH_TELEMETRY='0', DO_NOT_TRACK='1')
+    return env
 
 
-def fixture_copy(base: Path, name: str) -> Path:
-    target = base / name / "project"
-    target.mkdir(parents=True)
-    for rel in ("auth/session.py", "api/reports.py", "billing/invoice.ts"):
-        src = FIXTURE / rel
-        dst = target / rel
-        dst.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(src, dst)
-    (target / ".git").mkdir()
-    return target
-
-
-def source_digest(project: Path) -> str:
-    h = hashlib.sha256()
-    for p in sorted(project.rglob("*")):
-        if p.is_file() and ".git" not in p.parts and not any(part.startswith(".codegraph") for part in p.parts):
-            h.update(str(p.relative_to(project)).encode())
-            h.update(p.read_bytes())
-    return h.hexdigest()
-
-
-def score_output(text: str):
-    lower = text.lower()
-    hits = [symbol for symbol in EXPECTED if symbol.lower() in lower]
-    return hits, len(hits)
-
-
-def pollution(project: Path):
-    allowed = {".git", "auth", "api", "billing"}
-    return sorted(p.name for p in project.iterdir() if p.name not in allowed)
-
-
-def candidate_graphify(base: Path, env: dict[str, str]):
-    exe = os.environ.get("BAKEOFF_GRAPHIFY")
-    if not exe:
-        return {"available": False, "reason": "BAKEOFF_GRAPHIFY not configured"}
-    project = fixture_copy(base, "graphify")
-    state = base / "graphify" / "state"
-    local_env = env | {"GRAPHIFY_OUT": str(state)}
-    before = source_digest(project)
-    build = run([exe, "extract", str(project)], cwd=project, env=local_env)
-    query = run([exe, "query", QUESTION], cwd=project, env=local_env) if build["ok"] else {
-        "ok": False, "stdout": "", "stderr": "build failed", "seconds": 0
-    }
-    hits, score = score_output(query["stdout"] + "\n" + query["stderr"])
-    return {
-        "available": True,
-        "version": "0.9.65",
-        "build": {k: v for k, v in build.items() if k not in ("stdout", "stderr")},
-        "query": {k: v for k, v in query.items() if k not in ("stdout", "stderr")},
-        "query_output_bytes": len((query["stdout"] + query["stderr"]).encode()),
-        "expected_hits": hits,
-        "correctness_score": score,
-        "source_unchanged": before == source_digest(project),
-        "project_pollution": pollution(project),
-        "output_excerpt": (query["stdout"] + query["stderr"])[-3000:],
-    }
-
-
-def candidate_codegraph(base: Path, env: dict[str, str]):
-    exe = os.environ.get("BAKEOFF_CODEGRAPH")
-    if not exe:
-        return {"available": False, "reason": "BAKEOFF_CODEGRAPH not configured"}
-    project = fixture_copy(base, "codegraph")
-    local_env = env | {"CODEGRAPH_TELEMETRY": "0"}
-    before = source_digest(project)
-    run([exe, "telemetry", "off"], cwd=project, env=local_env, timeout=30)
-    build = run([exe, "init", str(project)], cwd=project, env=local_env)
-    query = run([exe, "explore", QUESTION], cwd=project, env=local_env) if build["ok"] else {
-        "ok": False, "stdout": "", "stderr": "build failed", "seconds": 0
-    }
-    hits, score = score_output(query["stdout"] + "\n" + query["stderr"])
-    return {
-        "available": True,
-        "version": "1.6.0",
-        "build": {k: v for k, v in build.items() if k not in ("stdout", "stderr")},
-        "query": {k: v for k, v in query.items() if k not in ("stdout", "stderr")},
-        "query_output_bytes": len((query["stdout"] + query["stderr"]).encode()),
-        "expected_hits": hits,
-        "correctness_score": score,
-        "source_unchanged": before == source_digest(project),
-        "project_pollution": pollution(project),
-        "output_excerpt": (query["stdout"] + query["stderr"])[-3000:],
-    }
-
-
-def _mcp_rpc(proc, request_id, method, params, timeout=120):
-    proc.stdin.write(json.dumps({
-        "jsonrpc": "2.0",
-        "id": request_id,
-        "method": method,
-        "params": params,
-    }, separators=(",", ":")) + "\n")
-    proc.stdin.flush()
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        if not select.select([proc.stdout], [], [], 0.25)[0]:
-            if proc.poll() is not None:
-                raise RuntimeError(f"MCP process exited early: {proc.returncode}")
-            continue
-        line = proc.stdout.readline()
-        if not line:
-            raise RuntimeError("MCP process closed stdout")
-        value = json.loads(line)
-        if value.get("id") == request_id:
-            if value.get("error"):
-                raise RuntimeError(str(value["error"]))
-            return value.get("result", {})
-    raise TimeoutError(f"MCP request timed out: {method}")
-
-
-def _mcp_text(result):
-    return "\n".join(
-        item.get("text", "")
-        for item in result.get("content", [])
-        if isinstance(item, dict) and item.get("type") == "text"
-    )
-
-
-def candidate_codebase_memory(base: Path, env: dict[str, str]):
-    exe = os.environ.get("BAKEOFF_CODEBASE_MEMORY")
-    if not exe:
-        return {"available": False, "reason": "BAKEOFF_CODEBASE_MEMORY not configured"}
-    project = fixture_copy(base, "codebase-memory")
-    state = base / "codebase-memory" / "state"
-    (state / "config").mkdir(parents=True, exist_ok=True)
-    (state / "cache").mkdir(parents=True, exist_ok=True)
-    (state / "runtime").mkdir(parents=True, exist_ok=True)
-    local_env = env | {
-        "XDG_CONFIG_HOME": str(state / "config"),
-        "CBM_CACHE_DIR": str(state / "cache"),
-        "CBM_RUNTIME_DIR": str(state / "runtime"),
-        "CBM_ALLOWED_ROOT": str(project.parent),
-        "CBM_LOG_LEVEL": "warn",
-    }
-    before = source_digest(project)
-    proc = subprocess.Popen(
-        [exe, "--ui=false"],
-        cwd=base,
-        env=local_env,
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        bufsize=1,
-    )
-    build_started = query_started = None
-    build_result = query_result = {}
-    build_text = query_text = ""
-    error = None
-    try:
-        _mcp_rpc(proc, 1, "initialize", {
-            "protocolVersion": "2024-11-05",
-            "capabilities": {},
-            "clientInfo": {"name": "company-hq-bakeoff", "version": "1"},
-        }, timeout=30)
-        proc.stdin.write(json.dumps({
-            "jsonrpc": "2.0",
-            "method": "notifications/initialized",
-        }) + "\n")
-        proc.stdin.flush()
-
-        build_started = time.perf_counter()
-        build_result = _mcp_rpc(proc, 2, "tools/call", {
-            "name": "index_repository",
-            "arguments": {
-                "repo_path": str(project.resolve()),
-                "name": "company-hq-fixture",
-                "mode": "full",
-                "persistence": False,
-            },
-        }, timeout=180)
-        build_seconds = round(time.perf_counter() - build_started, 3)
-        build_text = _mcp_text(build_result)
-
-        query_started = time.perf_counter()
-        query_result = _mcp_rpc(proc, 3, "tools/call", {
-            "name": "search_graph",
-            "arguments": {
-                "project": "company-hq-fixture",
-                "semantic_query": ["session", "authorization", "permission"],
-                "limit": 20,
-            },
-        }, timeout=90)
-        query_seconds = round(time.perf_counter() - query_started, 3)
-        query_text = _mcp_text(query_result)
-        query_error = bool(query_result.get("isError"))
-        build_error = bool(build_result.get("isError"))
-    except Exception as exc:
-        error = str(exc)
-        build_seconds = round(time.perf_counter() - build_started, 3) if build_started else 0
-        query_seconds = round(time.perf_counter() - query_started, 3) if query_started else 0
-        build_error = True
-        query_error = True
-    finally:
-        if proc.stdin:
-            proc.stdin.close()
-        try:
-            proc.terminate()
-            proc.wait(timeout=5)
-        except subprocess.TimeoutExpired:
+def stop(proc: subprocess.Popen) -> None:
+    if proc.poll() is None:
+        if os.name == 'posix':
+            os.killpg(proc.pid, signal.SIGKILL)
+        else:
             proc.kill()
-            proc.wait(timeout=5)
-        stderr = proc.stderr.read() if proc.stderr else ""
-        if proc.stdout:
-            proc.stdout.close()
-        if proc.stderr:
-            proc.stderr.close()
-
-    combined = query_text + "\n" + (error or "") + "\n" + stderr
-    hits, score = score_output(combined)
-    return {
-        "available": True,
-        "version": "0.10.8",
-        "build": {
-            "ok": not build_error,
-            "seconds": build_seconds,
-        },
-        "query": {
-            "ok": not query_error,
-            "seconds": query_seconds,
-        },
-        "query_output_bytes": len(combined.encode()),
-        "expected_hits": hits,
-        "correctness_score": score,
-        "source_unchanged": before == source_digest(project),
-        "project_pollution": pollution(project),
-        "output_excerpt": combined[-3000:],
-        "error": error,
-    }
+    proc.wait(timeout=5)
 
 
-def candidate_graft(base: Path, env: dict[str, str]):
-    install = os.environ.get("BAKEOFF_GRAFT_INSTALL")
-    if not install:
-        return {"available": False, "reason": "BAKEOFF_GRAFT_INSTALL not configured"}
-    project = fixture_copy(base, "graft")
-    state = base / "graft" / "state"
-    local_env = env | {
-        "COMPANY_HQ_GRAFT_INSTALL": install,
-        "COMPANY_HQ_GRAFT_STATE_ROOT": str(state),
-    }
-    before = source_digest(project)
-    build = run([sys.executable, str(ROOT / "graft.py"), "build", str(project)], cwd=ROOT, env=local_env)
-    query = run(
-        [sys.executable, str(ROOT / "graft.py"), "query", str(project), QUESTION, "--no-refresh"],
-        cwd=ROOT,
-        env=local_env,
-    ) if build["ok"] else {"ok": False, "stdout": "", "stderr": "build failed", "seconds": 0}
-    hits, score = score_output(query["stdout"] + "\n" + query["stderr"])
-    return {
-        "available": True,
-        "version": "0.18.0",
-        "build": {k: v for k, v in build.items() if k not in ("stdout", "stderr")},
-        "query": {k: v for k, v in query.items() if k not in ("stdout", "stderr")},
-        "query_output_bytes": len((query["stdout"] + query["stderr"]).encode()),
-        "expected_hits": hits,
-        "correctness_score": score,
-        "source_unchanged": before == source_digest(project),
-        "project_pollution": pollution(project),
-        "output_excerpt": (query["stdout"] + query["stderr"])[-3000:],
-    }
+def run(command: list[str], *, cwd: Path, env: dict[str, str], timeout: int = 60) -> dict:
+    start = time.perf_counter()
+    try:
+        p = subprocess.Popen(command, cwd=cwd, env=env, stdin=subprocess.DEVNULL,
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                             start_new_session=os.name == 'posix')
+        try:
+            stdout, stderr = p.communicate(timeout=timeout)
+            reason = None
+        except subprocess.TimeoutExpired:
+            stop(p); stdout, stderr = p.communicate()
+            reason = 'timeout'
+        return {'ok': p.returncode == 0 and reason is None, 'returncode': p.returncode,
+                'stdout': text(stdout), 'stderr': text(stderr), 'error': reason,
+                'seconds': round(time.perf_counter() - start, 6)}
+    except OSError as exc:
+        return {'ok': False, 'returncode': None, 'stdout': '', 'stderr': str(exc),
+                'error': 'launch_failed', 'seconds': round(time.perf_counter() - start, 6)}
+
+
+class MCP:
+    """One warm MCP session. Drain stderr to disk; never mix it into answers."""
+    def __init__(self, exe: str, cwd: Path, env: dict[str, str]):
+        self.stderr = tempfile.TemporaryFile()
+        self.proc = subprocess.Popen([exe, '--ui=false'], cwd=cwd, env=env,
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=self.stderr,
+            text=True, bufsize=1, start_new_session=os.name == 'posix')
+        self.lines = queue.Queue(); self.sequence = 0
+        def read():
+            try:
+                for line in self.proc.stdout:
+                    self.lines.put(line)
+            finally:
+                self.lines.put(None)
+        self.reader = threading.Thread(target=read, daemon=True); self.reader.start()
+
+    def call(self, method: str, params: dict, timeout: int = 60) -> dict:
+        self.sequence += 1; ident = self.sequence
+        self.proc.stdin.write(json.dumps({'jsonrpc': '2.0', 'id': ident, 'method': method, 'params': params}) + '\n')
+        self.proc.stdin.flush(); deadline = time.monotonic() + timeout
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError(method)
+            try:
+                line = self.lines.get(timeout=remaining)
+            except queue.Empty as exc:
+                raise TimeoutError(method) from exc
+            if line is None:
+                raise RuntimeError('MCP closed stdout')
+            message = json.loads(line)
+            if message.get('id') != ident:
+                continue
+            if 'error' in message:
+                raise RuntimeError(json.dumps(message['error']))
+            return message.get('result', {})
+
+    def tool(self, name: str, arguments: dict) -> dict:
+        started = time.perf_counter()
+        result = self.call('tools/call', {'name': name, 'arguments': arguments}, timeout=120)
+        body = '\n'.join(x.get('text', '') for x in result.get('content', []) if x.get('type') == 'text')
+        return {'ok': not result.get('isError', False), 'stdout': body, 'stderr': '',
+                'seconds': round(time.perf_counter() - started, 6)}
+
+    def close(self) -> str:
+        stop(self.proc); self.reader.join(timeout=2)
+        self.stderr.seek(0); result = text(self.stderr.read()); self.stderr.close()
+        self.proc.stdin.close(); self.proc.stdout.close()
+        return result
+
+
+def evaluate(name: str, base: Path, output: Path, repetitions: int) -> dict:
+    variable = 'BAKEOFF_GRAFT_INSTALL' if name == 'graft' else 'BAKEOFF_' + name.upper()
+    executable = os.environ.get(variable)
+    if not executable:
+        return {'status': 'not_run', 'reason': variable + ' is not configured', 'pin': PINS[name]}
+    root = base / name; root.mkdir(); project = root / 'project'; project.mkdir()
+    for relative in FILES:
+        destination = project / relative; destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(FIXTURE / relative, destination)
+    (project / '.git').mkdir()
+    env = environment(root); env['GRAPHIFY_OUT'] = str(root / 'graphify-state')
+    env['COMPANY_HQ_GRAFT_INSTALL'] = executable
+    env['COMPANY_HQ_GRAFT_STATE_ROOT'] = str(root / 'graft-state')
+    env['COMPANY_HQ_STATE_ROOT'] = str(root / 'hq-state')
+    for folder in ('cbm-cache', 'cbm-runtime', 'cbm-config'):
+        (root / folder).mkdir(mode=0o700)
+    env.update(CBM_CACHE_DIR=str(root / 'cbm-cache'), CBM_RUNTIME_DIR=str(root / 'cbm-runtime'),
+               XDG_CONFIG_HOME=str(root / 'cbm-config'), CBM_ALLOWED_ROOT=str(project), CBM_LOG_LEVEL='warn')
+    before = snapshot(project); queries = []; mcp = None
+    build = {'ok': False, 'stdout': '', 'stderr': '', 'seconds': 0}
+    diagnostic = ''
+    try:
+        if name == 'codebase_memory':
+            mcp = MCP(executable, root, env)
+            mcp.call('initialize', {'protocolVersion': '2024-11-05', 'capabilities': {},
+                'clientInfo': {'name': 'company-hq-evidence', 'version': '2'}})
+            mcp.proc.stdin.write('{"jsonrpc":"2.0","method":"notifications/initialized"}\n'); mcp.proc.stdin.flush()
+            available = {t['name'] for t in mcp.call('tools/list', {}).get('tools', [])}
+            trace = next((n for n in ('trace_call_path', 'trace_path') if n in available), None)
+            if trace is None:
+                raise RuntimeError('Pinned MCP runtime has no supported call-trace tool')
+            build = mcp.tool('index_repository', {'repo_path': str(project), 'name': 'fixture', 'mode': 'full', 'persistence': False})
+        elif name == 'graphify':
+            build = run([executable, 'extract', str(project)], cwd=project, env=env)
+        elif name == 'codegraph':
+            build = run([executable, 'init', str(project)], cwd=project, env=env)
+        else:
+            build = run([sys.executable, str(ROOT / 'graft.py'), 'build', str(project)], cwd=ROOT, env=env)
+        if build['ok']:
+            for case_id, seed, expected in CASES:
+                for attempt in range(repetitions):
+                    if mcp:
+                        result = mcp.tool(trace, {'project': 'fixture', 'function_name': seed, 'direction': 'both', 'depth': 2})
+                    elif name == 'graphify':
+                        result = run([executable, 'query', seed], cwd=project, env=env)
+                    elif name == 'codegraph':
+                        result = run([executable, 'explore', seed], cwd=project, env=env)
+                    else:
+                        result = run([sys.executable, str(ROOT / 'graft.py'), 'query', str(project), seed, '--no-refresh'], cwd=ROOT, env=env)
+                    result.update(coverage(result['stdout'], expected, ok=result['ok']))
+                    result.update(case=case_id, repetition=attempt + 1)
+                    queries.append(result)
+    except Exception as exc:
+        diagnostic = type(exc).__name__ + ': ' + str(exc)
+        if build['ok']:
+            queries.append({'ok': False, 'stdout': '', 'stderr': diagnostic, 'coverage_complete': False, 'seconds': 0})
+    finally:
+        if mcp:
+            diagnostic += '\n' + mcp.close()
+    boundary = changes(before, snapshot(project))
+    record = {'pin': PINS[name], 'status': assess(build, queries, boundary), 'build': build,
+              'queries': queries, 'boundary': boundary, 'diagnostic': diagnostic, **medians(queries)}
+    payload = json.dumps(record, indent=2).replace(str(base), '<isolated-fixture>')
+    (output / (name + '.json')).write_text(payload + '\n', encoding='utf-8')
+    return json.loads(payload)
 
 
 def main() -> int:
-    for key in tuple(os.environ):
-        if key.endswith("_API_KEY") or key in {
-            "ANTHROPIC_AUTH_TOKEN", "OPENAI_API_KEY", "CODEX_HOME",
-            "CLAUDE_CONFIG_DIR", "GEMINI_API_KEY",
-        }:
-            os.environ.pop(key, None)
-    with tempfile.TemporaryDirectory(prefix="company-hq-code-intel-") as td:
-        base = Path(td)
-        env = os.environ.copy()
-        results = {
-            "schema": 1,
-            "question": QUESTION,
-            "expected_symbols": list(EXPECTED),
-            "graphify": candidate_graphify(base, env),
-            "codegraph": candidate_codegraph(base, env),
-            "codebase_memory": candidate_codebase_memory(base, env),
-            "graft": candidate_graft(base, env),
-        }
-    output = ROOT / "benchmarks" / "code-intel-results.json"
-    output.write_text(json.dumps(results, indent=2) + "\n", encoding="utf-8")
-    print(json.dumps(results, indent=2))
-    usable = [v for k, v in results.items() if k not in {"schema", "question", "expected_symbols"} and v.get("available")]
-    return 0 if usable else 2
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--output-dir', type=Path, required=True)
+    parser.add_argument('--repetitions', type=int, default=3, choices=range(1, 6))
+    args = parser.parse_args(); output = args.output_dir.expanduser().resolve()
+    if output == ROOT or ROOT in output.parents:
+        parser.error('output must be outside the source checkout')
+    output.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix='hq-code-evidence-') as temporary:
+        results = {name: evaluate(name, Path(temporary), output, args.repetitions) for name in PINS}
+    report = {'schema': 2, 'claim_scope': 'two synthetic retrieval smoke cases; not correctness, token savings or universal ranking',
+              'platform': platform.platform(), 'repetitions': args.repetitions,
+              'selection': selection_status(results), 'results': results,
+              'actual_model_tokens': None, 'billed_savings': None,
+              'source_sha': os.environ.get('BENCHMARK_SOURCE_SHA'),
+              'workflow_run': os.environ.get('BENCHMARK_RUN_URL'),
+              'fixture_sha256': hashlib.sha256(b''.join(relative.encode() + (FIXTURE / relative).read_bytes() for relative in FILES)).hexdigest() if FIXTURE.exists() else None}
+    (output / 'code-intel-results.json').write_text(json.dumps(report, indent=2) + '\n')
+    summary = {key: value for key, value in report.items() if key != 'results'}
+    summary['results'] = {name: {key: value for key, value in result.items() if key not in {'queries', 'build'}} | {'build_ok': result.get('build', {}).get('ok'), 'build_seconds': result.get('build', {}).get('seconds'), 'query_cases': [{key: q.get(key) for key in ('case', 'repetition', 'ok', 'coverage_complete', 'matched', 'stdout_bytes')} for q in result.get('queries', [])]} for name, result in results.items()}
+    print(json.dumps(summary, indent=2))
+    return exit_code(results)
 
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     raise SystemExit(main())
