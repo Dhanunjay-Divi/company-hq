@@ -195,6 +195,14 @@ def decisions():
                 "evidence": f"{sum(1 for case in output_cases if case.get('rtk_gate_passed'))}/{len(output_cases)} RTK evidence gates passed.",
             },
             {
+                "area": "Usage budget enforcement",
+                "primary": "Per-workspace reported-token action gate",
+                "why": "Keeps frugality enforceable at Company HQ runtime boundaries without confusing reported tokens with billed spend.",
+                "fallback": "Tracking-only mode when a workspace needs observation before enforcement.",
+                "notChosen": "Pretending local token reports are provider billing caps or account-wide quota.",
+                "evidence": "Bridge tests block later runtime actions after a native totalTokens report reaches the configured ceiling.",
+            },
+            {
                 "area": "User experience",
                 "primary": "Company HQ workbench with Agent Teams AI graph",
                 "why": "One cockpit can show plan, approvals, task ownership and observed runtime events without another scheduler.",
@@ -356,7 +364,7 @@ def handle_get(handler, state):
 
 
 def handle_post(handler,state,path,body):
-    if not path.startswith(('/api/runtime/','/api/knowledge/','/api/workspaces','/api/task/')): return False
+    if not path.startswith(('/api/runtime/','/api/knowledge/','/api/workspaces','/api/task/','/api/budget/')): return False
     try:
         if not isinstance(body,dict): raise ValueError('Request must be a JSON object')
         if path=='/api/workspaces':
@@ -367,8 +375,13 @@ def handle_post(handler,state,path,body):
             name=(re.sub('[^a-z0-9-]','-',label.lower()).strip('-')[:40] or 'project')+'-'+uuid.uuid4().hex[:6]
             TeamManager.create_team(name,'overall-head','not-started',description=goal,user='local',leader_agent_type='overall-head')
             profile=save_profile(state,name,{'projectLabel':label,'projectRoot':str(folder),'goal':goal,'members':{'overall-head':{'displayName':'Overall head','department':'Direction & delivery','model':'','reportsTo':None}}},{'overall-head'})
+            bridge(state).set_budget(name, 200000, True)
             handler._serve_json({'team':name,'company':profile,'started':False});return True
         parts=path.strip('/').split('/');name=unquote(parts[2]);project=project_for(state,name)
+        if parts[1]=='budget':
+            if len(parts)!=3: raise ValueError('Unknown budget route')
+            budget=bridge(state).set_budget(name, body.get('limitTokens', body.get('maxTotalTokens', 200000)), body.get('enforced', True))
+            handler._serve_json({'updated':True,'budget':budget});return True
         if parts[1]=='knowledge':
             if demo_mode():
                 raise ValueError('Saving memory is disabled in model-free demo mode')

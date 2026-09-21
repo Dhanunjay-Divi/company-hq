@@ -16,7 +16,7 @@ A good first prompt is:
 
 ## Usage and cost
 
-The run screen shows provider-reported token counts when the native runtime emits them: input, cached input, output, total, and report count. This is local run evidence. It is not account-wide quota, billed money, or a savings claim.
+The run screen shows provider-reported token counts when the native runtime emits them: input, cached input, output, total, and report count. Each workspace also has a reported-token ceiling. The default is 200,000 tokens and the Run overview lets you raise, lower, disable, or switch it to tracking-only mode. Once reported native totalTokens reaches the enforced ceiling, Company HQ blocks the next start, send, execute, or approval action for that workspace. This is local run evidence and an action gate. It is not account-wide quota, billed money, or a savings claim, and it cannot guarantee a provider-side mid-turn hard stop.
 
 Company HQ stays frugal by default:
 

@@ -20,7 +20,7 @@ def emit(message):
 
 def completed(text, status='completed'):
     emit({'method':'item/completed','params':{'threadId':'fixture-supervisor','turnId':current_turn,'item':{'id':current_turn+'-reply','type':'agentMessage','text':text}}})
-    emit({'method':'thread/tokenUsage/updated','params':{'threadId':'fixture-supervisor','tokenUsage':{'total':{'inputTokens':200*turn,'cachedInputTokens':40*turn,'outputTokens':30*turn}}}})
+    emit({'method':'thread/tokenUsage/updated','params':{'threadId':'fixture-supervisor','tokenUsage':{'total':{'inputTokens':200*turn,'cachedInputTokens':40*turn,'outputTokens':30*turn,'totalTokens':230*turn}}}})
     emit({'method':'turn/completed','params':{'threadId':'fixture-supervisor','turn':{'id':current_turn,'status':status}}})
 
 def after_start(params):
@@ -52,6 +52,8 @@ for line in sys.stdin:
     elif method in ('thread/start','thread/resume'):
         assert Path(params['cwd']).resolve() == project
         result = {'thread':{'id':'fixture-supervisor'}}
+    elif method == 'thread/goal/set':
+        result = {'goal':{'tokenBudget':params['tokenBudget']}}
     elif method == 'turn/start':
         turn += 1; current_turn = 'fixture-turn-'+str(turn)
         result = {'turn':{'id':current_turn}}

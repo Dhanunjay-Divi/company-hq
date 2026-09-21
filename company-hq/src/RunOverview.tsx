@@ -5,13 +5,14 @@ interface Runtime {
   state?: string; mode?: string; planReady?: boolean; connected?: boolean;
   threadId?: string; model?: string; children?: Worker[];
   usageSummary?: { inputTokens?: number; cachedInputTokens?: number; outputTokens?: number; coverage?: string };
+  budget?: { limitTokens?: number; usedTokens?: number; remainingTokens?: number | null; enforced?: boolean; blocked?: boolean; reason?: string; coverage?: string };
   limits?: { remainingTurns?: number; maxTurns?: number; blockedReason?: string };
 }
 interface Event { seq: number; type: string; data?: { text?: string; status?: string } }
 interface Props {
   runtime: Runtime; events: Event[]; demo: boolean; connectedProject: boolean;
   registeredCount: number; completedCount: number; taskCount: number;
-  onConsole: () => void; onSystem: () => void; onDraft: (text: string) => void;
+  onConsole: () => void; onSystem: () => void; onBudget: () => void; onDraft: (text: string) => void;
 }
 const names: Record<string, string> = {
   offline: 'Not connected', starting: 'Connecting', running: 'Working', idle: 'Ready',
@@ -25,6 +26,7 @@ function formatNumber(value: unknown) {
 export default function RunOverview(p: Props) {
   const r = p.runtime;
   const usage = r.usageSummary || {};
+  const budget = r.budget || {};
   const completed = [...p.events].reverse().find(e => e.type === 'turn.completed');
   const result = [...p.events].reverse().find(e => e.type === 'message.completed');
   const executionFinished = r.mode === 'execute' && r.state === 'idle' && completed?.data?.status === 'completed';
@@ -53,13 +55,15 @@ export default function RunOverview(p: Props) {
       <article><span>Execution access</span><strong>{p.demo ? 'Disabled' : r.mode === 'execute' ? 'Approved workspace' : 'Read-only planning'}</strong><small>Provider permissions still apply</small></article>
       <article><span>Recorded tasks</span><strong>{p.completedCount} / {p.taskCount}</strong><small>Task status is separate from test evidence</small></article>
     </div>
-    <section className="usage-section" aria-label="Usage and budget signal"><div><h3>Usage and budget signal</h3>
-      <p>{usage.eventCount ? usage.coverage : 'No native runtime usage report has arrived yet. Account quota and billed cost are checked outside this local project dashboard.'}</p></div>
+    <section className={`usage-section ${budget.blocked ? 'is-blocked' : ''}`} aria-label="Usage and budget signal"><div><h3>Usage and budget signal</h3>
+      <p>{budget.blocked ? budget.reason : usage.eventCount ? usage.coverage : 'No native runtime usage report has arrived yet. Account quota and billed cost are checked outside this local project dashboard.'}</p>
+      <button className="small-button" onClick={p.onBudget}>Set budget</button></div>
       <div className="usage-grid">
         <article><span>Input</span><strong>{formatNumber(usage.inputTokens)}</strong><small>runtime tokens</small></article>
         <article><span>Cached</span><strong>{formatNumber(usage.cachedInputTokens)}</strong><small>reported cache</small></article>
         <article><span>Output</span><strong>{formatNumber(usage.outputTokens)}</strong><small>runtime tokens</small></article>
-        <article><span>Total</span><strong>{formatNumber(usage.totalTokens)}</strong><small>{usage.eventCount ? `${usage.eventCount} report${usage.eventCount === 1 ? '' : 's'}` : 'no report'}</small></article>
+        <article><span>Run total</span><strong>{formatNumber(usage.totalTokens)}</strong><small>{usage.eventCount ? `${usage.eventCount} report${usage.eventCount === 1 ? '' : 's'}` : 'no report'}</small></article>
+        <article><span>Budget left</span><strong>{budget.limitTokens === 0 ? 'Off' : formatNumber(budget.remainingTokens)}</strong><small>{budget.enforced ? 'action gate on' : 'tracking only'}</small></article>
       </div>
     </section>
     <section className="worker-section"><h3>Observed runtime workers</h3>

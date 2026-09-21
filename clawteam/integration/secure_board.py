@@ -144,7 +144,7 @@ class SecureBoardHandler(BoardHandler):
             return
 
         path = urlparse(self.path).path
-        if path.startswith(('/api/runtime/','/api/knowledge/','/api/workspaces','/api/task/')):
+        if path.startswith(('/api/runtime/','/api/knowledge/','/api/workspaces','/api/task/','/api/budget/')):
             from hq_api import handle_post
             try:
                 payload = json.loads(self.rfile.read(length).decode('utf-8'))

@@ -52,6 +52,8 @@ class FakeConnection:
             result = {"thread": {"id": f"thr-{self.number}"}}
         elif method == "thread/resume":
             result = {"thread": {"id": message["params"]["threadId"]}}
+        elif method == "thread/goal/set":
+            result = {"goal": {"tokenBudget": message["params"]["tokenBudget"]}}
         elif method == "turn/start":
             self.turn_number += 1
             result = {"turn": {"id": f"turn-{self.number}-{self.turn_number}"}}
@@ -125,7 +127,7 @@ class CodexBridgeTest(unittest.TestCase):
 
         methods = [item.get("method") for item in connection.sent]
         self.assertEqual(
-            methods, ["initialize", "initialized", "thread/start", "turn/start"]
+            methods, ["initialize", "initialized", "thread/start", "thread/goal/set", "turn/start"]
         )
         thread_params = connection.sent[2]["params"]
         self.assertEqual(thread_params["cwd"], str(self.project.resolve()))
@@ -136,7 +138,9 @@ class CodexBridgeTest(unittest.TestCase):
         self.assertIn("Use registered Ruflo", thread_params["developerInstructions"])
         self.assertIn("read-only planning mode", thread_params["developerInstructions"])
 
-        turn_params = connection.sent[3]["params"]
+        goal_params = connection.sent[3]["params"]
+        self.assertEqual(goal_params["tokenBudget"], 200000)
+        turn_params = connection.sent[4]["params"]
         self.assertEqual(turn_params["sandboxPolicy"], {"type": "readOnly"})
         binding_files = list((self.root / "runtime" / "bindings").glob("*.json"))
         self.assertEqual(len(binding_files), 1)
@@ -423,6 +427,7 @@ class CodexBridgeTest(unittest.TestCase):
                         "inputTokens": 7,
                         "cachedInputTokens": 2,
                         "outputTokens": 3,
+                        "totalTokens": 10,
                     },
                     "accountEmail": "must-not-leak@example.com",
                 },
@@ -453,6 +458,29 @@ class CodexBridgeTest(unittest.TestCase):
         self.assertEqual(len(events["events"]), 20)
         self.assertTrue(events["truncated"])
         self.assertNotIn("accountEmail", json.dumps(events))
+
+    def test_budget_gate_blocks_later_runtime_actions(self):
+        self.bridge.set_budget("team-one", 10, True)
+        self.start()
+        connection = self.factory.connections[0]
+        connection.emit({
+            "method": "thread/tokenUsage/updated",
+            "params": {
+                "threadId": "thr-1",
+                "turnId": "turn-1-1",
+                "tokenUsage": {
+                    "total": {"totalTokens": 12, "inputTokens": 8, "outputTokens": 4},
+                },
+            },
+        })
+        status = self.bridge.status("team-one")
+        self.assertTrue(status["budget"]["blocked"])
+        self.assertEqual(status["budget"]["usedTokens"], 12)
+        sent_before = len(connection.sent)
+        with self.assertRaisesRegex(BridgeError, "budget exhausted"):
+            self.bridge.send("team-one", "More work.")
+        self.assertEqual(len(connection.sent), sent_before)
+        self.assertTrue(any(event["type"] == "budget.exhausted" for event in self.bridge.events("team-one", 0)["events"]))
 
     def test_concurrent_second_start_is_rejected(self):
         self.start()

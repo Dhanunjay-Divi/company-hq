@@ -30,6 +30,8 @@ SUPPORTED_MODELS = frozenset({
 TEAM_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 MAX_PROMPT = 40_000
 MAX_TEXT = 24_000
+DEFAULT_TOKEN_BUDGET = 200_000
+MAX_TOKEN_BUDGET = 20_000_000
 
 
 class BridgeError(RuntimeError):
@@ -300,6 +302,163 @@ class _TeamSession:
     closing: bool = False
 
 
+class _BudgetStore:
+    def __init__(self, state_dir: Path):
+        self.directory = state_dir / "budgets"
+        self.directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+        os.chmod(self.directory, 0o700)
+        self._lock = threading.RLock()
+
+    def _path(self, team: str) -> Path:
+        digest = hashlib.sha256(team.encode("utf-8")).hexdigest()
+        return self.directory / f"{digest}.json"
+
+    def _default(self, team: str) -> dict[str, Any]:
+        return {
+            "version": 1,
+            "team": team,
+            "limitTokens": DEFAULT_TOKEN_BUDGET,
+            "enforced": True,
+            "usedTokens": 0,
+            "threadId": None,
+            "lastNativeTotalTokens": 0,
+            "exhaustedNotified": False,
+            "updatedAtMs": _now_ms(),
+        }
+
+    def _clean_policy(self, limit_tokens: object, enforced: object) -> tuple[int, bool]:
+        if isinstance(enforced, str):
+            enforced = enforced.strip().lower() in {"1", "true", "yes", "on"}
+        enforced = bool(enforced)
+        if isinstance(limit_tokens, bool) or not isinstance(limit_tokens, (int, float, str)):
+            raise BridgeError("token budget must be a number")
+        try:
+            limit = int(limit_tokens)
+        except (TypeError, ValueError) as exc:
+            raise BridgeError("token budget must be a number") from exc
+        if limit < 0 or limit > MAX_TOKEN_BUDGET:
+            raise BridgeError(f"token budget must be between 0 and {MAX_TOKEN_BUDGET}")
+        return limit, enforced
+
+    def _read_unlocked(self, team: str) -> dict[str, Any]:
+        path = self._path(team)
+        if not path.exists():
+            return self._default(team)
+        if path.is_symlink() or not path.is_file() or path.stat().st_size > 16_384:
+            raise BridgeError("budget state is not a regular small file")
+        try:
+            value = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise BridgeError("budget state is unreadable") from exc
+        if not isinstance(value, dict) or value.get("team") != team:
+            raise BridgeError("budget state does not match the requested team")
+        default = self._default(team)
+        limit, enforced = self._clean_policy(value.get("limitTokens", default["limitTokens"]), value.get("enforced", True))
+        used = value.get("usedTokens", 0)
+        last = value.get("lastNativeTotalTokens", 0)
+        if isinstance(used, bool) or not isinstance(used, (int, float)) or used < 0:
+            used = 0
+        if isinstance(last, bool) or not isinstance(last, (int, float)) or last < 0:
+            last = 0
+        return {
+            **default,
+            "limitTokens": limit,
+            "enforced": enforced,
+            "usedTokens": int(used),
+            "threadId": value.get("threadId") if isinstance(value.get("threadId"), str) else None,
+            "lastNativeTotalTokens": int(last),
+            "exhaustedNotified": bool(value.get("exhaustedNotified", False)),
+            "updatedAtMs": value.get("updatedAtMs") if isinstance(value.get("updatedAtMs"), int) else _now_ms(),
+        }
+
+    def _write_unlocked(self, value: dict[str, Any]) -> dict[str, Any]:
+        value = {**value, "updatedAtMs": _now_ms()}
+        path = self._path(value["team"])
+        temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+        temporary.write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
+        os.chmod(temporary, 0o600)
+        os.replace(temporary, path)
+        return value
+
+    def set_policy(self, team: str, limit_tokens: object, enforced: object) -> dict[str, Any]:
+        team = _validate_team(team)
+        limit, enforce = self._clean_policy(limit_tokens, enforced)
+        with self._lock:
+            value = self._read_unlocked(team)
+            value["limitTokens"] = limit
+            value["enforced"] = enforce
+            value["exhaustedNotified"] = False
+            return self._write_unlocked(value)
+
+    def status(self, team: str) -> dict[str, Any]:
+        team = _validate_team(team)
+        with self._lock:
+            value = self._read_unlocked(team)
+        return self._public(value)
+
+    def authorize(self, team: str) -> dict[str, Any]:
+        team = _validate_team(team)
+        status = self.status(team)
+        if status["blocked"]:
+            raise BridgeError(status["reason"])
+        return status
+
+    def record_usage(self, team: str, thread_id: str | None, native_total_tokens: int | None) -> tuple[dict[str, Any], bool]:
+        team = _validate_team(team)
+        if native_total_tokens is None or native_total_tokens < 0:
+            return self.status(team), False
+        with self._lock:
+            value = self._read_unlocked(team)
+            previous_thread = value.get("threadId")
+            previous_total = int(value.get("lastNativeTotalTokens") or 0)
+            if previous_thread == thread_id:
+                delta = max(0, native_total_tokens - previous_total)
+            else:
+                delta = native_total_tokens
+            value["usedTokens"] = int(value.get("usedTokens") or 0) + delta
+            value["threadId"] = thread_id
+            value["lastNativeTotalTokens"] = native_total_tokens
+            status = self._public(value)
+            notify = bool(status["blocked"] and not value.get("exhaustedNotified"))
+            if notify:
+                value["exhaustedNotified"] = True
+            self._write_unlocked(value)
+        return status, notify
+
+    def _public(self, value: dict[str, Any]) -> dict[str, Any]:
+        limit = int(value.get("limitTokens") or 0)
+        used = int(value.get("usedTokens") or 0)
+        enforced = bool(value.get("enforced", True))
+        remaining = None if limit <= 0 else max(0, limit - used)
+        blocked = bool(enforced and limit > 0 and used >= limit)
+        return {
+            "limitTokens": limit,
+            "usedTokens": used,
+            "remainingTokens": remaining,
+            "enforced": enforced,
+            "blocked": blocked,
+            "reason": (
+                f"Workspace token budget exhausted ({used:,}/{limit:,} reported native tokens). Increase the budget or start a new reviewed budget before continuing."
+                if blocked else None
+            ),
+            "enforcement": "native-goal-best-effort + Company HQ action gate",
+            "coverage": "Counts provider-reported native totalTokens. This is not billed money or account-wide quota.",
+        }
+
+
+def _native_total_tokens(counts: dict[str, Any]) -> int | None:
+    total = counts.get("total") if isinstance(counts.get("total"), dict) else counts
+    if isinstance(total, dict):
+        for key in ("totalTokens", "tokens"):
+            value = total.get(key)
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                return int(value)
+    value = counts.get("totalTokens")
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return int(value)
+    return None
+
+
 class CodexBridge:
     """Synchronous, thread-safe facade over asynchronous app-server JSONL."""
 
@@ -325,6 +484,7 @@ class CodexBridge:
         self._sessions: dict[str, _TeamSession] = {}
         self._sessions_lock = threading.RLock()
         self._binding_lock = threading.Lock()
+        self._budget = _BudgetStore(self.state_dir)
         atexit.register(self.shutdown_all)
 
     def _binding_path(self, team: str) -> Path:
@@ -381,6 +541,37 @@ class CodexBridge:
         temporary.write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
         os.chmod(temporary, 0o600)
         os.replace(temporary, path)
+
+    def set_budget(self, team: str, limit_tokens: object, enforced: object = True) -> dict[str, Any]:
+        team = _validate_team(team)
+        value = self._budget.set_policy(team, limit_tokens, enforced)
+        with self._sessions_lock:
+            session = self._sessions.get(team)
+        if session and session.thread_id:
+            self._set_native_goal(session)
+        return self._budget.status(team)
+
+    def _set_native_goal(self, session: _TeamSession) -> None:
+        budget = self._budget.status(session.team)
+        if not budget["enforced"] or budget["limitTokens"] <= 0 or not session.thread_id:
+            return
+        remaining = budget["remainingTokens"]
+        if not isinstance(remaining, int) or remaining <= 0:
+            return
+        try:
+            self._rpc(session, "thread/goal/set", {
+                "threadId": session.thread_id,
+                "tokenBudget": remaining,
+            })
+            self._event(session, "budget.goal", {
+                "text": "Native token goal applied",
+                "remainingTokens": remaining,
+            })
+        except Exception as exc:
+            self._event(session, "budget.goal_failed", {
+                "text": _safe_text(exc, 1000),
+                "remainingTokens": remaining,
+            })
 
     def _bind_project(self, team: str, project: Path) -> tuple[Path, dict[str, Any] | None]:
         try:
@@ -469,6 +660,7 @@ class CodexBridge:
         team = _validate_team(team)
         prompt = _validate_prompt(prompt)
         model = _validate_model(model)
+        self._budget.authorize(team)
         project_path, binding = self._bind_project(team, Path(project))
         # New teams always begin in read-only planning. Existing approved
         # sessions restore their persisted mode. Callers cannot opt directly
@@ -531,6 +723,7 @@ class CodexBridge:
                     mode,
                     plan_ready=session.plan_ready,
                 )
+            self._set_native_goal(session)
             self._event(session, "thread.started", {
                 "text": "Native supervisor connected",
                 "mode": mode,
@@ -548,6 +741,7 @@ class CodexBridge:
     def _start_turn(self, session: _TeamSession, prompt: str) -> str:
         if not session.thread_id:
             raise BridgeError("team has no native Codex thread")
+        self._budget.authorize(session.team)
         result = self._rpc(session, "turn/start", {
             "threadId": session.thread_id,
             "input": [{"type": "text", "text": prompt}],
@@ -604,6 +798,7 @@ class CodexBridge:
     ) -> dict[str, Any]:
         session = self._require_session(_validate_team(team))
         prompt = _validate_prompt(prompt)
+        self._budget.authorize(team)
         with session.operation_lock:
             with session.lock:
                 if session.state != "idle" or not session.thread_id:
@@ -649,12 +844,14 @@ class CodexBridge:
     def send(self, team: str, prompt: str) -> dict[str, Any]:
         session = self._require_session(_validate_team(team))
         prompt = _validate_prompt(prompt)
+        self._budget.authorize(team)
         with session.operation_lock:
             with session.lock:
                 state, thread_id, turn_id = session.state, session.thread_id, session.turn_id
             if not thread_id or state in {"starting", "stopping", "error", "offline"}:
                 raise BridgeError(f"team supervisor cannot accept input while {state}")
             if state in {"running", "awaiting_approval"} and turn_id:
+                self._budget.authorize(team)
                 result = self._rpc(session, "turn/steer", {
                     "threadId": thread_id,
                     "expectedTurnId": turn_id,
@@ -684,6 +881,7 @@ class CodexBridge:
         session = self._require_session(_validate_team(team))
         if decision not in {"approve", "reject"}:
             raise BridgeError("decision must be approve or reject")
+        self._budget.authorize(team)
         with session.operation_lock:
             with session.lock:
                 if session.mode != "execute":
@@ -724,6 +922,7 @@ class CodexBridge:
             session = self._sessions.get(team)
         if not session:
             binding = self._read_binding(team)
+            budget = self._budget.status(team)
             return {
                 "team": team,
                 "state": "offline",
@@ -738,8 +937,11 @@ class CodexBridge:
                 "pendingApprovals": [],
                 "children": [],
                 "usageSummary": None,
+                "budget": budget,
+                "limits": {"blockedReason": budget["reason"]} if budget["blocked"] else {},
             }
         with session.lock:
+            budget = self._budget.status(team)
             result = {
                 "team": team,
                 "state": session.state,
@@ -754,6 +956,8 @@ class CodexBridge:
                 "pendingApprovals": [dict(item.data) for item in session.approvals.values()],
                 "children": [dict(value) for value in session.children.values()],
                 "usageSummary": dict(session.usage_summary) if session.usage_summary else None,
+                "budget": budget,
+                "limits": {"blockedReason": budget["reason"]} if budget["blocked"] else {},
             }
             if session.error:
                 result["error"] = session.error
@@ -968,10 +1172,13 @@ class CodexBridge:
             raw_counts = _numeric_tree(params.get("tokenUsage")) or {}
             counts = raw_counts if isinstance(raw_counts, dict) else {"value": raw_counts}
             summary = _usage_summary(counts)
+            budget_status, budget_notify = self._budget.record_usage(session.team, thread_id or session.thread_id, _native_total_tokens(counts))
             with session.lock:
                 session.usage_event_count += 1
                 summary["eventCount"] = session.usage_event_count
                 session.usage_summary = summary
+            if budget_notify:
+                self._event(session, "budget.exhausted", {"text": budget_status["reason"], **budget_status}, thread_id, turn_id)
             self._event(
                 session,
                 "usage",

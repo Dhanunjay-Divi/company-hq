@@ -24,6 +24,7 @@ class HQAPIDemoTest(unittest.TestCase):
         self.assertEqual(len(result["repositories"]), 40)
         self.assertGreaterEqual(len(result["additionalComponents"]), 7)
         self.assertTrue(any(item["area"] == "Code intelligence" for item in result["decisions"]))
+        self.assertTrue(any(item["area"] == "Usage budget enforcement" for item in result["decisions"]))
         self.assertTrue(any(item["area"] == "Runtime language boundary" for item in result["decisions"]))
         self.assertTrue(any(repo["repo"] == "obra/superpowers" for repo in result["repositories"]))
         self.assertTrue(any("Byte size is not token count" in item for item in result["limitations"]))

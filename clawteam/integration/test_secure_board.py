@@ -197,6 +197,15 @@ class SecureBoardIntegrationTest(unittest.TestCase):
             native=json.load(response)
         self.assertEqual(native["state"],"offline")
         self.assertFalse(native["connected"])
+        self.assertTrue(native["budget"]["enforced"])
+        with self.request("/api/budget/"+name,method="POST",payload={
+            "limitTokens":5000,"enforced":True
+        },headers={"Origin":self.base}) as response:
+            budget=json.load(response)["budget"]
+        self.assertEqual(budget["limitTokens"],5000)
+        with self.request("/api/runtime/"+name+"/status") as response:
+            native=json.load(response)
+        self.assertEqual(native["budget"]["limitTokens"],5000)
         with self.request("/api/team/"+name+"/task",method="POST",payload={
             "subject":"Fixture task","owner":"overall-head"
         },headers={"Origin":self.base}) as response:
