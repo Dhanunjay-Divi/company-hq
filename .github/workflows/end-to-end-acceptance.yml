@@ -1,0 +1,62 @@
+name: End-to-end acceptance
+
+on:
+  push:
+    branches: [impl/e2e-workflow-validation]
+  pull_request:
+    paths:
+      - 'company-hq/**'
+      - 'clawteam/integration/**'
+      - 'tests/acceptance/**'
+      - '.github/workflows/end-to-end-acceptance.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-acceptance-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+      - name: Prepare isolated evidence and state
+        run: |
+          mkdir -p "$RUNNER_TEMP/hq-evidence"
+          echo "COMPANY_HQ_STATE_ROOT=$RUNNER_TEMP/company-hq-state" >> "$GITHUB_ENV"
+          git rev-parse HEAD > "$RUNNER_TEMP/hq-evidence/source-sha.txt"
+          git archive --format=zip HEAD -o "$RUNNER_TEMP/hq-evidence/reviewed-source.zip"
+      - name: Build local application
+        run: |
+          set -o pipefail
+          python scripts/hq.py setup 2>&1 | tee "$RUNNER_TEMP/hq-evidence/setup.txt"
+      - name: Run model-free acceptance checks
+        run: |
+          set -o pipefail
+          python scripts/hq.py check 2>&1 | tee "$RUNNER_TEMP/hq-evidence/checks.txt"
+      - name: Exercise synthetic demo lifecycle
+        run: |
+          set -o pipefail
+          python scripts/hq.py demo 2>&1 | tee "$RUNNER_TEMP/hq-evidence/demo.txt"
+          python scripts/hq.py status --demo
+          python scripts/hq.py stop --demo
+      - name: Preserve verification evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: company-hq-acceptance-evidence
+          path: ${{ runner.temp }}/hq-evidence
+          if-no-files-found: error
+          retention-days: 7
