@@ -3,23 +3,28 @@
   "date": "2026-09-21",
   "scope": "Linux synthetic model-free smoke tests, not all-40 runtime validation or billed savings",
   "code_intelligence": {
-    "source_sha": "c0b17e06513838e20b27165cf10c87ff59f58a75",
-    "run": "https://github.com/Dhanunjay-Divi/company-hq/actions/runs/35579222587",
-    "artifact_id": 10629198015,
+    "source_sha": "f08ff28e0f5aaa507a79c86417af2c1fbbb6918e",
+    "run": "https://github.com/Dhanunjay-Divi/company-hq/actions/runs/35580271965",
+    "artifact_id": 10629592662,
+    "artifact_sha256": "3225b40a5463117340bb3d7bdcf38088da8e4b78c389a9a7cdf2b48d8b276d56",
     "fixture_sha256": "b43703ae87564ad4d95a7ef2794482900f51cfbf184cd0581687c44b4b8c6e6c",
     "repetitions_per_case": 3,
     "cases": ["python_authorization", "typescript_invoice"],
+    "query_contract": "Every candidate receives only the starting symbol; CBM location patterns come from its observed trace, never expected answers.",
+    "supersedes_run": 35579222587,
+    "supersession_reason": "Earlier diagnostic location lookup used reference-answer names; final numbers below use observed trace nodes only.",
     "results": {
-      "graphify": {"pin": "graphifyy==0.9.65", "status": "smoke_passed", "build_seconds": 0.401918, "query_seconds_median": 0.246528, "stdout_bytes_median": 1563.0, "matched_queries": 6, "queries_run": 6, "source_unchanged": true, "generated_paths": [], "query_process": "CLI invocation including startup"},
-      "codegraph": {"pin": "@colbymchenry/codegraph@1.6.0", "status": "needs_external_state_adapter", "build_seconds": 0.635643, "query_seconds_median": 0.2229825, "stdout_bytes_median": 1600.5, "matched_queries": 6, "queries_run": 6, "source_unchanged": true, "generated_paths": [".codegraph/", ".codegraph/.gitignore", ".codegraph/codegraph.db"], "query_process": "CLI invocation including startup"},
-      "graft": {"pin": "@nanonets/graft@0.18.0", "status": "build_failed", "build_seconds": 0.258326, "query_seconds_median": null, "stdout_bytes_median": null, "matched_queries": 0, "queries_run": 0, "source_unchanged": true, "generated_paths": [], "query_process": "CLI invocation including startup", "reason": "No native tree-sitter-kotlin build for Linux x64 Node 24 ABI 137; npm lifecycle scripts intentionally disabled"},
-      "codebase_memory": {"pin": "v0.10.8", "status": "smoke_passed", "build_seconds": 1.632915, "query_seconds_median": 0.024583, "stdout_bytes_median": 571.0, "matched_queries": 6, "queries_run": 6, "source_unchanged": true, "generated_paths": [], "query_process": "warm MCP, two calls: trace plus source-location search"}
+      "graphify": {"pin": "graphifyy==0.9.65", "status": "smoke_passed", "build_seconds": 0.402547, "query_seconds_median": 0.257378, "stdout_bytes_median": 1563.0, "matched_queries": 6, "queries_run": 6, "source_unchanged": true, "generated_paths": [], "query_process": "CLI invocation including startup"},
+      "codegraph": {"pin": "@colbymchenry/codegraph@1.6.0", "status": "needs_external_state_adapter", "build_seconds": 0.816815, "query_seconds_median": 0.230306, "stdout_bytes_median": 1600.5, "matched_queries": 6, "queries_run": 6, "source_unchanged": true, "generated_paths": [".codegraph/", ".codegraph/.gitignore", ".codegraph/codegraph.db"], "query_process": "CLI invocation including startup"},
+      "graft": {"pin": "@nanonets/graft@0.18.0", "status": "build_failed", "build_seconds": 0.255363, "query_seconds_median": null, "stdout_bytes_median": null, "matched_queries": 0, "queries_run": 0, "source_unchanged": true, "generated_paths": [], "query_process": "CLI invocation including startup", "reason": "No native tree-sitter-kotlin build for Linux x64 Node 24 ABI 137; npm lifecycle scripts intentionally disabled"},
+      "codebase_memory": {"pin": "v0.10.8", "status": "smoke_passed", "build_seconds": 1.693321, "query_seconds_median": 0.024493, "stdout_bytes_median": 698.0, "matched_queries": 6, "queries_run": 6, "source_unchanged": true, "generated_paths": [], "query_process": "warm MCP, two calls: trace plus observed-node location search"}
     }
   },
   "output_reduction": {
     "source_sha": "df63bbe20a61eb127a56312c9003fc754d3895d0",
     "run": "https://github.com/Dhanunjay-Divi/company-hq/actions/runs/35579395201",
     "artifact_id": 10629258254,
+    "artifact_sha256": "8b39e42ed60511246a5b108c27314b35216fd4f8812dddbf615cea69864d7a44",
     "pins": {"rtk": "0.49.0", "headroom": "0.37.0", "pytest": "8.4.2"},
     "cases": [
       {"case": "passing_tests", "required_evidence": ["200 passed"], "raw_bytes": 16357, "rtk_bytes": 19, "rtk_byte_reduction": 0.998838, "rtk_gate_passed": true, "headroom_bytes": 16357, "headroom_transform": "router:noop", "headroom_gate_passed": false},
