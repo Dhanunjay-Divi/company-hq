@@ -65,7 +65,39 @@ def memory_call(project, operations):
         if proc.stdout: proc.stdout.close()
 
 
+def demo_knowledge():
+    return {
+        'notes': [
+            {
+                'namespace': 'company-notes',
+                'key': 'demo-scope',
+                'value': {
+                    'title': 'Model-free demo',
+                    'content': 'This workspace is synthetic. No provider, Ruflo process, or model is called while demo mode is active.',
+                    'source': 'Demo fixture',
+                    'date': time.strftime('%Y-%m-%d'),
+                },
+            },
+            {
+                'namespace': 'operating-decisions',
+                'key': 'demo-boundaries',
+                'value': {
+                    'title': 'Boundaries stay explicit',
+                    'content': 'Runtime state remains outside the source checkout, provider account homes stay unchanged, and execution is disabled until normal mode is started.',
+                    'source': 'Demo fixture',
+                    'date': time.strftime('%Y-%m-%d'),
+                },
+            },
+        ],
+        'source': 'Demo fixture',
+        'codeGraph': 'unavailable-in-demo',
+        'codeGraphNote': 'Code graph tools are not required for the model-free walkthrough.',
+    }
+
+
 def knowledge(project):
+    if demo_mode():
+        return demo_knowledge()
     with _memory_lock:
         cached = _memory_cache.get(project)
         if cached and time.monotonic()-cached[0] < 20: return cached[1]
@@ -125,6 +157,8 @@ def handle_post(handler,state,path,body):
             handler._serve_json({'team':name,'company':profile,'started':False});return True
         parts=path.strip('/').split('/');name=unquote(parts[2]);project=project_for(state,name)
         if parts[1]=='knowledge':
+            if demo_mode():
+                raise ValueError('Saving memory is disabled in model-free demo mode')
             title=body.get('title','').strip();content=body.get('content','').strip()
             if not title or not content or len(title)>200 or len(content)>12000: raise ValueError('Enter a title and a note of at most 12000 characters')
             key=uuid.uuid4().hex
