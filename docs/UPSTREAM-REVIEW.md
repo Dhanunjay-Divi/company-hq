@@ -10,7 +10,7 @@ Checked 2026-09-14 UTC. The public Notion page was accessible in the browser; al
 
 - **[Superpowers](https://github.com/obra/superpowers):** README describes design clarification, bounded plans, debugging, subagent execution and staged review. Use selected planning/debugging/review techniques. Its mandatory workflow and broad test-first rules need reconciliation with project instructions and task size. No plugin/bootstrap was installed.
 
-These are component candidates for the implementing agent. Keep native execution, one task authority and one scoped memory strategy unless a measured gap justifies a replacement. Preserve exact file licenses and upstream revisions for anything copied. Metadata license fields can be null or NOASSERTION and do not settle file-specific rights.
+These are component candidates for the implementing agent. The measured selections and second-stage rules are now locked in BEST-STACK.md. Keep native execution, one task authority and one scoped memory strategy unless a measured gap justifies a replacement. Preserve exact file licenses and upstream revisions for anything copied. Metadata license fields can be null or NOASSERTION and do not settle file-specific rights.
 
 ## All 40 candidates
 
@@ -36,11 +36,11 @@ Source list: [The Top 40 Claude Repos](https://app.notion.com/p/The-Top-40-Claud
 | Skills | [travisvn/awesome-claude-skills](https://github.com/travisvn/awesome-claude-skills) | Unresolved | Backlog: identify a concrete missing capability before source review or installation. |
 | Memory | [OthmanAdi/planning-with-files](https://github.com/OthmanAdi/planning-with-files) | MIT | Backlog: identify a concrete missing capability before source review or installation. |
 | Memory | [thedotmack/claude-mem](https://github.com/thedotmack/claude-mem) | Apache-2.0 | Backlog: identify a concrete missing capability before source review or installation. |
-| Memory | [colbymchenry/codegraph](https://github.com/colbymchenry/codegraph) | MIT | Backlog: identify a concrete missing capability before source review or installation. |
-| Memory | [Graphify-Labs/graphify](https://github.com/Graphify-Labs/graphify) | Apache-2.0 | Backlog: identify a concrete missing capability before source review or installation. |
+| Memory | [colbymchenry/codegraph](https://github.com/colbymchenry/codegraph) | MIT | Benchmarked: strong blast-radius/source presentation; borrow ideas, do not maintain a third always-on index. |
+| Memory | [Graphify-Labs/graphify](https://github.com/Graphify-Labs/graphify) | Apache-2.0 | Selected second-stage broad/cross-asset graph after model-free bakeoff. |
 | Memory | [yamadashy/repomix](https://github.com/yamadashy/repomix) | MIT | Backlog: identify a concrete missing capability before source review or installation. |
 | Memory | [rohitg00/agentmemory](https://github.com/rohitg00/agentmemory) | Apache-2.0 | Backlog: identify a concrete missing capability before source review or installation. |
-| Memory | [gastownhall/beads](https://github.com/gastownhall/beads) | MIT | Backlog: identify a concrete missing capability before source review or installation. |
+| Memory | [gastownhall/beads](https://github.com/gastownhall/beads) | MIT | Selected target canonical task/DAG store after external-state dependency/claim/cycle bakeoff. |
 | Tools | [multica-ai/multica](https://github.com/multica-ai/multica) | NOASSERTION | Backlog: identify a concrete missing capability before source review or installation. |
 | Tools | [firecrawl/firecrawl](https://github.com/firecrawl/firecrawl) | AGPL-3.0 | Backlog: identify a concrete missing capability before source review or installation. |
 | Tools | [farion1231/cc-switch](https://github.com/farion1231/cc-switch) | MIT | Backlog: identify a concrete missing capability before source review or installation. |
@@ -48,15 +48,15 @@ Source list: [The Top 40 Claude Repos](https://app.notion.com/p/The-Top-40-Claud
 | Tools | [BloopAI/vibe-kanban](https://github.com/BloopAI/vibe-kanban) | Apache-2.0 | UI/task lifecycle reference; do not add a second canonical task store by default. |
 | Tools | [github/github-mcp-server](https://github.com/github/github-mcp-server) | MIT | Use only if existing GitHub connector/gh cannot satisfy the workflow. |
 | Tools | [microsoft/playwright-mcp](https://github.com/microsoft/playwright-mcp) | Apache-2.0 | Use only if existing browser tooling cannot provide required validation. |
-| Tools | [oraios/serena](https://github.com/oraios/serena) | MIT | Optional code navigation only if existing codebase-memory/Graft leave a concrete gap. |
-| Tools | [musistudio/claude-code-router](https://github.com/musistudio/claude-code-router) | MIT | Backlog: identify a concrete missing capability before source review or installation. |
+| Tools | [oraios/serena](https://github.com/oraios/serena) | GPL-3.0-or-later | Optional explicit semantic-refactor service only if native LSP/IDE tools leave a measured gap; do not duplicate normal retrieval. |
+| Tools | [musistudio/claude-code-router](https://github.com/musistudio/claude-code-router) | MIT | Provider/gateway reference and optional reviewed API/coding-plan fallback; never own provider auth implicitly. |
 | Tools | [punkpeye/awesome-mcp-servers](https://github.com/punkpeye/awesome-mcp-servers) | MIT | Backlog: identify a concrete missing capability before source review or installation. |
 | Cost | [x1xhlol/system-prompts-and-models-of-ai-tools](https://github.com/x1xhlol/system-prompts-and-models-of-ai-tools) | GPL-3.0 | Backlog: identify a concrete missing capability before source review or installation. |
 | Cost | [shanraisshan/claude-code-best-practice](https://github.com/shanraisshan/claude-code-best-practice) | MIT | Backlog: identify a concrete missing capability before source review or installation. |
 | Cost | [openai/codex-plugin-cc](https://github.com/openai/codex-plugin-cc) | Apache-2.0 | Backlog: identify a concrete missing capability before source review or installation. |
 | Cost | [jarrodwatts/claude-hud](https://github.com/jarrodwatts/claude-hud) | MIT | Backlog: identify a concrete missing capability before source review or installation. |
-| Cost | [rtk-ai/rtk](https://github.com/rtk-ai/rtk) | Apache-2.0 | Cost candidate: benchmark reduced tool output while preserving errors and evidence. |
-| Cost | [headroomlabs-ai/headroom](https://github.com/headroomlabs-ai/headroom) | Apache-2.0 | Cost candidate: evaluate protocol/auth implications and matched benchmarks before use. |
+| Cost | [rtk-ai/rtk](https://github.com/rtk-ai/rtk) | Apache-2.0 | Selected first-stage command/test/log compression; model-free bakeoff preserved failure evidence with 98.49% byte reduction. |
+| Cost | [headroomlabs-ai/headroom](https://github.com/headroomlabs-ai/headroom) | Apache-2.0 | Selected conditional second-stage structured-context compression; not a universal proxy. |
 | Cost | [JuliusBrussee/caveman](https://github.com/JuliusBrussee/caveman) | NOASSERTION | Backlog: identify a concrete missing capability before source review or installation. |
 
 ## Refresh safely
