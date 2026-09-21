@@ -16,11 +16,12 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    env:
-      COMPANY_HQ_STATE_ROOT: ${{ runner.temp }}/company-hq-state
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Configure isolated runtime state
+        run: echo "COMPANY_HQ_STATE_ROOT=$RUNNER_TEMP/company-hq-state" >> "$GITHUB_ENV"
 
       - uses: actions/setup-python@v5
         with:
