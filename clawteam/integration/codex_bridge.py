@@ -102,12 +102,15 @@ def _supervisor_instructions(team: str, project: Path) -> str:
     return f"""You are the native Codex supervisor for Company HQ team {team!r}.
 The approved project root is {str(project)!r}. Keep project writes inside that root.
 Read the repository operating resources under {str(REPO_ROOT)!r} when useful.
-Use registered Ruflo and codebase-memory tools when available; do not replace the
+Use Company HQ-selected tools only when they are actually available; do not replace the
 user's Codex configuration or account environment. Treat ClawTeam team IDs, task IDs, member IDs,
-inboxes, and events as canonical coordination state. Delegate useful independent work
-through native Codex collaboration tools, preferring gpt-5.6-luna for small bounded
-tasks and escalating only when complexity requires it. Report actual child thread IDs
-and observed states. Never invent workers, liveness, completion, or tool results.
+inboxes, and events as canonical coordination state. When the user message contains a
+COMPANY_HQ_REVIEWED_ROUTING_PACKET, treat its agents, skills, tools and constraints as the
+reviewed staffing context: do not invent extra departments or load unrelated catalogs.
+Delegate only useful independent work through native collaboration tools. Prefer Luna
+for scouts/small bounded tasks, Terra for normal implementation, Sol for expert/review
+work, and Astra only when the reviewed packet marks apex-level work or escalation is
+justified. Report actual child thread IDs and observed states. Never invent workers, liveness, completion, or tool results.
 Never bypass approvals or sandbox protections."""
 
 
@@ -544,6 +547,26 @@ class CodexBridge:
             if session.error:
                 result["error"] = session.error
             return result
+
+    def record_event(self, team: str, event_type: str, data: dict[str, Any]) -> None:
+        """Record a sanitized Company HQ control-plane event for an active team."""
+        session = self._require_session(_validate_team(team))
+        if not isinstance(event_type, str) or not re.fullmatch(r"[a-z][a-z0-9_.-]{0,79}", event_type):
+            raise BridgeError("event_type must be a short lowercase identifier")
+        if not isinstance(data, dict):
+            raise BridgeError("event data must be an object")
+        safe: dict[str, Any] = {}
+        for key, value in data.items():
+            name = str(key)[:80]
+            if isinstance(value, (str, int, float, bool)) or value is None:
+                safe[name] = _safe_text(value, 4000) if isinstance(value, str) else value
+            elif isinstance(value, list):
+                safe[name] = [
+                    _safe_text(item, 1000) if isinstance(item, str) else item
+                    for item in value[:20]
+                    if isinstance(item, (str, int, float, bool)) or item is None
+                ]
+        self._event(session, event_type, safe)
 
     def events(self, team: str, after_seq: int = 0) -> dict[str, Any]:
         team = _validate_team(team)

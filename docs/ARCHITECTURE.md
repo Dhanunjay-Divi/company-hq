@@ -24,3 +24,8 @@ flowchart TD
 Memory decisions are scoped by canonical project path. Task metadata is not a worker process; inbox delivery is not a wake acknowledgement. Tokens reported by a provider are distinct from account-wide allowance and actual billed money.
 
 Source/configuration, per-project runtime state, account credentials and product files must remain separate. See the first handoff milestone for removing the remaining original-machine paths.
+
+
+## Automatic routing
+
+Build requests now pass through the deterministic classifier and independent preflight review design before execution. See [Automatic routing and review](AUTOMATIC-ROUTING.md) for the full classification → review → staffing → execution → verification → completion-review pipeline, model tiers, and current upstream component decisions.
