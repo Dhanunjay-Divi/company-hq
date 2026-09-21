@@ -2,6 +2,44 @@
 
 Company HQ is the operating cockpit for a project, not a replacement for your IDE. Keep Cursor, VS Code, Xcode, the terminal, or GitHub open as usual. Use Company HQ to connect the project folder, describe the outcome, see the plan, approve execution, watch real runtime events, track tasks, and inspect usage signals.
 
+## Quick start
+
+From the Company HQ repo:
+
+```sh
+cd /Users/uno/Projects/company-hq
+python3 scripts/hq.py bootstrap --demo
+```
+
+Use demo mode first. It opens a local URL with fake fixture data, does not call a model, and does not edit any project. When the page opens, try the flow: **Run overview → Connect project → Discuss & plan → Approve plan & start execution**.
+
+For real local use after demo works:
+
+```sh
+cd /Users/uno/Projects/company-hq
+python3 scripts/hq.py bootstrap
+```
+
+Open the URL printed by the command. Connect the project folder you want Company HQ to help with, describe the goal, and keep the first turn as planning. Execution starts only after the plan finishes and you approve it.
+
+Useful commands:
+
+```sh
+python3 scripts/hq.py status
+python3 scripts/hq.py stop
+python3 scripts/hq.py check
+```
+
+`status` tells you whether the local app is running. `stop` closes it. `check` runs the model-free validation suite.
+
+## Codex and Claude
+
+Codex is the live runtime wired today. Company HQ reuses your existing authorized Codex app/runtime, keeps its state outside product repos, starts with a read-only planning turn, then asks you before switching into execution. Opening Company HQ by itself does not consume model tokens; tokens are used only when you send work to a provider-backed supervisor or worker.
+
+Claude can be reused the same way once a verified adapter exists for your authorized Claude runtime or CLI. The rule is the same: no copied credentials, no hidden account switching, no provider proxy unless you explicitly choose it, and no claim that Claude is running until Company HQ can show real started sessions, messages, approvals and usage evidence.
+
+The simple default is: use Codex now, keep the supervisor model on automatic policy, set a workspace token budget, and let Company HQ choose smaller workers only when the task truly benefits from them.
+
 ## Everyday flow
 
 1. Connect a local project folder. This creates Company HQ state outside the repo and does not edit project files.
