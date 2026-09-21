@@ -8,6 +8,7 @@ import time
 from pathlib import Path
 
 from codex_bridge import CodexBridge
+from runtime_config import REPO_ROOT
 
 TEAM = "bridge-luna-manual-verification"
 
@@ -25,6 +26,18 @@ def main() -> int:
         parser.error("--project must be a directory")
     if PROJECT in {Path("/"), Path.home().resolve()}:
         parser.error("refusing filesystem root or account home as the fixture project")
+    source = REPO_ROOT.resolve()
+    home = Path.home().resolve()
+    def validate_output(path: Path, label: str) -> Path:
+        value = path.resolve()
+        if value in {Path("/").resolve(), home, source, PROJECT}:
+            parser.error(f"{label} must be external fixture state")
+        if value.is_relative_to(source) or value.is_relative_to(PROJECT):
+            parser.error(f"{label} must not overlap source or project files")
+        return value
+    STATE = validate_output(STATE, "--state")
+    RECEIPT = validate_output(RECEIPT, "--receipt")
+    validate_output(RECEIPT.parent, "--receipt parent")
     STATE.mkdir(parents=True, exist_ok=True)
     RECEIPT.parent.mkdir(parents=True, exist_ok=True)
     if RECEIPT.exists():
