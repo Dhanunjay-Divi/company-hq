@@ -81,7 +81,9 @@ def reviewed_catalog() -> dict[str, Any]:
 def complexity_score(prompt: str, mode: str = "execute") -> tuple[int, list[str]]:
     """Cheap lexical estimate; deliberately conservative and explainable."""
     text = prompt.lower()
-    score = 1 if mode == "execute" else 0
+    # The initial planning thread normally becomes the execution thread after approval,
+    # so route for the task's eventual work rather than artificially downgrading planning.
+    score = 2
     reasons: list[str] = []
 
     length = len(prompt)
@@ -108,7 +110,7 @@ def complexity_score(prompt: str, mode: str = "execute") -> tuple[int, list[str]
 
     simple_hits = [hint for hint in SIMPLE_HINTS if hint in text]
     if simple_hits and not complex_hits and length < 1_500:
-        score = max(0, score - 1)
+        score = max(0, score - 2)
         reasons.append("bounded/simple change")
 
     return min(score, 8), reasons or ["normal bounded engineering request"]
