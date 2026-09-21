@@ -228,6 +228,7 @@ class _TeamSession:
     children: dict[str, dict[str, Any]] = field(default_factory=dict)
     completed_turns: set[str] = field(default_factory=set)
     last_turn_status: str | None = None
+    plan_ready: bool = False
     lock: threading.RLock = field(default_factory=threading.RLock)
     operation_lock: threading.Lock = field(default_factory=threading.Lock)
     closing: bool = False
@@ -282,6 +283,8 @@ class CodexBridge:
             raise BridgeError("runtime binding is invalid")
         if value.get("mode") not in {None, "plan", "execute"}:
             raise BridgeError("runtime binding is invalid")
+        if value.get("planReady") not in {None, True, False}:
+            raise BridgeError("runtime binding is invalid")
         return value
 
     def _write_binding(
@@ -291,6 +294,7 @@ class CodexBridge:
         thread_id: str | None = None,
         model: str | None = None,
         mode: str | None = None,
+        plan_ready: bool | None = None,
     ) -> None:
         path = self._binding_path(team)
         previous = self._read_binding(team) or {}
@@ -300,6 +304,11 @@ class CodexBridge:
             "threadId": thread_id if thread_id is not None else previous.get("threadId"),
             "model": model if model is not None else previous.get("model"),
             "mode": mode if mode is not None else previous.get("mode"),
+            "planReady": (
+                plan_ready
+                if plan_ready is not None
+                else bool(previous.get("planReady", False))
+            ),
             "updatedAtMs": _now_ms(),
         }
         temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
@@ -324,17 +333,23 @@ class CodexBridge:
                 if bound != resolved:
                     raise BridgeError("team is already bound to a different project root")
             else:
-                self._write_binding(team, resolved, mode="plan")
+                self._write_binding(team, resolved, mode="plan", plan_ready=False)
         return resolved, binding
 
     def _new_session(
-        self, team: str, project: Path, model: str, mode: str
+        self,
+        team: str,
+        project: Path,
+        model: str,
+        mode: str,
+        plan_ready: bool = False,
     ) -> _TeamSession:
         session = _TeamSession(
             team=team,
             project=project,
             model=model,
             mode=mode,
+            plan_ready=plan_ready,
             connection=self.connection_factory(self.codex_path),
             events=deque(maxlen=self.max_events),
         )
@@ -398,7 +413,10 @@ class CodexBridge:
             else "plan"
         )
         mode = _validate_mode(mode)
-        session = self._new_session(team, project_path, model, mode)
+        plan_ready = bool(binding.get("planReady", False)) if binding else False
+        session = self._new_session(
+            team, project_path, model, mode, plan_ready=plan_ready
+        )
         try:
             self._rpc(session, "initialize", {
                 "clientInfo": {
@@ -439,7 +457,14 @@ class CodexBridge:
                 session.thread_id = thread_id
                 session.state = "idle"
             with self._binding_lock:
-                self._write_binding(team, project_path, thread_id, model, mode)
+                self._write_binding(
+                    team,
+                    project_path,
+                    thread_id,
+                    model,
+                    mode,
+                    plan_ready=session.plan_ready,
+                )
             self._event(session, "thread.started", {
                 "text": "Native supervisor connected",
                 "mode": mode,
@@ -481,8 +506,20 @@ class CodexBridge:
         with session.lock:
             session.turn_id = turn_id
             session.last_turn_status = None
+            if session.mode == "plan":
+                session.plan_ready = False
             session.state = "idle" if turn_id in session.completed_turns else "running"
             session.error = None
+        if session.mode == "plan":
+            with self._binding_lock:
+                self._write_binding(
+                    session.team,
+                    session.project,
+                    session.thread_id,
+                    session.model,
+                    session.mode,
+                    plan_ready=False,
+                )
         self._event(session, "turn.started", {
             "text": "Supervisor turn started",
             "mode": session.mode,
@@ -509,7 +546,7 @@ class CodexBridge:
                     )
                 if session.mode != "plan":
                     raise BridgeError("execution is already enabled for this session")
-                if session.last_turn_status != "completed":
+                if session.last_turn_status != "completed" or not session.plan_ready:
                     raise BridgeError(
                         "the planning turn must complete successfully before execution"
                     )
@@ -521,10 +558,16 @@ class CodexBridge:
             # than the durable binding.
             with self._binding_lock:
                 self._write_binding(
-                    team, project, thread_id, model, "execute"
+                    team,
+                    project,
+                    thread_id,
+                    model,
+                    "execute",
+                    plan_ready=False,
                 )
             with session.lock:
                 session.mode = "execute"
+                session.plan_ready = False
             self._event(session, "mode.changed", {
                 "text": "Plan approved; execution enabled",
                 "mode": "execute",
@@ -622,6 +665,7 @@ class CodexBridge:
                 "project": binding.get("projectRoot") if binding else None,
                 "model": binding.get("model") if binding else None,
                 "mode": binding.get("mode", "plan") if binding else "plan",
+                "planReady": bool(binding.get("planReady", False)) if binding else False,
                 "threadId": binding.get("threadId") if binding else None,
                 "turnId": None,
                 "lastEventSeq": 0,
@@ -636,6 +680,7 @@ class CodexBridge:
                 "project": str(session.project),
                 "model": session.model,
                 "mode": session.mode,
+                "planReady": session.plan_ready,
                 "threadId": session.thread_id,
                 "turnId": session.turn_id,
                 "lastEventSeq": session.next_event_seq - 1,
@@ -811,11 +856,29 @@ class CodexBridge:
             with session.lock:
                 session.approvals.clear()
                 session.last_turn_status = str(status)
+                session.plan_ready = (
+                    session.mode == "plan" and status == "completed"
+                )
                 if isinstance(native_id, str):
                     session.turn_id = native_id
                     if status == "completed":
                         session.completed_turns.add(native_id)
                 session.state = "error" if status == "failed" else "idle"
+                persist_plan_ready = session.plan_ready
+                persist_mode = session.mode
+                persist_project = session.project
+                persist_thread = session.thread_id
+                persist_model = session.model
+            if persist_mode == "plan":
+                with self._binding_lock:
+                    self._write_binding(
+                        session.team,
+                        persist_project,
+                        persist_thread,
+                        persist_model,
+                        persist_mode,
+                        plan_ready=persist_plan_ready,
+                    )
             self._event(session, "turn.completed", {
                 "text": f"Supervisor turn {status}", "status": status,
             })
