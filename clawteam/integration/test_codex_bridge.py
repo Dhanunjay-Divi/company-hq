@@ -173,6 +173,28 @@ class CodexBridgeTest(unittest.TestCase):
         self.assertEqual(response["mode"], "execute")
         self.assertEqual(response["turnId"], "turn-1-2")
 
+    def test_route_reasoning_effort_is_applied_and_recorded(self):
+        route = {
+            "provider": "codex",
+            "model": "gpt-5.6-luna",
+            "effort": "low",
+            "tier": "small",
+            "reason": "bounded/simple change",
+        }
+        status = self.bridge.start(
+            "routed-team",
+            self.project,
+            "Fix the README typo.",
+            "gpt-5.6-luna",
+            "plan",
+            route,
+        )
+        connection = self.factory.connections[0]
+        self.assertEqual(connection.sent[3]["params"]["effort"], "low")
+        self.assertEqual(status["route"]["tier"], "small")
+        binding = json.loads(next((self.root / "runtime" / "bindings").glob("*.json")).read_text())
+        self.assertEqual(binding["route"]["effort"], "low")
+
     def test_plan_mode_is_read_only_until_user_approves_execution(self):
         status = self.bridge.start(
             "plan-team",
