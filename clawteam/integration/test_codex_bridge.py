@@ -77,6 +77,50 @@ class FakeFactory:
         return connection
 
 
+class ImmediateTurnNotificationsConnection(FakeConnection):
+    def __init__(self, codex_path: Path, number: int, *, on_method: str):
+        super().__init__(codex_path, number)
+        self.on_method = on_method
+
+    def send(self, message: dict):
+        super().send(message)
+        if message.get("method") != self.on_method:
+            return
+        if self.on_method == "turn/start":
+            turn_id = f"turn-{self.number}-{self.turn_number}"
+        else:
+            turn_id = message["params"]["expectedTurnId"]
+        thread_id = message["params"]["threadId"]
+        self.emit({
+            "method": "item/completed",
+            "params": {
+                "threadId": thread_id,
+                "turnId": turn_id,
+                "item": {"id": f"message-{turn_id}", "type": "agentMessage", "text": "Instant reply"},
+            },
+        })
+        self.emit({
+            "method": "turn/completed",
+            "params": {
+                "threadId": thread_id,
+                "turn": {"id": turn_id, "status": "completed"},
+            },
+        })
+
+
+class ImmediateTurnNotificationsFactory:
+    def __init__(self, on_method: str):
+        self.connections: list[ImmediateTurnNotificationsConnection] = []
+        self.on_method = on_method
+
+    def __call__(self, codex_path: Path):
+        connection = ImmediateTurnNotificationsConnection(
+            codex_path, len(self.connections) + 1, on_method=self.on_method,
+        )
+        self.connections.append(connection)
+        return connection
+
+
 class CodexBridgeTest(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory(prefix="codex-bridge-test-")
@@ -300,6 +344,56 @@ class CodexBridgeTest(unittest.TestCase):
                 self.bridge.send("team-one", "Must not appear.")
         user_events = [event for event in self.bridge.events("team-one")["events"] if event["type"] == "message.user"]
         self.assertEqual([event["data"]["text"] for event in user_events], ["Reply with a short status."])
+
+    def test_immediate_start_notifications_follow_accepted_user_message_and_unlock_plan(self):
+        factory = ImmediateTurnNotificationsFactory("turn/start")
+        bridge = CodexBridge(
+            state_dir=self.root / "instant-start-runtime",
+            connection_factory=factory,
+            request_timeout=0.2,
+            max_events=20,
+        )
+        self.addCleanup(bridge.shutdown_all)
+        status = bridge.start("instant-start", self.project, "hello", "gpt-5.6-luna")
+        events = bridge.events("instant-start")["events"]
+        conversation = [
+            (event["type"], event["data"].get("text"))
+            for event in events
+            if event["type"] in {"message.user", "message.completed", "turn.completed"}
+        ]
+        self.assertEqual(conversation, [
+            ("message.user", "hello"),
+            ("message.completed", "Instant reply"),
+            ("turn.completed", "Supervisor turn completed"),
+        ])
+        self.assertEqual(status["state"], "idle")
+        self.assertTrue(status["planReady"])
+        self.assertTrue(bridge.begin_execution("instant-start")["accepted"])
+
+    def test_immediate_steer_notifications_follow_accepted_user_message(self):
+        factory = ImmediateTurnNotificationsFactory("turn/steer")
+        bridge = CodexBridge(
+            state_dir=self.root / "instant-steer-runtime",
+            connection_factory=factory,
+            request_timeout=0.2,
+            max_events=20,
+        )
+        self.addCleanup(bridge.shutdown_all)
+        bridge.start("instant-steer", self.project, "first", "gpt-5.6-luna")
+        bridge.send("instant-steer", "second")
+        events = bridge.events("instant-steer")["events"]
+        conversation = [
+            (event["type"], event["data"].get("text"))
+            for event in events
+            if event["type"] in {"message.user", "message.completed", "turn.completed"}
+        ]
+        self.assertEqual(conversation, [
+            ("message.user", "first"),
+            ("message.user", "second"),
+            ("message.completed", "Instant reply"),
+            ("turn.completed", "Supervisor turn completed"),
+        ])
+        self.assertTrue(bridge.status("instant-steer")["planReady"])
 
     def test_stop_interrupts_only_the_active_team_turn(self):
         self.start()

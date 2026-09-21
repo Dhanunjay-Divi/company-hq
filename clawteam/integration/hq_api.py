@@ -279,7 +279,9 @@ def _default_supervisor_model(routing):
     if not isinstance(reviewed, list):
         raise ValueError('No reviewed Codex model is configured')
     reviewed = [model for model in reviewed if isinstance(model, str)]
-    tier_name = routing.get('escalation', {}).get('start_tier', 'standard')
+    tier_name = routing.get('supervisor_tier')
+    if not isinstance(tier_name, str) or not tier_name:
+        tier_name = routing.get('escalation', {}).get('start_tier', 'standard')
     tier = routing.get('tiers', {}).get(tier_name, {})
     candidate = tier.get('codex_model') if isinstance(tier, dict) else None
     if candidate in reviewed:

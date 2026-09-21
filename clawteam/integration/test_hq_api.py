@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import unittest
 import tempfile
+import json
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -53,6 +54,13 @@ class HQAPIDemoTest(unittest.TestCase):
 
         with tempfile.TemporaryDirectory(prefix="hq-api-managed-") as temporary:
             state = Path(temporary) / "state"
+            routing = Path(temporary) / "routing.json"
+            routing.write_text(json.dumps({
+                "schema": 2,
+                "supervisor_tier": "flagship",
+                "tiers": {"flagship": {"codex_model": "gpt-6-astra"}},
+                "reviewed_codex_models": ["gpt-6-astra"],
+            }))
             workspace = state / "managed-workspaces" / "chat-one"
             workspace.mkdir(parents=True)
             hq_api.save_profile(state, "chat-one", {
@@ -64,7 +72,7 @@ class HQAPIDemoTest(unittest.TestCase):
             }, {"overall-head"})
             team = SimpleNamespace(members=[SimpleNamespace(name="overall-head")])
             handler, fake_bridge = Handler(), Bridge()
-            with patch.object(hq_api.TeamManager, "get_team", return_value=team), patch("hq_api.bridge", return_value=fake_bridge):
+            with patch.object(hq_api.TeamManager, "get_team", return_value=team), patch("hq_api.bridge", return_value=fake_bridge), patch("hq_api.routing_path", return_value=routing):
                 handled = hq_api.handle_post(handler, state, "/api/runtime/chat-one/start", {
                     "prompt": "Help me shape this idea.", "model": "auto",
                 })
@@ -73,7 +81,15 @@ class HQAPIDemoTest(unittest.TestCase):
         self.assertEqual(handler.response, {"accepted": True})
         self.assertEqual(fake_bridge.started[0], "chat-one")
         self.assertEqual(fake_bridge.started[1], str(workspace.resolve()))
-        self.assertEqual(fake_bridge.started[3], "gpt-5.6-terra")
+        self.assertEqual(fake_bridge.started[3], "gpt-6-astra")
+
+    def test_schema_two_default_supervisor_uses_standard_when_no_explicit_tier_exists(self):
+        self.assertEqual(hq_api._default_supervisor_model({
+            "schema": 2,
+            "escalation": {"start_tier": "standard"},
+            "tiers": {"standard": {"codex_model": "gpt-5.6-terra"}},
+            "reviewed_codex_models": ["gpt-5.6-terra", "gpt-6-astra"],
+        }), "gpt-5.6-terra")
 
 
 if __name__ == "__main__":

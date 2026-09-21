@@ -297,6 +297,7 @@ class _TeamSession:
     plan_ready: bool = False
     usage_summary: dict[str, Any] | None = None
     usage_event_count: int = 0
+    pending_turn_notifications: list[tuple[str, dict[str, Any]]] | None = None
     lock: threading.RLock = field(default_factory=threading.RLock)
     operation_lock: threading.Lock = field(default_factory=threading.Lock)
     closing: bool = False
@@ -748,54 +749,57 @@ class CodexBridge:
         if not session.thread_id:
             raise BridgeError("team has no native Codex thread")
         self._budget.authorize(session.team)
-        result = self._rpc(session, "turn/start", {
-            "threadId": session.thread_id,
-            "input": [{"type": "text", "text": prompt}],
-            "cwd": str(session.project),
-            "model": session.model,
-            "approvalPolicy": "on-request",
-            "approvalsReviewer": "user",
-            "sandboxPolicy": (
-                {"type": "readOnly"}
-                if session.mode == "plan"
-                else {
-                    "type": "workspaceWrite",
-                    "writableRoots": [str(session.project)],
-                    "networkAccess": False,
-                }
-            ),
-        })
-        turn = result.get("turn")
-        turn_id = turn.get("id") if isinstance(turn, dict) else None
-        if not isinstance(turn_id, str) or not turn_id:
-            raise BridgeProtocolError("native Codex did not return a turn ID")
-        with session.lock:
-            session.turn_id = turn_id
-            session.last_turn_status = None
+        self._begin_turn_notification_buffer(session)
+        try:
+            result = self._rpc(session, "turn/start", {
+                "threadId": session.thread_id,
+                "input": [{"type": "text", "text": prompt}],
+                "cwd": str(session.project),
+                "model": session.model,
+                "approvalPolicy": "on-request",
+                "approvalsReviewer": "user",
+                "sandboxPolicy": (
+                    {"type": "readOnly"}
+                    if session.mode == "plan"
+                    else {
+                        "type": "workspaceWrite",
+                        "writableRoots": [str(session.project)],
+                        "networkAccess": False,
+                    }
+                ),
+            })
+            turn = result.get("turn")
+            turn_id = turn.get("id") if isinstance(turn, dict) else None
+            if not isinstance(turn_id, str) or not turn_id:
+                raise BridgeProtocolError("native Codex did not return a turn ID")
+            with session.lock:
+                session.turn_id = turn_id
+                session.last_turn_status = None
+                if session.mode == "plan":
+                    session.plan_ready = False
+                session.state = "idle" if turn_id in session.completed_turns else "running"
+                session.error = None
             if session.mode == "plan":
-                session.plan_ready = False
-            session.state = "idle" if turn_id in session.completed_turns else "running"
-            session.error = None
-        if session.mode == "plan":
-            with self._binding_lock:
-                self._write_binding(
-                    session.team,
-                    session.project,
-                    session.thread_id,
-                    session.model,
-                    session.mode,
-                    plan_ready=False,
-                )
-        # The native runtime accepted this exact input. Emit it only after the
-        # response supplies a valid turn ID, so a rejected start is never shown
-        # as a user message and the entry has the correct conversation turn.
-        if record_user_message:
-            self._event(session, "message.user", {"text": _safe_text(prompt)}, turn_id=turn_id)
-        self._event(session, "turn.started", {
-            "text": "Supervisor turn started",
-            "mode": session.mode,
-        })
-        return turn_id
+                with self._binding_lock:
+                    self._write_binding(
+                        session.team,
+                        session.project,
+                        session.thread_id,
+                        session.model,
+                        session.mode,
+                        plan_ready=False,
+                    )
+            # The native runtime accepted this exact input. Emit it only after
+            # the response supplies a valid turn ID and before its output.
+            if record_user_message:
+                self._event(session, "message.user", {"text": _safe_text(prompt)}, turn_id=turn_id)
+            self._event(session, "turn.started", {
+                "text": "Supervisor turn started",
+                "mode": session.mode,
+            })
+            return turn_id
+        finally:
+            self._flush_turn_notification_buffer(session)
 
     def begin_execution(
         self,
@@ -863,15 +867,19 @@ class CodexBridge:
                 raise BridgeError(f"team supervisor cannot accept input while {state}")
             if state in {"running", "awaiting_approval"} and turn_id:
                 self._budget.authorize(team)
-                result = self._rpc(session, "turn/steer", {
-                    "threadId": thread_id,
-                    "expectedTurnId": turn_id,
-                    "input": [{"type": "text", "text": prompt}],
-                })
-                if result.get("turnId") != turn_id:
-                    raise BridgeProtocolError("native Codex steered a different turn")
-                self._event(session, "message.user", {"text": _safe_text(prompt)}, turn_id=turn_id)
-                mode = "turn/steer"
+                self._begin_turn_notification_buffer(session)
+                try:
+                    result = self._rpc(session, "turn/steer", {
+                        "threadId": thread_id,
+                        "expectedTurnId": turn_id,
+                        "input": [{"type": "text", "text": prompt}],
+                    })
+                    if result.get("turnId") != turn_id:
+                        raise BridgeProtocolError("native Codex steered a different turn")
+                    self._event(session, "message.user", {"text": _safe_text(prompt)}, turn_id=turn_id)
+                    mode = "turn/steer"
+                finally:
+                    self._flush_turn_notification_buffer(session)
             else:
                 turn_id = self._start_turn(session, prompt)
                 mode = "turn/start"
@@ -1115,7 +1123,35 @@ class CodexBridge:
             "text": "Unsupported native request was denied", "kind": method,
         })
 
+    @staticmethod
+    def _begin_turn_notification_buffer(session: _TeamSession) -> None:
+        with session.lock:
+            if session.pending_turn_notifications is not None:
+                raise BridgeError("native turn registration is already in progress")
+            session.pending_turn_notifications = []
+
+    def _flush_turn_notification_buffer(self, session: _TeamSession) -> None:
+        # Retain the session lock while draining so notifications arriving at
+        # the same instant cannot overtake the accepted user entry.
+        with session.lock:
+            pending = session.pending_turn_notifications or []
+            session.pending_turn_notifications = None
+            for method, params in pending:
+                self._process_notification(session, method, params)
+
     def _handle_notification(
+        self,
+        session: _TeamSession,
+        method: str,
+        params: dict[str, Any],
+    ) -> None:
+        with session.lock:
+            if session.pending_turn_notifications is not None:
+                session.pending_turn_notifications.append((method, params))
+                return
+        self._process_notification(session, method, params)
+
+    def _process_notification(
         self,
         session: _TeamSession,
         method: str,
