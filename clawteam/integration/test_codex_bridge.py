@@ -611,6 +611,238 @@ class CodexBridgeTest(unittest.TestCase):
             "id": 91, "result": {"decision": "decline"}
         })
 
+    def test_native_questions_are_turn_bound_and_secret_answers_are_not_persisted(self):
+        self.start()
+        connection = self.factory.connections[0]
+        connection.emit({
+            "id": 120,
+            "method": "item/tool/requestUserInput",
+            "params": {
+                "threadId": "thr-1", "turnId": "turn-1-1", "itemId": "q-1",
+                "questions": [{
+                    "id": "password", "header": "Credential",
+                    "question": "Enter the temporary credential", "options": [],
+                    "isOther": False, "isSecret": True,
+                }],
+            },
+        })
+        pending = self.bridge.status("team-one")["pendingApprovals"]
+        self.assertEqual(len(pending), 1)
+        self.assertEqual(pending[0]["kind"], "questions")
+        self.assertTrue(pending[0]["questions"][0]["isSecret"])
+        secret = "do-not-store-this-answer"
+        result = self.bridge.respond("team-one", pending[0]["requestId"], {
+            "answers": {"password": {"answers": [secret]}},
+        })
+        self.assertEqual(result["action"], "respond")
+        self.assertEqual(connection.sent[-1], {
+            "id": 120,
+            "result": {"answers": {"password": {"answers": [secret]}}},
+        })
+        self.assertNotIn(secret, json.dumps(self.bridge.events("team-one")["events"]))
+        with self.assertRaisesRegex(BridgeError, "not awaiting|already resolved"):
+            self.bridge.respond("team-one", pending[0]["requestId"], {"answers": {}})
+
+    def test_question_rejects_non_string_answers_without_type_error(self):
+        self.start()
+        connection = self.factory.connections[0]
+        connection.emit({
+            "id": 121, "method": "item/tool/requestUserInput",
+            "params": {
+                "threadId": "thr-1", "turnId": "turn-1-1",
+                "questions": [{
+                    "id": "choice", "header": "Choose", "question": "Pick one",
+                    "options": [{"label": "A", "description": "first"}],
+                }],
+            },
+        })
+        request_id = self.bridge.status("team-one")["pendingApprovals"][0]["requestId"]
+        with self.assertRaisesRegex(BridgeError, "unique strings"):
+            self.bridge.respond("team-one", request_id, {
+                "answers": {"choice": {"answers": [["A"]]}},
+            })
+
+    def test_permissions_allow_whole_category_only_and_preserve_denies(self):
+        self.bridge.start(
+            "permission-team", self.project, "work", "gpt-5.6-terra", work_mode="auto",
+        )
+        connection = self.factory.connections[0]
+        requested = {
+            "network": {"enabled": True},
+            "fileSystem": {
+                "entries": [
+                    {"access": "write", "path": {"type": "path", "path": str(self.project)}},
+                    {"access": "deny", "path": {"type": "glob_pattern", "pattern": "**/.env"}},
+                ],
+                "globScanMaxDepth": 10,
+            },
+        }
+        connection.emit({
+            "id": 130, "method": "item/permissions/requestApproval",
+            "params": {
+                "threadId": "thr-1", "turnId": "turn-1-1", "itemId": "p-1",
+                "cwd": str(self.project), "startedAtMs": 1, "permissions": requested,
+            },
+        })
+        pending = self.bridge.status("permission-team")["pendingApprovals"][0]
+        self.assertEqual(pending["kind"], "permissions")
+        broadened = {
+            "network": requested["network"],
+            "fileSystem": {"entries": requested["fileSystem"]["entries"][:1]},
+        }
+        with self.assertRaisesRegex(BridgeError, "subset"):
+            self.bridge.respond("permission-team", pending["requestId"], {
+                "permissions": broadened, "scope": "turn",
+            })
+        self.bridge.respond("permission-team", pending["requestId"], {
+            "permissions": {"network": requested["network"]}, "scope": "turn",
+        })
+        self.assertEqual(connection.sent[-1], {
+            "id": 130,
+            "result": {"permissions": {"network": {"enabled": True}}, "scope": "turn"},
+        })
+
+    def test_plan_permissions_are_denied_but_questions_remain_available(self):
+        self.start()
+        connection = self.factory.connections[0]
+        connection.emit({
+            "id": 131, "method": "item/permissions/requestApproval",
+            "params": {
+                "threadId": "thr-1", "turnId": "turn-1-1", "itemId": "p-plan",
+                "cwd": str(self.project), "startedAtMs": 1,
+                "permissions": {"network": {"enabled": True}},
+            },
+        })
+        self.assertEqual(connection.sent[-1], {
+            "id": 131,
+            "result": {"permissions": {}, "scope": "turn", "strictAutoReview": True},
+        })
+        self.assertEqual(self.bridge.status("team-one")["pendingApprovals"], [])
+
+    def test_primitive_elicitation_accepts_values_and_url_mode_fails_closed(self):
+        self.start()
+        connection = self.factory.connections[0]
+        connection.emit({
+            "id": 140, "method": "mcpServer/elicitation/request",
+            "params": {
+                "threadId": "thr-1", "turnId": "turn-1-1",
+                "serverName": "calendar", "message": "Choose a count", "mode": "form",
+                "requestedSchema": {
+                    "type": "object", "required": ["count"],
+                    "properties": {
+                        "count": {"type": "integer", "minimum": 1, "maximum": 5},
+                        "notify": {"type": "boolean"},
+                    },
+                },
+            },
+        })
+        pending = self.bridge.status("team-one")["pendingApprovals"][0]
+        self.assertEqual(pending["kind"], "elicitation")
+        self.bridge.respond("team-one", pending["requestId"], {
+            "action": "accept", "content": {"count": 3, "notify": True},
+        })
+        self.assertEqual(connection.sent[-1], {
+            "id": 140,
+            "result": {"action": "accept", "content": {"count": 3, "notify": True}},
+        })
+        connection.emit({
+            "id": 141, "method": "mcpServer/elicitation/request",
+            "params": {
+                "threadId": "thr-1", "turnId": "turn-1-1",
+                "serverName": "calendar", "message": "Open this", "mode": "url",
+                "url": "https://example.test/authorize",
+            },
+        })
+        self.assertEqual(connection.sent[-1], {
+            "id": 141, "result": {"action": "decline", "content": None},
+        })
+
+    def test_native_resolution_removes_pending_request(self):
+        self.start()
+        connection = self.factory.connections[0]
+        connection.emit({
+            "id": "native-q", "method": "item/tool/requestUserInput",
+            "params": {
+                "threadId": "thr-1", "turnId": "turn-1-1",
+                "questions": [{"id": "q", "header": "Q", "question": "Continue?"}],
+            },
+        })
+        request_id = self.bridge.status("team-one")["pendingApprovals"][0]["requestId"]
+        connection.emit({
+            "method": "serverRequest/resolved", "params": {"requestId": "native-q"},
+        })
+        self.assertEqual(self.bridge.status("team-one")["pendingApprovals"], [])
+        with self.assertRaisesRegex(BridgeError, "not awaiting|already resolved"):
+            self.bridge.respond("team-one", request_id, {"answers": {}})
+
+    def test_new_native_requests_require_schema_ids_and_an_active_turn(self):
+        self.start()
+        connection = self.factory.connections[0]
+        question = {
+            "isBlocking": True, "itemId": "q-id",
+            "questions": [{"id": "q", "header": "Q", "question": "Continue?"}],
+            "threadId": "thr-1",
+        }
+        connection.emit({
+            "id": 160, "method": "item/tool/requestUserInput", "params": question,
+        })
+        self.assertEqual(connection.sent[-1], {"id": 160, "result": {"answers": {}}})
+        self.assertEqual(self.bridge.status("team-one")["pendingApprovals"], [])
+
+        # MCP elicitation alone permits a nullable turn ID, but still requires
+        # an explicit matching thread ID and an active local turn.
+        form = {
+            "threadId": "thr-1", "turnId": None, "serverName": "browser",
+            "message": "Allow access?", "mode": "form",
+            "requestedSchema": {"type": "object", "properties": {}},
+        }
+        connection.emit({
+            "id": 161, "method": "mcpServer/elicitation/request",
+            "params": {key: value for key, value in form.items() if key != "threadId"},
+        })
+        self.assertEqual(connection.sent[-1], {
+            "id": 161, "result": {"action": "decline", "content": None},
+        })
+        connection.emit({
+            "id": 162, "method": "mcpServer/elicitation/request", "params": form,
+        })
+        pending = self.bridge.status("team-one")["pendingApprovals"][0]
+        self.bridge.respond("team-one", pending["requestId"], {
+            "action": "decline", "content": None,
+        })
+        connection.emit({
+            "method": "turn/completed",
+            "params": {
+                "threadId": "thr-1",
+                "turn": {"id": "turn-1-1", "status": "completed"},
+            },
+        })
+        connection.emit({
+            "id": 163, "method": "item/tool/requestUserInput",
+            "params": {**question, "turnId": "turn-1-1"},
+        })
+        self.assertEqual(connection.sent[-1], {"id": 163, "result": {"answers": {}}})
+        self.assertEqual(self.bridge.status("team-one")["pendingApprovals"], [])
+
+    def test_permission_request_rejects_wrong_type_thread_id(self):
+        self.bridge.start(
+            "permission-ids", self.project, "work", "gpt-5.6-terra", work_mode="auto",
+        )
+        connection = self.factory.connections[0]
+        connection.emit({
+            "id": 164, "method": "item/permissions/requestApproval",
+            "params": {
+                "threadId": 1, "turnId": "turn-1-1", "itemId": "p-id",
+                "cwd": str(self.project), "startedAtMs": 1,
+                "permissions": {"network": {"enabled": True}},
+            },
+        })
+        self.assertEqual(connection.sent[-1], {
+            "id": 164,
+            "result": {"permissions": {}, "scope": "turn", "strictAutoReview": True},
+        })
+        self.assertEqual(self.bridge.status("permission-ids")["pendingApprovals"], [])
+
     def test_unknown_and_unsupported_requests_are_denied(self):
         self.start()
         connection = self.factory.connections[0]
@@ -719,11 +951,143 @@ class CodexBridgeTest(unittest.TestCase):
         status = self.bridge.status("team-one")
         self.assertTrue(status["budget"]["blocked"])
         self.assertEqual(status["budget"]["usedTokens"], 12)
-        sent_before = len(connection.sent)
+        work_calls_before = sum(
+            item.get("method") in {"turn/start", "turn/steer"}
+            for item in connection.sent
+        )
         with self.assertRaisesRegex(BridgeError, "budget exhausted"):
             self.bridge.send("team-one", "More work.")
-        self.assertEqual(len(connection.sent), sent_before)
-        self.assertTrue(any(event["type"] == "budget.exhausted" for event in self.bridge.events("team-one", 0)["events"]))
+        self.assertEqual(sum(
+            item.get("method") in {"turn/start", "turn/steer"}
+            for item in connection.sent
+        ), work_calls_before)
+        for _ in range(20):
+            if any(item.get("method") == "turn/interrupt" for item in connection.sent):
+                break
+            threading.Event().wait(0.01)
+        self.assertEqual(
+            sum(item.get("method") == "turn/interrupt" for item in connection.sent), 1,
+        )
+        connection.emit({
+            "method": "thread/tokenUsage/updated",
+            "params": {
+                "threadId": "thr-1", "turnId": "turn-1-1",
+                "tokenUsage": {"total": {"totalTokens": 20}},
+            },
+        })
+        self.assertEqual(
+            sum(item.get("method") == "turn/interrupt" for item in connection.sent), 1,
+        )
+        events = self.bridge.events("team-one", 0)["events"]
+        self.assertTrue(any(event["type"] == "budget.exhausted" for event in events))
+        self.assertTrue(any(
+            event["type"] == "budget.stop_requested"
+            and event["data"]["childrenMayContinue"] is True
+            for event in events
+        ))
+        self.assertEqual(self.bridge.status("team-one")["state"], "stopping")
+
+    def test_budget_stop_still_allows_rejecting_pending_permission(self):
+        self.bridge.set_budget("budget-permission", 10, True)
+        self.bridge.start(
+            "budget-permission", self.project, "work", "gpt-5.6-terra", work_mode="auto",
+        )
+        connection = self.factory.connections[0]
+        connection.emit({
+            "id": 150, "method": "item/permissions/requestApproval",
+            "params": {
+                "threadId": "thr-1", "turnId": "turn-1-1", "itemId": "p-budget",
+                "cwd": str(self.project), "startedAtMs": 1,
+                "permissions": {"network": {"enabled": True}},
+            },
+        })
+        request_id = self.bridge.status("budget-permission")["pendingApprovals"][0]["requestId"]
+        connection.emit({
+            "method": "thread/tokenUsage/updated",
+            "params": {
+                "threadId": "thr-1", "turnId": "turn-1-1",
+                "tokenUsage": {"total": {"totalTokens": 12}},
+            },
+        })
+        self.assertEqual(self.bridge.status("budget-permission")["state"], "stopping")
+        result = self.bridge.respond("budget-permission", request_id, {
+            "permissions": {}, "scope": "turn",
+        })
+        self.assertEqual(result["action"], "reject")
+        self.assertIn({
+            "id": 150, "result": {"permissions": {}, "scope": "turn"},
+        }, connection.sent)
+
+    def test_failed_budget_interrupt_restores_active_state_for_manual_retry(self):
+        self.bridge.set_budget("interrupt-failure", 10, True)
+        self.bridge.start(
+            "interrupt-failure", self.project, "work", "gpt-5.6-terra", work_mode="auto",
+        )
+        connection = self.factory.connections[0]
+        original_send = connection.send
+
+        def fail_interrupt(message):
+            if message.get("method") == "turn/interrupt":
+                connection.sent.append(json.loads(json.dumps(message)))
+                raise BridgeError("temporary interrupt failure")
+            original_send(message)
+
+        connection.send = fail_interrupt
+        connection.emit({
+            "method": "thread/tokenUsage/updated",
+            "params": {
+                "threadId": "thr-1", "turnId": "turn-1-1",
+                "tokenUsage": {"total": {"totalTokens": 12}},
+            },
+        })
+        for _ in range(20):
+            if any(
+                event["type"] == "budget.stop_failed"
+                for event in self.bridge.events("interrupt-failure")["events"]
+            ):
+                break
+            threading.Event().wait(0.01)
+        self.assertEqual(self.bridge.status("interrupt-failure")["state"], "running")
+        connection.send = original_send
+        self.assertTrue(self.bridge.stop("interrupt-failure")["accepted"])
+
+    def test_failed_budget_interrupt_does_not_overwrite_completed_turn(self):
+        self.bridge.set_budget("interrupt-complete-race", 10, True)
+        self.bridge.start(
+            "interrupt-complete-race", self.project, "work", "gpt-5.6-terra", work_mode="auto",
+        )
+        connection = self.factory.connections[0]
+        original_send = connection.send
+
+        def complete_then_fail(message):
+            if message.get("method") == "turn/interrupt":
+                connection.sent.append(json.loads(json.dumps(message)))
+                connection.emit({
+                    "method": "turn/completed",
+                    "params": {
+                        "threadId": "thr-1",
+                        "turn": {"id": "turn-1-1", "status": "interrupted"},
+                    },
+                })
+                raise BridgeError("interrupt raced with completion")
+            original_send(message)
+
+        connection.send = complete_then_fail
+        connection.emit({
+            "method": "thread/tokenUsage/updated",
+            "params": {
+                "threadId": "thr-1", "turnId": "turn-1-1",
+                "tokenUsage": {"total": {"totalTokens": 12}},
+            },
+        })
+        for _ in range(20):
+            if any(
+                event["type"] == "budget.stop_failed"
+                for event in self.bridge.events("interrupt-complete-race")["events"]
+            ):
+                break
+            threading.Event().wait(0.01)
+        self.assertEqual(self.bridge.status("interrupt-complete-race")["state"], "idle")
 
     def test_concurrent_second_start_is_rejected(self):
         self.start()

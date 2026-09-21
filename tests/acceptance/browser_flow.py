@@ -71,7 +71,9 @@ with tempfile.TemporaryDirectory(prefix='hq-browser-') as td:
             picker_results = [{'cancelled': True, 'path': ''}, {'cancelled': False, 'path': str(project)}]
 
             def provider_route(route):
-                if route.request.method == 'GET':
+                if '/api/providers/codex/tasks' in route.request.url:
+                    route.continue_()
+                elif route.request.method == 'GET':
                     route.fulfill(content_type='application/json', body=json.dumps(providers))
                 elif route.request.url.endswith('/codex/check'):
                     route.fulfill(content_type='application/json', body=json.dumps(providers['providers'][0]))
@@ -133,6 +135,16 @@ with tempfile.TemporaryDirectory(prefix='hq-browser-') as td:
             expect(page.get_by_text('41% remaining', exact=True)).to_be_visible()
             page.screenshot(path=str(OUT / 'settings.png'), full_page=True, animations='disabled')
 
+            # Provider tasks are native read-only metadata; opening a summary never starts a turn.
+            page.get_by_role('button', name='Provider tasks', exact=True).click()
+            expect(page.get_by_role('heading', name='Provider tasks')).to_be_visible()
+            page.get_by_role('button', name='Load tasks', exact=True).click()
+            expect(page.get_by_role('button', name='Fixture task', exact=False)).to_be_visible(timeout=15000)
+            page.get_by_role('button', name='Fixture task', exact=False).click()
+            expect(page.get_by_role('region', name='Task summary')).to_be_visible()
+            expect(page.get_by_text('Fixture task preview', exact=True)).to_be_visible()
+            page.get_by_label('Close task summary').click()
+
             # Folder picking is optional and cancellation leaves the first-message draft intact.
             page.get_by_role('button', name='Chat', exact=True).click()
             page.get_by_role('button', name='Add project', exact=True).click()
@@ -188,6 +200,21 @@ with tempfile.TemporaryDirectory(prefix='hq-browser-') as td:
             expect(page.get_by_role('img', name='fixture.png')).to_be_visible(timeout=15000)
             assert urllib.request.urlopen(image_url, timeout=5).read() == PNG
 
+            # Native questions, permission grants, and elicitation forms stay in the current provider turn.
+            page.get_by_label('Direction for the team').fill('NATIVE_REQUESTS_TEST')
+            page.get_by_role('button', name='Send message', exact=True).click()
+            expect(page.get_by_text('Choose a fixture value', exact=True)).to_be_visible(timeout=15000)
+            page.get_by_role('radio', name=re.compile('Yes')).check()
+            page.get_by_role('button', name='Send answers', exact=True).click()
+            expect(page.get_by_text('network', exact=True)).to_be_visible(timeout=15000)
+            page.get_by_role('checkbox').check()
+            page.get_by_label('Scope').select_option('turn')
+            page.get_by_role('button', name='Grant selected', exact=True).click()
+            expect(page.get_by_label('Fixture note')).to_be_visible(timeout=15000)
+            page.get_by_label('Fixture note').fill('verified')
+            page.get_by_role('button', name='Send response', exact=True).click()
+            expect(page.get_by_text('Native interaction fixture passed', exact=True)).to_be_visible(timeout=15000)
+
             # Full access is an explicit new-chat selection, persisted as full and sent as native dangerFullAccess.
             page.get_by_role('button', name='New chat', exact=False).click()
             expect(page.get_by_label('Work mode')).to_have_value('plan')
@@ -241,7 +268,7 @@ with tempfile.TemporaryDirectory(prefix='hq-browser-') as td:
             'transport': 'synthetic JSONL fixture, not a live provider',
             'checks': ['connections and separate account windows', 'provider dialog close and desktop open route',
                        'folder picker cancel/chosen path and draft preservation', 'image preview, replay, and byte-preserving attachment read', 'budget dialog reset',
-                       'explicit plan-first approvals', 'full-access native transport contract', 'folderless automatic native approval and decline',
+                       'provider task metadata', 'explicit plan-first approvals', 'native question, permission, and form controls', 'full-access native transport contract', 'folderless automatic native approval and decline',
                        'managed scratch isolation', 'desktop and narrow layout'],
             'page_errors': errors,
         }, indent=2))

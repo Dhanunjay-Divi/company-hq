@@ -421,6 +421,28 @@ def handle_get(handler, state):
         except Exception:
             handler._json_error(404, 'Image not found in this chat')
         return True
+    if path.startswith('/api/providers/codex/tasks'):
+        try:
+            from provider_connections import connections
+            parts = path.strip('/').split('/')
+            query = parse_qs(urlparse(handler.path).query, keep_blank_values=True)
+            if parts == ['api', 'providers', 'codex', 'tasks']:
+                allowed = {'cursor', 'search', 'archived', 'includeAgents'}
+                if set(query) - allowed or any(len(values) != 1 for values in query.values()):
+                    raise ValueError('Invalid task filters.')
+                def flag(key):
+                    value = query.get(key, ['false'])[0]
+                    if value not in ('true', 'false'): raise ValueError('Invalid task filter.')
+                    return value == 'true'
+                result = connections().list_tasks(cursor=query.get('cursor', [None])[0],
+                    search=query.get('search', [''])[0], archived=flag('archived'), include_agents=flag('includeAgents'))
+            elif len(parts) == 5 and parts[:4] == ['api', 'providers', 'codex', 'tasks'] and not query:
+                result = connections().read_task(unquote(parts[4]))
+            else: raise ValueError('Invalid task route.')
+            handler._serve_json(result)
+        except Exception:
+            handler._json_error(400, 'Provider tasks could not be loaded. Check the filters and native connection.')
+        return True
     if path == '/api/providers':
         try:
             from provider_connections import connections
@@ -459,6 +481,14 @@ def handle_post(handler,state,path,body):
             if demo_mode(): raise ValueError('Image uploads are disabled in demo mode')
             from image_attachments import upload
             handler._serve_json(upload(state, name, body))
+        except Exception as exc:
+            handler._json_error(400, str(exc))
+        return True
+    if path == '/api/access/settings':
+        try:
+            if demo_mode(): raise ValueError('Opening system settings is disabled in demo mode.')
+            from access_settings import open_settings
+            handler._serve_json(open_settings(body))
         except Exception as exc:
             handler._json_error(400, str(exc))
         return True
@@ -536,7 +566,7 @@ def handle_post(handler,state,path,body):
             handler._serve_json({'updated':True});return True
         if parts[1]!='runtime' or len(parts)!=4: raise ValueError('Unknown action')
         client=bridge(state);action=parts[3]
-        if demo_mode() and action in ('start','send','execute','approve'):
+        if demo_mode() and action in ('start','send','execute','approve','respond','access'):
             raise ValueError('Model execution is disabled in model-free demo mode')
         if action in ('start','send'):
             prompt=body.get('prompt','')
@@ -567,6 +597,10 @@ def handle_post(handler,state,path,body):
         elif action=='stop':
             project_for(state,name)
             result=client.stop(name)
+        elif action=='respond':
+            project_for(state,name)
+            if set(body) != {'requestId', 'response'}: raise ValueError('A request ID and response are required.')
+            result=client.respond(name,body.get('requestId'),body.get('response'))
         elif action=='approve':
             project_for(state,name)
             result=client.approve(name,body.get('requestId'),body.get('decision'))

@@ -2,6 +2,7 @@ import React, {useEffect, useRef, useState} from 'react';
 import Markdown from 'react-markdown';
 import {ArrowDown, ArrowUpRight, Lightbulb, Code2, Telescope, Layers3} from 'lucide-react';
 import './images.css';
+import NativeRequests from './NativeRequests';
 type Data = Record<string, any>;
 type Attachment = { id: string; name?: string; url: string };
 type Message = {key:string;role:'user'|'assistant';text:string;complete:boolean;attachments?:Attachment[]};
@@ -19,9 +20,9 @@ export function conversationMessages(events:Data[]):Message[] {
   }
   return messages;
 }
-export default function ChatView({events,runtime,empty,composer,onDraft,busy,demo,onApproval}:{
+export default function ChatView({events,runtime,empty,composer,onDraft,busy,demo,onApproval,onRespond}:{
   events:Data[];runtime:Data;empty:boolean;composer:React.ReactNode;onDraft:(text:string)=>void;
-  busy:boolean;demo:boolean;onApproval:(id:string,decision:string)=>void;
+  busy:boolean;demo:boolean;onApproval:(id:string,decision:string)=>void;onRespond:(id:string,response:Data)=>unknown;
 }) {
   const scroll=useRef<HTMLDivElement>(null); const follow=useRef(true); const [atBottom,setAtBottom]=useState(true);
   const messages=conversationMessages(events); const working=busy||['starting','running','stopping'].includes(runtime.state);
@@ -44,7 +45,7 @@ export default function ChatView({events,runtime,empty,composer,onDraft,busy,dem
             <div className="message-body">{message.role==='user'?<>{message.text}{message.attachments?.length ? <div className="message-attachments">{message.attachments.map(attachment => <img key={attachment.id} src={safeAttachmentUrl(attachment.url)} alt={attachment.name || 'Attached image'} />)}</div> : null}</>:<Markdown skipHtml components={{a:({children,...props})=><a {...props} target="_blank" rel="noopener noreferrer">{children}</a>,img:({alt})=><span>{alt?`[Image: ${alt}]`:'[Image]'}</span>}}>{message.text}</Markdown>}</div>
           </article>)}
           {working&&<div className="thinking-indicator" role="status"><span/><span/><span/>{busy?'Sending your message…':runtime.state==='starting'?'Connecting to Codex…':runtime.state==='stopping'?'Stopping…':'Working on it…'}</div>}
-          {(runtime.pendingApprovals||[]).map((a:Data)=><section className="approval-card" key={a.requestId}><h3>Permission requested</h3><p>{a.reason}</p><pre>{a.command}</pre><div><button className="small-button" disabled={busy} onClick={()=>onApproval(a.requestId,'reject')}>Decline</button><button className="primary-button" disabled={busy} onClick={()=>onApproval(a.requestId,'approve')}>Approve once</button></div></section>)}
+          <NativeRequests requests={runtime.pendingApprovals||[]} busy={busy || demo} onApproval={onApproval} onRespond={onRespond}/>
           {runtime.error&&<p className="chat-runtime-error" role="alert">{runtime.error}</p>}
           {!messages.length&&!working&&<p className="chat-recovery">This chat is ready to continue. Earlier messages may be unavailable after a server restart.</p>}
         </div>

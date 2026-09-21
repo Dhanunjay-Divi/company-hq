@@ -16,6 +16,8 @@ lock = threading.Lock()
 turn = 0
 current_turn = ''
 pending = None
+interaction = None
+interaction_wire_id = None
 
 def emit(message):
     with lock:
@@ -26,8 +28,36 @@ def completed(text, status='completed'):
     emit({'method':'thread/tokenUsage/updated','params':{'threadId':'fixture-supervisor','tokenUsage':{'total':{'inputTokens':200*turn,'cachedInputTokens':40*turn,'outputTokens':30*turn,'totalTokens':230*turn}}}})
     emit({'method':'turn/completed','params':{'threadId':'fixture-supervisor','turn':{'id':current_turn,'status':status}}})
 
+def request_question():
+    global interaction, interaction_wire_id
+    interaction = 'question'
+    interaction_wire_id = 'fixture-question-' + current_turn
+    emit({'id': interaction_wire_id, 'method': 'item/tool/requestUserInput', 'params': {
+        'threadId': 'fixture-supervisor', 'turnId': current_turn,
+        'questions': [{'id': 'choice', 'header': 'Fixture choice', 'question': 'Choose a fixture value', 'isOther': False, 'isSecret': False,
+                      'options': [{'label': 'Yes', 'description': 'Use fixture'}]}],
+    }})
+
+def request_permissions():
+    global interaction, interaction_wire_id
+    interaction = 'permissions'
+    interaction_wire_id = 'fixture-permissions-' + current_turn
+    emit({'id': interaction_wire_id, 'method': 'item/permissions/requestApproval', 'params': {
+        'threadId': 'fixture-supervisor', 'turnId': current_turn,
+        'permissions': {'network': {'enabled': True}},
+    }})
+
+def request_form():
+    global interaction, interaction_wire_id
+    interaction = 'form'
+    interaction_wire_id = 'fixture-form-' + current_turn
+    emit({'id': interaction_wire_id, 'method': 'mcpServer/elicitation/request', 'params': {
+        'threadId': 'fixture-supervisor', 'turnId': current_turn, 'serverName': 'fixture', 'message': 'Provide the fixture note.', 'mode': 'form',
+        'requestedSchema': {'type': 'object', 'properties': {'note': {'type': 'string', 'title': 'Fixture note'}}, 'required': ['note']},
+    }})
+
 def after_start(params):
-    global pending
+    global pending, interaction
     text = ' '.join(x.get('text','') for x in params.get('input',[]))
     images = [item for item in params.get('input',[]) if item.get('type')=='localImage']
     for item in images:
@@ -35,6 +65,9 @@ def after_start(params):
         assert content.startswith(b'\x89PNG\r\n\x1a\n'), 'Image content did not reach native fixture'
     image_note = f' Received {len(images)} image attachment(s).' if images else ''
     if 'HOLD_FOR_STOP_TEST' in text:
+        return
+    if 'NATIVE_REQUESTS_TEST' in text:
+        request_question()
         return
     if params.get('sandboxPolicy',{}).get('type') == 'readOnly':
         if 'LONG_STREAM_TEST' in text:
@@ -55,6 +88,20 @@ def after_start(params):
 
 for line in sys.stdin:
     message = json.loads(line)
+    if 'result' in message and interaction and message.get('id') == interaction_wire_id:
+        result = message['result']
+        if interaction == 'question':
+            assert result == {'answers': {'choice': {'answers': ['Yes']}}}, result
+            request_permissions()
+        elif interaction == 'permissions':
+            assert result == {'permissions': {'network': {'enabled': True}}, 'scope': 'turn'}, result
+            request_form()
+        else:
+            assert result == {'action': 'accept', 'content': {'note': 'verified'}}, result
+            interaction = None
+            interaction_wire_id = None
+            completed('Native interaction fixture passed')
+        continue
     if 'result' in message and message.get('id') == pending:
         if message['result'].get('decision') == 'accept':
             assert project in owned_cwds, f'Fixture may write only its owned cwd: {project}'
@@ -82,6 +129,12 @@ for line in sys.stdin:
             assert candidate == fixture_project
             project = fixture_project
         result = {'thread':{'id':'fixture-supervisor'}}
+    elif method == 'thread/list':
+        assert params.get('useStateDbOnly') is True
+        result = {'data': [{'id': 'fixture-supervisor', 'name': 'Fixture task', 'cwd': str(fixture_project), 'updatedAt': 1790000000, 'status': {'type': 'idle'}, 'source': 'appServer'}], 'nextCursor': None}
+    elif method == 'thread/read':
+        assert params == {'threadId': 'fixture-supervisor', 'includeTurns': False}
+        result = {'thread': {'id': 'fixture-supervisor', 'name': 'Fixture task', 'cwd': str(fixture_project), 'updatedAt': 1790000000, 'status': {'type': 'idle'}, 'source': 'appServer', 'preview': 'Fixture task preview'}}
     elif method == 'thread/goal/set':
         result = {'goal':{'tokenBudget':params['tokenBudget']}}
     elif method == 'turn/start':

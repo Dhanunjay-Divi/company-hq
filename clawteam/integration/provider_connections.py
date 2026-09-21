@@ -113,7 +113,7 @@ def _usage_windows(payload):
 
 
 class CodexSignIn:
-    """One app-owned auth transport. No threads, turns, raw tokens or email storage."""
+    """App-owned native transport for sign-in and read-only metadata. Never starts turns."""
     def __init__(self, factory=None):
         self.factory = factory or (lambda: _StdioConnection(codex_executable()))
         self.connection = None
@@ -257,6 +257,18 @@ class CodexSignIn:
                         }
                 raise ValueError('Native provider connection check failed. Try again.') from exc
 
+    def list_tasks(self, **filters):
+        from native_tasks import list_tasks
+        with self.operation:
+            self._ensure()
+            return list_tasks(self._rpc, **filters)
+
+    def read_task(self, thread_id):
+        from native_tasks import read_task
+        with self.operation:
+            self._ensure()
+            return read_task(self._rpc, thread_id)
+
     def connect(self):
         with self.operation:
             if self.login_id:
@@ -325,6 +337,16 @@ class ProviderConnections:
             row['desktopInstalled'] = bool(row.pop('desktopPath', None))
             row['cliInstalled'] = bool(row.pop('cliPath', None))
         return snapshot
+
+    def list_tasks(self, **filters):
+        if demo_mode():
+            raise ValueError('Provider task browsing is disabled in demo mode.')
+        return self.auth.list_tasks(**filters)
+
+    def read_task(self, thread_id):
+        if demo_mode():
+            raise ValueError('Provider task browsing is disabled in demo mode.')
+        return self.auth.read_task(thread_id)
 
     def action(self, provider, action):
         if demo_mode():

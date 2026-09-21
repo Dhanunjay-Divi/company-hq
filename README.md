@@ -9,6 +9,7 @@ This repository preserves the shared toolkit source built on 13–14 September 2
 - [Implementation handoff and acceptance criteria](docs/IMPLEMENTER-HANDOFF.md)
 - [How to use Company HQ](docs/USAGE.md)
 - [What works and what remains](docs/STATUS.md)
+- [Native task visibility, computer access and readiness comparison](docs/HQ-READINESS-AND-ACCESS.md)
 - [Locked best-of-all stack and staged fallbacks](docs/BEST-STACK.md)
 - [Architecture and source map](docs/ARCHITECTURE.md)
 - [New upstream candidates: ECC, gstack, Superpowers and the 40-repo list](docs/UPSTREAM-REVIEW.md)

@@ -9,6 +9,7 @@ from __future__ import annotations
 import atexit
 import hashlib
 import json
+import math
 import os
 import re
 import subprocess
@@ -89,6 +90,306 @@ def _validate_mode(mode: str) -> str:
     if mode not in {"plan", "execute", "full"}:
         raise BridgeError("mode must be plan, execute or full")
     return mode
+
+
+def _request_text(value: object, limit: int, label: str, *, empty: bool = False) -> str:
+    if not isinstance(value, str) or len(value) > limit or (not empty and not value.strip()):
+        raise BridgeProtocolError(f"native {label} is invalid")
+    return _safe_text(value, limit)
+
+
+def _native_exact_text(value: object, limit: int, label: str) -> str:
+    """Bound private protocol data without altering the value sent back."""
+    if not isinstance(value, str) or not value.strip() or len(value) > limit:
+        raise BridgeProtocolError(f"native {label} is invalid")
+    return value
+
+
+def _question_request(params: dict[str, Any]) -> dict[str, Any]:
+    raw = params.get("questions")
+    if not isinstance(raw, list) or not 1 <= len(raw) <= 3:
+        raise BridgeProtocolError("native user questions are invalid")
+    questions = []
+    seen = set()
+    for row in raw:
+        if not isinstance(row, dict) or set(row) - {"id", "header", "question", "options", "isOther", "isSecret"}:
+            raise BridgeProtocolError("native user question is invalid")
+        question_id = row.get("id")
+        if not isinstance(question_id, str) or not re.fullmatch(r"[A-Za-z0-9_.-]{1,100}", question_id) or question_id in seen:
+            raise BridgeProtocolError("native user question id is invalid")
+        seen.add(question_id)
+        raw_options = row.get("options")
+        if raw_options is None:
+            raw_options = []
+        if not isinstance(raw_options, list) or len(raw_options) > 10:
+            raise BridgeProtocolError("native user question options are invalid")
+        options = []
+        for option in raw_options:
+            if not isinstance(option, dict) or set(option) != {"label", "description"}:
+                raise BridgeProtocolError("native user question option is invalid")
+            options.append({
+                "label": _request_text(option.get("label"), 200, "question option"),
+                "description": _request_text(option.get("description"), 600, "question option description", empty=True),
+            })
+        questions.append({
+            "id": question_id,
+            "header": _request_text(row.get("header"), 80, "question header"),
+            "question": _request_text(row.get("question"), 2000, "question"),
+            "options": options,
+            "isOther": row.get("isOther") is True,
+            "isSecret": row.get("isSecret") is True,
+        })
+    return {
+        "questions": questions,
+        "isBlocking": params.get("isBlocking") is not False,
+    }
+
+
+def _question_response(response: object, request: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(response, dict) or set(response) != {"answers"} or not isinstance(response.get("answers"), dict):
+        raise BridgeError("question response must contain answers")
+    raw_answers = response["answers"]
+    if not raw_answers:
+        return {"answers": {}}
+    questions = {row["id"]: row for row in request["questions"]}
+    if set(raw_answers) != set(questions):
+        raise BridgeError("answer every requested question exactly once")
+    answers = {}
+    for question_id, raw in raw_answers.items():
+        if not isinstance(raw, dict) or set(raw) != {"answers"} or not isinstance(raw.get("answers"), list):
+            raise BridgeError("question answers must be string lists")
+        values = raw["answers"]
+        if not 1 <= len(values) <= 10:
+            raise BridgeError("question answers are empty or duplicated")
+        if any(not isinstance(value, str) for value in values) or len(set(values)) != len(values):
+            raise BridgeError("question answers must be unique strings")
+        cleaned = []
+        labels = {item["label"] for item in questions[question_id]["options"]}
+        for value in values:
+            if not value.strip() or len(value) > 4000:
+                raise BridgeError("question answer is invalid")
+            if labels and value not in labels and not questions[question_id]["isOther"]:
+                raise BridgeError("question answer is not an available option")
+            cleaned.append(value)
+        answers[question_id] = {"answers": cleaned}
+    return {"answers": answers}
+
+
+def _permission_path(value: object) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise BridgeProtocolError("native filesystem permission path is invalid")
+    path_type = value.get("type")
+    if path_type == "path" and set(value) == {"type", "path"}:
+        return {"type": "path", "path": _native_exact_text(value.get("path"), 4096, "filesystem path")}
+    if path_type == "glob_pattern" and set(value) == {"type", "pattern"}:
+        return {"type": "glob_pattern", "pattern": _native_exact_text(value.get("pattern"), 4096, "filesystem pattern")}
+    if path_type == "special" and set(value) == {"type", "value"} and isinstance(value.get("value"), dict):
+        special = value["value"]
+        kind = special.get("kind")
+        if kind in {"root", "minimal", "tmpdir", "slash_tmp"} and set(special) == {"kind"}:
+            return {"type": "special", "value": {"kind": kind}}
+        if kind == "project_roots" and set(special) <= {"kind", "subpath"}:
+            result = {"kind": kind}
+            if special.get("subpath") is not None:
+                result["subpath"] = _native_exact_text(special["subpath"], 4096, "project subpath")
+            return {"type": "special", "value": result}
+        if kind == "unknown" and set(special) <= {"kind", "path", "subpath"}:
+            result = {"kind": kind, "path": _native_exact_text(special.get("path"), 4096, "special path")}
+            if special.get("subpath") is not None:
+                result["subpath"] = _native_exact_text(special["subpath"], 4096, "special subpath")
+            return {"type": "special", "value": result}
+    raise BridgeProtocolError("native filesystem permission path is unsupported")
+
+
+def _permission_profile(value: object) -> dict[str, Any]:
+    if not isinstance(value, dict) or set(value) - {"network", "fileSystem"}:
+        raise BridgeProtocolError("native permission request is invalid")
+    result = {}
+    network = value.get("network")
+    if network is not None:
+        if not isinstance(network, dict) or set(network) - {"enabled"}:
+            raise BridgeProtocolError("native network permission is invalid")
+        if network.get("enabled") is not None:
+            if not isinstance(network.get("enabled"), bool):
+                raise BridgeProtocolError("native network permission is invalid")
+            result["network"] = {"enabled": network["enabled"]}
+    filesystem = value.get("fileSystem")
+    if filesystem is not None:
+        if not isinstance(filesystem, dict) or set(filesystem) - {"entries", "read", "write", "globScanMaxDepth"}:
+            raise BridgeProtocolError("native filesystem permissions are invalid")
+        clean_filesystem = {}
+        entries = filesystem.get("entries")
+        if entries is not None:
+            if not isinstance(entries, list) or len(entries) > 100:
+                raise BridgeProtocolError("native filesystem entries are invalid")
+            clean_entries = []
+            for entry in entries:
+                if not isinstance(entry, dict) or set(entry) != {"access", "path"} or entry.get("access") not in {"read", "write", "deny"}:
+                    raise BridgeProtocolError("native filesystem entry is invalid")
+                clean_entries.append({"access": entry["access"], "path": _permission_path(entry["path"])})
+            clean_filesystem["entries"] = clean_entries
+        for key in ("read", "write"):
+            paths = filesystem.get(key)
+            if paths is not None:
+                if not isinstance(paths, list) or len(paths) > 100:
+                    raise BridgeProtocolError("native filesystem path list is invalid")
+                clean_filesystem[key] = [_native_exact_text(path, 4096, "filesystem path") for path in paths]
+        depth = filesystem.get("globScanMaxDepth")
+        if depth is not None:
+            if isinstance(depth, bool) or not isinstance(depth, int) or not 1 <= depth <= 1000:
+                raise BridgeProtocolError("native glob scan depth is invalid")
+            clean_filesystem["globScanMaxDepth"] = depth
+        if clean_filesystem:
+            result["fileSystem"] = clean_filesystem
+    return result
+
+
+def _is_permission_subset(value: dict[str, Any], requested: dict[str, Any]) -> bool:
+    """Allow rejecting whole categories, but never weaken a requested category.
+
+    Filesystem entries can contain explicit denies and scan-depth constraints, so
+    field-by-field subset logic can accidentally broaden a grant. An included
+    network or filesystem category must exactly match the native request.
+    """
+    return set(value) <= set(requested) and all(
+        value[key] == requested[key] for key in value
+    )
+
+
+def _permission_response(response: object, requested: dict[str, Any]) -> tuple[dict[str, Any], bool]:
+    if not isinstance(response, dict) or set(response) - {"permissions", "scope", "strictAutoReview"}:
+        raise BridgeError("permission response is invalid")
+    try:
+        granted = _permission_profile(response.get("permissions"))
+    except BridgeProtocolError as exc:
+        raise BridgeError("permission response is invalid") from exc
+    if not _is_permission_subset(granted, requested):
+        raise BridgeError("permission response must be a subset of the native request")
+    scope = response.get("scope", "turn")
+    if scope not in {"turn", "session"}:
+        raise BridgeError("permission scope must be turn or session")
+    result = {"permissions": granted, "scope": scope}
+    if "strictAutoReview" in response:
+        if not isinstance(response["strictAutoReview"], bool):
+            raise BridgeError("strictAutoReview must be true or false")
+        result["strictAutoReview"] = response["strictAutoReview"]
+    return result, bool(granted)
+
+
+def _elicitation_form(params: dict[str, Any]) -> list[dict[str, Any]]:
+    if params.get("mode") != "form" or not isinstance(params.get("requestedSchema"), dict):
+        raise BridgeProtocolError("native elicitation mode is unsupported")
+    schema = params["requestedSchema"]
+    if set(schema) - {"$schema", "type", "properties", "required"} or schema.get("type") != "object":
+        raise BridgeProtocolError("native elicitation schema is unsupported")
+    properties = schema.get("properties")
+    required = schema.get("required") or []
+    if not isinstance(properties, dict) or len(properties) > 20 or not isinstance(required, list):
+        raise BridgeProtocolError("native elicitation schema is invalid")
+    if any(not isinstance(item, str) for item in required) or not set(required) <= set(properties):
+        raise BridgeProtocolError("native elicitation required fields are invalid")
+    fields = []
+    for field_id, spec in properties.items():
+        if not isinstance(field_id, str) or not re.fullmatch(r"[A-Za-z0-9_.-]{1,100}", field_id) or not isinstance(spec, dict):
+            raise BridgeProtocolError("native elicitation field is invalid")
+        field_type = spec.get("type")
+        common = {"type", "title", "description", "default"}
+        allowed = set(common)
+        if field_type == "string":
+            allowed |= {"format", "minLength", "maxLength", "enum", "enumNames", "oneOf"}
+        elif field_type in {"number", "integer"}:
+            allowed |= {"minimum", "maximum"}
+        elif field_type != "boolean":
+            raise BridgeProtocolError("native elicitation field type is unsupported")
+        if set(spec) - allowed:
+            raise BridgeProtocolError("native elicitation field schema is unsupported")
+        field = {
+            "id": field_id,
+            "type": field_type,
+            "title": _request_text(spec.get("title") or field_id, 200, "elicitation title"),
+            "description": _request_text(spec.get("description") or "", 1000, "elicitation description", empty=True),
+            "required": field_id in required,
+        }
+        if field_type == "string":
+            minimum = spec.get("minLength")
+            maximum = spec.get("maxLength")
+            minimum = 0 if minimum is None else minimum
+            maximum = 4000 if maximum is None else maximum
+            if isinstance(minimum, bool) or not isinstance(minimum, int) or isinstance(maximum, bool) or not isinstance(maximum, int) or not 0 <= minimum <= maximum <= 4000:
+                raise BridgeProtocolError("native elicitation string bounds are invalid")
+            field.update({"minLength": minimum, "maxLength": maximum})
+            if spec.get("format") is not None:
+                if spec["format"] not in {"email", "uri", "date", "date-time"}:
+                    raise BridgeProtocolError("native elicitation string format is invalid")
+                field["format"] = spec["format"]
+            options = []
+            if "enum" in spec:
+                values = spec["enum"]
+                names = spec.get("enumNames")
+                if not isinstance(values, list) or not 1 <= len(values) <= 30 or any(not isinstance(item, str) or len(item) > 1000 for item in values):
+                    raise BridgeProtocolError("native elicitation options are invalid")
+                if names is not None and (not isinstance(names, list) or len(names) != len(values) or any(not isinstance(item, str) for item in names)):
+                    raise BridgeProtocolError("native elicitation option labels are invalid")
+                options = [{"value": value, "label": _safe_text(names[index] if names else value, 200)} for index, value in enumerate(values)]
+            elif "oneOf" in spec:
+                choices = spec["oneOf"]
+                if not isinstance(choices, list) or not 1 <= len(choices) <= 30:
+                    raise BridgeProtocolError("native elicitation options are invalid")
+                for choice in choices:
+                    if not isinstance(choice, dict) or set(choice) != {"const", "title"} or not isinstance(choice.get("const"), str):
+                        raise BridgeProtocolError("native elicitation option is invalid")
+                    options.append({"value": choice["const"], "label": _request_text(choice.get("title"), 200, "elicitation option")})
+            if options:
+                field["options"] = options
+        elif field_type in {"number", "integer"}:
+            for source, target in (("minimum", "minimum"), ("maximum", "maximum")):
+                value = spec.get(source)
+                if value is not None:
+                    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+                        raise BridgeProtocolError("native elicitation numeric bound is invalid")
+                    field[target] = value
+            if field.get("minimum", -math.inf) > field.get("maximum", math.inf):
+                raise BridgeProtocolError("native elicitation numeric bounds are invalid")
+        fields.append(field)
+    return fields
+
+
+def _elicitation_response(response: object, fields: list[dict[str, Any]]) -> dict[str, Any]:
+    if not isinstance(response, dict) or set(response) - {"action", "content"}:
+        raise BridgeError("elicitation response is invalid")
+    action = response.get("action")
+    if action in {"decline", "cancel"}:
+        if response.get("content") is not None:
+            raise BridgeError("declined elicitation content must be empty")
+        return {"action": action, "content": None}
+    if action != "accept" or not isinstance(response.get("content"), dict):
+        raise BridgeError("elicitation response is invalid")
+    content = response["content"]
+    field_map = {field["id"]: field for field in fields}
+    if not set(content) <= set(field_map) or any(field["required"] and field["id"] not in content for field in fields):
+        raise BridgeError("elicitation content does not match the requested fields")
+    cleaned = {}
+    for field_id, value in content.items():
+        field = field_map[field_id]
+        field_type = field["type"]
+        if field_type == "string":
+            if not isinstance(value, str) or not field["minLength"] <= len(value) <= field["maxLength"]:
+                raise BridgeError("elicitation string value is invalid")
+            options = {item["value"] for item in field.get("options", [])}
+            if options and value not in options:
+                raise BridgeError("elicitation value is not an available option")
+        elif field_type == "boolean":
+            if not isinstance(value, bool):
+                raise BridgeError("elicitation boolean value is invalid")
+        else:
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+                raise BridgeError("elicitation numeric value is invalid")
+            if field_type == "integer" and not isinstance(value, int):
+                raise BridgeError("elicitation integer value is invalid")
+            if value < field.get("minimum", -math.inf) or value > field.get("maximum", math.inf):
+                raise BridgeError("elicitation numeric value is outside the requested bounds")
+        cleaned[field_id] = value
+    return {"action": "accept", "content": cleaned}
 
 
 def _numeric_tree(value: object) -> object:
@@ -179,6 +480,11 @@ For specialist work, consult agency-agents/USE.md under that repository and load
 only the relevant role from its pinned upstream library. Product, research, UX,
 marketing, engineering and QA guidance is selected as needed, never loaded as an
 entire roster. Native skills and MCP tools must be actually available to use them.
+For browser tasks, use native computer-use tools and discover the available browser
+surfaces first. A standalone Company HQ runtime may not expose the Codex in-app
+browser; use an available authorized browser instead. A listed tool proves only
+exposure, not that an action succeeded. Do not inspect broad app or history
+inventories when the requested task does not require them.
 Use registered Ruflo and codebase-memory tools when available; do not replace the
 user's Codex configuration or account environment. Treat ClawTeam team IDs, task IDs, member IDs,
 inboxes, and events as canonical coordination state. Delegate useful independent work
@@ -301,6 +607,7 @@ class _Approval:
     thread_id: str
     turn_id: str
     data: dict[str, Any]
+    payload: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -327,6 +634,7 @@ class _TeamSession:
     usage_summary: dict[str, Any] | None = None
     usage_event_count: int = 0
     pending_turn_notifications: list[tuple[Any, ...]] | None = None
+    budget_interrupt_turns: set[str] = field(default_factory=set)
     lock: threading.RLock = field(default_factory=threading.RLock)
     operation_lock: threading.Lock = field(default_factory=threading.Lock)
     closing: bool = False
@@ -473,8 +781,8 @@ class _BudgetStore:
                 f"Chat budget exhausted: {100 * used / limit:.0f}% used, 0% remaining. Adjust this chat's allowance to continue. Account limits are separate."
                 if blocked else None
             ),
-            "enforcement": "native-goal-best-effort + Company HQ action gate",
-            "coverage": "Counts provider-reported native totalTokens. This is not billed money or account-wide quota.",
+            "enforcement": "native-goal-best-effort + Company HQ action gate + best-effort interrupt after reported exhaustion",
+            "coverage": "Counts provider-reported native totalTokens. Usage reports can arrive after work is done, so this is not a hard cap, billed money, or account-wide quota.",
         }
 
 
@@ -1098,12 +1406,19 @@ class CodexBridge:
         session = self._require_session(_validate_team(team))
         if decision not in {"approve", "reject"}:
             raise BridgeError("decision must be approve or reject")
-        self._budget.authorize(team)
+        if decision == "approve":
+            self._budget.authorize(team)
         with session.operation_lock:
             with session.lock:
                 if session.mode == "plan":
                     raise BridgeError("approvals cannot be granted during read-only planning")
-                if session.state != "awaiting_approval":
+                budget_stopping = (
+                    session.state == "stopping"
+                    and session.turn_id in session.budget_interrupt_turns
+                )
+                if session.state != "awaiting_approval" and not (
+                    budget_stopping and decision == "reject"
+                ):
                     raise BridgeError("team is not awaiting an approval")
                 approval = session.approvals.get(request_id)
                 if not approval:
@@ -1114,13 +1429,70 @@ class CodexBridge:
             session.connection.send({"id": approval.wire_id, "result": result})
             with session.lock:
                 session.approvals.pop(request_id, None)
-                session.state = "awaiting_approval" if session.approvals else "running"
+                if not budget_stopping:
+                    session.state = "awaiting_approval" if session.approvals else "running"
             self._event(session, "approval.resolved", {
                 "text": "Approval resolved",
                 "requestId": request_id,
                 "decision": decision,
             })
         return {"accepted": True, "requestId": request_id, "decision": decision}
+
+    def respond(self, team: str, request_id: str, response: object) -> dict[str, Any]:
+        """Resolve one native question, permission, or bounded elicitation request."""
+        session = self._require_session(_validate_team(team))
+        if not isinstance(request_id, str) or not request_id:
+            raise BridgeError("request ID is invalid")
+        with session.operation_lock:
+            with session.lock:
+                budget_stopping = (
+                    session.state == "stopping"
+                    and session.turn_id in session.budget_interrupt_turns
+                )
+                if session.state != "awaiting_approval" and not budget_stopping:
+                    raise BridgeError("team is not awaiting a native response")
+                approval = session.approvals.get(request_id)
+                if not approval:
+                    raise BridgeError("native request is unknown or already resolved")
+                if approval.thread_id != session.thread_id or approval.turn_id != session.turn_id:
+                    raise BridgeError("native request does not belong to the active team turn")
+            if approval.method == "item/tool/requestUserInput":
+                result = _question_response(response, approval.payload)
+                action = "respond" if result["answers"] else "reject"
+            elif approval.method == "item/permissions/requestApproval":
+                result, grants_access = _permission_response(
+                    response, approval.payload["requestedPermissions"],
+                )
+                if grants_access:
+                    self._budget.authorize(team)
+                action = "respond" if grants_access else "reject"
+            elif approval.method == "mcpServer/elicitation/request":
+                result = _elicitation_response(response, approval.payload["fields"])
+                action = result["action"]
+            else:
+                raise BridgeError("use the approval endpoint for command and file requests")
+            if budget_stopping and action not in {"reject", "decline", "cancel"}:
+                raise BridgeError("only rejection is allowed after the budget stop was requested")
+            session.connection.send({"id": approval.wire_id, "result": result})
+            with session.lock:
+                session.approvals.pop(request_id, None)
+                if not budget_stopping:
+                    session.state = "awaiting_approval" if session.approvals else "running"
+            # Values may contain passwords or other elicited private data. Keep
+            # the durable event deliberately limited to routing metadata.
+            self._event(session, "request.resolved", {
+                "text": "Native request resolved",
+                "requestId": request_id,
+                "kind": approval.data["kind"],
+                "action": action,
+                **({"scope": result["scope"]} if "scope" in result else {}),
+            })
+        return {
+            "accepted": True,
+            "requestId": request_id,
+            "kind": approval.data["kind"],
+            "action": action,
+        }
 
     @staticmethod
     def _approval_response(method: str, decision: str) -> dict[str, Any]:
@@ -1292,6 +1664,31 @@ class CodexBridge:
         method: str,
         params: dict[str, Any],
     ) -> None:
+        def deny(result: dict[str, Any], text: str) -> None:
+            session.connection.send({"id": wire_id, "result": result})
+            self._event(session, "request.denied", {
+                "text": text,
+                "kind": method,
+            })
+
+        def active_turn(*, nullable_turn: bool = False) -> tuple[str, str] | None:
+            with session.lock:
+                current_thread, current_turn, current_state = (
+                    session.thread_id, session.turn_id, session.state,
+                )
+            thread_id = params.get("threadId")
+            raw_turn_id = params.get("turnId")
+            turn_id = current_turn if nullable_turn and raw_turn_id is None else raw_turn_id
+            if (
+                not isinstance(thread_id, str)
+                or not isinstance(turn_id, str)
+                or thread_id != current_thread
+                or turn_id != current_turn
+                or current_state not in {"running", "awaiting_approval"}
+            ):
+                return None
+            return thread_id, turn_id
+
         approval_methods = {
             "item/commandExecution/requestApproval",
             "item/fileChange/requestApproval",
@@ -1343,27 +1740,123 @@ class CodexBridge:
                 params.get("itemId") or params.get("callId"),
             )
             return
-        safe_results = {
-            "item/permissions/requestApproval": {
-                "permissions": {}, "scope": "turn", "strictAutoReview": True,
-            },
-            "mcpServer/elicitation/request": {"action": "decline", "content": None},
-            "item/tool/requestUserInput": {"answers": {}},
-            "item/tool/call": {
-                "success": False,
-                "contentItems": [{"type": "inputText", "text": "Unsupported client tool"}],
-            },
-        }
-        if method in safe_results:
-            session.connection.send({"id": wire_id, "result": safe_results[method]})
+        if method == "item/tool/requestUserInput":
+            bound = active_turn()
+            try:
+                request = _question_request(params)
+            except BridgeProtocolError:
+                deny({"answers": {}}, "Malformed native question was rejected")
+                return
+            if not bound:
+                deny({"answers": {}}, "Question for an inactive native turn was rejected")
+                return
+            public_id = uuid.uuid4().hex
+            data = {
+                "requestId": public_id,
+                "kind": "questions",
+                "text": "Native Codex needs your input",
+                **request,
+                "availableDecisions": ["respond", "reject"],
+            }
+            approval = _Approval(public_id, wire_id, method, *bound, data, request)
+        elif method == "item/permissions/requestApproval":
+            with session.lock:
+                planning = session.mode == "plan"
+            if planning:
+                deny(
+                    {"permissions": {}, "scope": "turn", "strictAutoReview": True},
+                    "Permission request denied during read-only planning",
+                )
+                return
+            bound = active_turn()
+            try:
+                requested = _permission_profile(params.get("permissions"))
+            except BridgeProtocolError:
+                deny(
+                    {"permissions": {}, "scope": "turn", "strictAutoReview": True},
+                    "Malformed native permission request was rejected",
+                )
+                return
+            if not bound:
+                deny(
+                    {"permissions": {}, "scope": "turn", "strictAutoReview": True},
+                    "Permission request for an inactive native turn was rejected",
+                )
+                return
+            public_id = uuid.uuid4().hex
+            data = {
+                "requestId": public_id,
+                "kind": "permissions",
+                "text": "Native Codex requests additional permissions",
+                "reason": _safe_text(params.get("reason", "Permission required"), 2000),
+                "cwd": _safe_text(params.get("cwd", str(session.project)), 2000),
+                "requestedPermissions": _safe_event_value(requested),
+                "availableScopes": ["turn", "session"],
+                "availableDecisions": ["respond", "reject"],
+            }
+            approval = _Approval(
+                public_id, wire_id, method, *bound, data,
+                {"requestedPermissions": requested},
+            )
+        elif method == "mcpServer/elicitation/request":
+            bound = active_turn(nullable_turn=True)
+            try:
+                fields = _elicitation_form(params)
+            except BridgeProtocolError:
+                deny(
+                    {"action": "decline", "content": None},
+                    "Unsupported native elicitation form was declined",
+                )
+                return
+            if not bound:
+                deny(
+                    {"action": "decline", "content": None},
+                    "Elicitation for an inactive native turn was declined",
+                )
+                return
+            public_id = uuid.uuid4().hex
+            data = {
+                "requestId": public_id,
+                "kind": "elicitation",
+                "text": "A connected tool needs information",
+                "message": _safe_text(params.get("message", "Information required"), 2000),
+                "serverName": _safe_text(params.get("serverName", "Connected tool"), 300),
+                "fields": fields,
+                "availableDecisions": ["accept", "decline", "cancel"],
+            }
+            approval = _Approval(
+                public_id, wire_id, method, *bound, data, {"fields": fields},
+            )
         else:
-            session.connection.send({
-                "id": wire_id,
-                "error": {"code": -32601, "message": "Unsupported client request"},
+            if method == "item/tool/call":
+                session.connection.send({
+                    "id": wire_id,
+                    "result": {
+                        "success": False,
+                        "contentItems": [{"type": "inputText", "text": "Unsupported client tool"}],
+                    },
+                })
+            else:
+                session.connection.send({
+                    "id": wire_id,
+                    "error": {"code": -32601, "message": "Unsupported client request"},
+                })
+            self._event(session, "request.denied", {
+                "text": "Unsupported native request was denied", "kind": method,
             })
-        self._event(session, "request.denied", {
-            "text": "Unsupported native request was denied", "kind": method,
-        })
+            return
+
+        with session.lock:
+            session.approvals[approval.public_id] = approval
+            session.state = "awaiting_approval"
+        self._event(
+            session,
+            "request.pending",
+            dict(approval.data),
+            approval.thread_id,
+            approval.turn_id,
+            params.get("itemId") or params.get("callId"),
+        )
 
     @staticmethod
     def _begin_turn_notification_buffer(session: _TeamSession) -> None:
@@ -1398,6 +1891,73 @@ class CodexBridge:
                 return
         self._process_notification(session, method, params)
 
+    def _request_budget_interrupt(
+        self,
+        session: _TeamSession,
+        thread_id: str | None,
+        turn_id: str | None,
+    ) -> None:
+        """Request one best-effort native interrupt without blocking its reader."""
+        with session.lock:
+            if (
+                not thread_id
+                or not turn_id
+                or thread_id != session.thread_id
+                or turn_id != session.turn_id
+                or session.state not in {"running", "awaiting_approval"}
+                or turn_id in session.budget_interrupt_turns
+            ):
+                return
+            previous_state = session.state
+            session.budget_interrupt_turns.add(turn_id)
+            session.state = "stopping"
+        self._event(session, "budget.stop_requested", {
+            "text": "Budget exhausted; native stop requested",
+            "childrenMayContinue": True,
+        }, thread_id, turn_id)
+
+        def interrupt() -> None:
+            try:
+                with session.operation_lock:
+                    with session.lock:
+                        if (
+                            session.thread_id != thread_id
+                            or session.turn_id != turn_id
+                            or session.state != "stopping"
+                            or session.closing
+                        ):
+                            return
+                    self._rpc(session, "turn/interrupt", {
+                        "threadId": thread_id,
+                        "turnId": turn_id,
+                    })
+                self._event(session, "budget.stop_acknowledged", {
+                    "text": "Native stop request accepted; waiting for turn completion",
+                    "childrenMayContinue": True,
+                }, thread_id, turn_id)
+            except Exception as exc:
+                with session.lock:
+                    if (
+                        session.thread_id == thread_id
+                        and session.turn_id == turn_id
+                        and session.state == "stopping"
+                    ):
+                        session.state = (
+                            "awaiting_approval"
+                            if previous_state == "awaiting_approval" and session.approvals
+                            else "running"
+                        )
+                self._event(session, "budget.stop_failed", {
+                    "text": _safe_text(exc, 1000),
+                    "childrenMayContinue": True,
+                }, thread_id, turn_id)
+
+        threading.Thread(
+            target=interrupt,
+            name=f"company-hq-budget-stop-{session.team[:24]}",
+            daemon=True,
+        ).start()
+
     def _process_notification(
         self,
         session: _TeamSession,
@@ -1406,6 +1966,29 @@ class CodexBridge:
     ) -> None:
         thread_id, turn_id = params.get("threadId"), params.get("turnId")
         if isinstance(thread_id, str) and session.thread_id and thread_id != session.thread_id:
+            return
+        if method == "serverRequest/resolved":
+            native_request_id = params.get("requestId")
+            with session.lock:
+                resolved = next(
+                    (
+                        request_id for request_id, approval in session.approvals.items()
+                        if approval.wire_id == native_request_id
+                    ),
+                    None,
+                )
+                if resolved is not None:
+                    approval = session.approvals.pop(resolved)
+                    session.state = "awaiting_approval" if session.approvals else "running"
+                else:
+                    approval = None
+            if approval is not None:
+                self._event(session, "request.resolved", {
+                    "text": "Native request was resolved by the runtime",
+                    "requestId": approval.public_id,
+                    "kind": approval.data["kind"],
+                    "action": "native",
+                })
             return
         if method == "turn/started":
             turn = params.get("turn")
@@ -1481,6 +2064,12 @@ class CodexBridge:
                 thread_id,
                 turn_id,
             )
+            if budget_notify:
+                self._request_budget_interrupt(
+                    session,
+                    thread_id or session.thread_id,
+                    turn_id or session.turn_id,
+                )
             return
         if method == "thread/status/changed":
             self._event(session, "status", {

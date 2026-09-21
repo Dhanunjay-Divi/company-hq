@@ -1,6 +1,6 @@
 # Verified baseline and current gaps
 
-Updated 2026-09-21 UTC. Latest verification: [connections, images and access acceptance](CONNECTIONS-AND-ACCESS-ACCEPTANCE.md).
+Updated 2026-09-21 UTC. Latest review: [HQ task visibility, access and dogfood findings](HQ-READINESS-AND-ACCESS.md). Previous verification: [connections, images and access acceptance](CONNECTIONS-AND-ACCESS-ACCEPTANCE.md).
 
 ## Complete and merged
 
@@ -45,9 +45,12 @@ The resulting target architecture is in [BEST-STACK.md](BEST-STACK.md).
 - Guarded project-scoped Ruflo memory path, installed by setup with lifecycle scripts disabled.
 - Guarded Codebase Memory capability path, installed by setup from checksum-verified pinned release binary into ignored local state.
 - Demo mode that blocks provider/model execution.
+- Read-only native Codex task metadata and selected summaries, with explicit search/archive/agent filters; other providers remain unavailable.
+- Computer-access setup guide and fixed macOS settings links; these do not grant OS permissions.
 - Connections view that distinguishes installed desktop providers from a usable HQ adapter; Codex sign-in, catalog, and reported account windows are live.
 - Source/build/portability checks via the documented launcher.
-- Per-workspace reported-token action gate in the native Codex bridge and Run overview.
+- Per-workspace reported-token action gate, plus one best-effort background interrupt after native usage reports exhaustion; late reporting can exceed the allowance.
+- Native questions, exact requested permission categories and bounded primitive MCP forms can be answered in chat; malformed/unsupported and stale requests fail closed.
 - Chat-first app shell with an optional activity panel; duplicate window chrome and empty startup counters removed.
 - Bounded live hierarchy acceptance: Astra supervisor, Terra lead, Luna QA specialist; parent links and completed turns independently verified through native thread/read.
 - Source-checkout Tauri desktop shell scaffold that starts/reuses the guarded local backend and opens Company HQ in a native window.
