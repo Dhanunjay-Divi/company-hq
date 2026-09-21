@@ -139,6 +139,50 @@ def candidate_codegraph(base: Path, env: dict[str, str]):
     }
 
 
+def candidate_codebase_memory(base: Path, env: dict[str, str]):
+    exe = os.environ.get("BAKEOFF_CODEBASE_MEMORY")
+    if not exe:
+        return {"available": False, "reason": "BAKEOFF_CODEBASE_MEMORY not configured"}
+    project = fixture_copy(base, "codebase-memory")
+    state = base / "codebase-memory" / "state"
+    (state / "config").mkdir(parents=True, exist_ok=True)
+    (state / "cache").mkdir(parents=True, exist_ok=True)
+    (state / "runtime").mkdir(parents=True, exist_ok=True)
+    local_env = env | {
+        "XDG_CONFIG_HOME": str(state / "config"),
+        "CBM_CACHE_DIR": str(state / "cache"),
+        "CBM_RUNTIME_DIR": str(state / "runtime"),
+        "CBM_ALLOWED_ROOT": str(project.parent),
+        "CBM_LOG_LEVEL": "warn",
+    }
+    before = source_digest(project)
+    build_args = json.dumps(
+        {"repo_path": str(project.resolve()), "mode": "full", "persistence": False},
+        separators=(",", ":"),
+    )
+    build = run([exe, "cli", "index_repository", build_args], cwd=base, env=local_env)
+    query_args = json.dumps(
+        {"semantic_query": ["session", "authorization", "permission"], "limit": 20},
+        separators=(",", ":"),
+    )
+    query = run([exe, "cli", "search_graph", query_args], cwd=base, env=local_env) if build["ok"] else {
+        "ok": False, "stdout": "", "stderr": "build failed", "seconds": 0
+    }
+    hits, score = score_output(query["stdout"] + "\n" + query["stderr"])
+    return {
+        "available": True,
+        "version": "0.10.8",
+        "build": {k: v for k, v in build.items() if k not in ("stdout", "stderr")},
+        "query": {k: v for k, v in query.items() if k not in ("stdout", "stderr")},
+        "query_output_bytes": len((query["stdout"] + query["stderr"]).encode()),
+        "expected_hits": hits,
+        "correctness_score": score,
+        "source_unchanged": before == source_digest(project),
+        "project_pollution": pollution(project),
+        "output_excerpt": (query["stdout"] + query["stderr"])[-3000:],
+    }
+
+
 def candidate_graft(base: Path, env: dict[str, str]):
     install = os.environ.get("BAKEOFF_GRAFT_INSTALL")
     if not install:
@@ -187,6 +231,7 @@ def main() -> int:
             "expected_symbols": list(EXPECTED),
             "graphify": candidate_graphify(base, env),
             "codegraph": candidate_codegraph(base, env),
+            "codebase_memory": candidate_codebase_memory(base, env),
             "graft": candidate_graft(base, env),
         }
     output = ROOT / "benchmarks" / "code-intel-results.json"
