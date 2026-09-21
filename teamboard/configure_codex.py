@@ -1,4 +1,4 @@
-#!/opt/homebrew/bin/python3
+#!/usr/bin/env python3
 """Install economical native Codex defaults and personal roles, outside product repos."""
 import datetime as dt
 import fcntl
@@ -9,8 +9,14 @@ import re
 import tempfile
 import time
 import tomllib
+import sys
 
 BASE = Path(__file__).resolve().parent
+REPO_ROOT = BASE.parent
+INTEGRATION = REPO_ROOT / "clawteam" / "integration"
+if str(INTEGRATION) not in sys.path:
+    sys.path.insert(0, str(INTEGRATION))
+from runtime_config import capabilities_path  # noqa: E402
 CODEX_DIR = Path.home() / '.codex'
 DEFAULTS = {
     'default_subagent_model': 'gpt-5.6-terra',
@@ -75,7 +81,7 @@ def apply_locked():
         if choice is None: raise RuntimeError('No reviewed Codex supervisor in routing.json')
         lead_model, lead_effort = choice['model'], choice.get('effort', 'high')
     try:
-        capabilities = json.loads((BASE.parent / 'capabilities.json').read_text())
+        capabilities = json.loads(capabilities_path().read_text())
         choice = capabilities['selection']
         if 0 <= time.time() - capabilities['checked_unix'] < 86400 and choice['provider'] == 'codex' and choice['model'] and choice['effort']:
             lead_model, lead_effort = choice['model'], choice['effort']

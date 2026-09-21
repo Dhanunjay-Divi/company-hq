@@ -1,19 +1,37 @@
 #!/bin/sh
 set -eu
-
 umask 077
+
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+REPO_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)
+HOME_DIR=${HOME:?HOME is required but is preserved unchanged}
+PYTHON=${COMPANY_HQ_PYTHON:-$(command -v python3 || true)}
+GUARD="$SCRIPT_DIR/mcp_guard.py"
+BINARY="$SCRIPT_DIR/codebase-memory-mcp"
+
+if [ -z "$PYTHON" ] || [ ! -x "$PYTHON" ]; then
+  echo "codebase-memory-mcp: python3 is unavailable" >&2
+  exit 1
+fi
+STATE_ROOT=$("$PYTHON" "$REPO_ROOT/scripts/resolve_state_path.py" codebase-memory) || exit $?
+if [ ! -f "$GUARD" ] || [ ! -x "$BINARY" ]; then
+  echo "codebase-memory-mcp: pinned binary/guard is not installed in this checkout; see INSTALLATION.md" >&2
+  exit 1
+fi
+mkdir -p "$STATE_ROOT/config" "$STATE_ROOT/cache" "$STATE_ROOT/runtime"
+chmod 700 "$STATE_ROOT" "$STATE_ROOT/config" "$STATE_ROOT/cache" "$STATE_ROOT/runtime"
 
 exec /usr/bin/env -i \
   PATH=/usr/bin:/bin:/usr/sbin:/sbin \
   LANG=C \
-  HOME=/Users/uno \
-  USER=uno \
-  LOGNAME=uno \
-  XDG_CONFIG_HOME=/Users/Shared/agent-toolkit-codebase-memory-mcp-501/config \
-  CBM_CACHE_DIR=/Users/Shared/agent-toolkit-codebase-memory-mcp-501/cache \
-  CBM_RUNTIME_DIR=/Users/Shared/agent-toolkit-codebase-memory-mcp-501/runtime \
+  HOME="$HOME_DIR" \
+  USER=${USER:-local} \
+  LOGNAME=${LOGNAME:-${USER:-local}} \
+  XDG_CONFIG_HOME="$STATE_ROOT/config" \
+  CBM_CACHE_DIR="$STATE_ROOT/cache" \
+  CBM_RUNTIME_DIR="$STATE_ROOT/runtime" \
   CBM_LOG_LEVEL=warn \
-  /usr/bin/python3 \
-  /Users/uno/.local/share/agent-toolkit/codebase-memory-mcp-0.10.8/bin/mcp_guard.py \
-  /Users/uno/.local/share/agent-toolkit/codebase-memory-mcp-0.10.8/bin/codebase-memory-mcp \
+  "$PYTHON" \
+  "$GUARD" \
+  "$BINARY" \
   --ui=false "$@"

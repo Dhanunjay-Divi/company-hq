@@ -15,10 +15,12 @@ import sys
 import tempfile
 
 
-TOOLKIT = Path("/Users/uno/.local/share/agent-toolkit")
-INSTALL = TOOLKIT / "graft-0.18.0"
-GRAFT = INSTALL / "node_modules" / ".bin" / "graft"
-STATE = TOOLKIT / "state" / "graft"
+REPO_ROOT = Path(__file__).resolve().parent
+INSTALL = Path(os.environ.get("COMPANY_HQ_GRAFT_INSTALL", REPO_ROOT / "graft-0.18.0")).expanduser().resolve()
+GRAFT = INSTALL / "node_modules" / ".bin" / ("graft.cmd" if os.name == "nt" else "graft")
+_state_base = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local" / "state")).expanduser()
+_global_state = Path(os.environ.get("COMPANY_HQ_STATE_ROOT", _state_base / "company-hq")).expanduser()
+STATE = Path(os.environ.get("COMPANY_HQ_GRAFT_STATE_ROOT", _global_state / "graft")).resolve()
 
 # These variables are irrelevant to the reviewed structural command paths.
 # Removing them is defense in depth; it is not a network sandbox.
@@ -32,6 +34,22 @@ MODEL_ENV_KEYS = (
     "OPENROUTER_API_KEY",
     "ORCAROUTER_API_KEY",
 )
+
+
+def validate_state_root() -> Path:
+    state = STATE.resolve()
+    home = Path.home().resolve()
+    source = REPO_ROOT.resolve()
+    if state in {Path("/").resolve(), home, source} or state.is_relative_to(source):
+        raise ValueError(f"unsafe Graft state root: {state}")
+    probe = state
+    while not probe.exists() and probe.parent != probe:
+        probe = probe.parent
+    if probe.is_file():
+        probe = probe.parent
+    if any((parent / ".git").exists() for parent in (probe, *probe.parents)):
+        raise ValueError("Graft state root must not be inside a Git working tree")
+    return state
 
 
 def canonical_project(raw: str) -> Path:
@@ -145,6 +163,7 @@ def main() -> int:
 
     args = parser.parse_args()
     try:
+        validate_state_root()
         project = canonical_project(args.project)
     except (FileNotFoundError, OSError, ValueError) as error:
         parser.error(str(error))

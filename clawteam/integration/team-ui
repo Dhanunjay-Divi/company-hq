@@ -12,11 +12,10 @@ import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
-PYTHON = ROOT.parent / "venv" / "bin" / "python"
+from runtime_config import clawteam_data_dir, python_executable
+PYTHON = python_executable()
 SERVER = ROOT / "secure_board.py"
-testing = os.environ.get("CLAWTEAM_INTEGRATION_TESTING") == "1"
-override = os.environ.get("CLAWTEAM_INTEGRATION_TEST_DATA_DIR") if testing else None
-STATE = Path(override).resolve() if override else (ROOT.parent / "state").resolve()
+STATE = clawteam_data_dir().resolve()
 CONTROL = STATE / ".board"
 PID_FILE = CONTROL / "pid"
 URL_FILE = CONTROL / "url"
@@ -24,17 +23,37 @@ LOG_FILE = CONTROL / "server.log"
 os.umask(0o077)
 
 
+def _pid_exists(pid: int) -> bool:
+    if os.name == "nt":
+        import ctypes
+        process_query_limited_information = 0x1000
+        handle = ctypes.windll.kernel32.OpenProcess(
+            process_query_limited_information, False, pid
+        )
+        if not handle:
+            return False
+        ctypes.windll.kernel32.CloseHandle(handle)
+        return True
+    try:
+        os.kill(pid, 0)
+        return True
+    except OSError:
+        return False
+
+
 def tracked() -> tuple[int, str] | None:
     try:
         pid = int(PID_FILE.read_text().strip())
         url = URL_FILE.read_text().strip()
-        os.kill(pid, 0)
-        command = subprocess.run(
-            ["/bin/ps", "-p", str(pid), "-o", "command="],
-            capture_output=True, text=True, check=True,
-        ).stdout
-        if str(SERVER) not in command:
+        if not _pid_exists(pid):
             return None
+        if os.name != "nt":
+            command = subprocess.run(
+                ["/bin/ps", "-p", str(pid), "-o", "command="],
+                capture_output=True, text=True, check=True,
+            ).stdout
+            if str(SERVER) not in command:
+                return None
         request = urllib.request.Request(url + "/api/overview")
         with urllib.request.urlopen(request, timeout=1) as response:
             if response.status != 200:
@@ -51,14 +70,20 @@ def start() -> int:
         return 0
     CONTROL.mkdir(parents=True, exist_ok=True)
     with LOG_FILE.open("w", encoding="utf-8") as log:
+        popen_options = {
+            "cwd": ROOT,
+            "env": os.environ.copy(),
+            "stdin": subprocess.DEVNULL,
+            "stdout": log,
+            "stderr": log,
+        }
+        if os.name == "nt":
+            popen_options["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+        else:
+            popen_options["start_new_session"] = True
         proc = subprocess.Popen(
             [str(PYTHON), str(SERVER), "--port", "0"],
-            cwd=ROOT,
-            env=os.environ.copy(),
-            stdin=subprocess.DEVNULL,
-            stdout=log,
-            stderr=log,
-            start_new_session=True,
+            **popen_options,
         )
     url = ""
     for _ in range(60):

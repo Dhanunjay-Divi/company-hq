@@ -2,7 +2,7 @@
 
 A local AI team workspace for taking an idea through planning, implementation, review and launch. It combines the actual Agent Teams AI graph with ClawTeam task/inbox records, Ruflo decision memory and native Codex supervisor execution.
 
-This private repository preserves the shared toolkit source built on 13–14 September 2026. **It is a working local prototype and a development handoff, not a finished portable product.** The live installation is separate from this checkout; committing here does not deploy or change a product project.
+This public repository preserves the shared toolkit source built on 13–14 September 2026. **It is a working prototype and development handoff.** The portability work keeps runtime state outside the checkout and does not deploy or modify the original live installation merely by cloning or starting this source.
 
 ## Start here
 
@@ -11,9 +11,10 @@ This private repository preserves the shared toolkit source built on 13–14 Sep
 - [Architecture and source map](docs/ARCHITECTURE.md)
 - [New upstream candidates: ECC, gstack, Superpowers and the 40-repo list](docs/UPSTREAM-REVIEW.md)
 - [Reviewer instructions](docs/REVIEWER.md)
+- [Portable setup and isolation](docs/PORTABILITY.md)
 - [Packaging provenance](docs/PACKAGING.md)
 
-During this initial phase, the implementer can commit and push directly to main without draft PRs. The original Codex supervisor reviews pushed checkpoints afterward and can commit corrections.
+For the current user-requested implementation sequence, portable setup, onboarding, worker communication/visibility, and usage controls are kept in separate bounded PRs so the original Codex supervisor can review them independently.
 
 The user talks primarily to the overall supervisor. Useful functional leads and specialists should be allocated according to the actual goal, available account access, complexity and cost. A visible roster is not proof that those agents are running.
 
@@ -34,25 +35,33 @@ The user talks primarily to the overall supervisor. Useful functional leads and 
 
 ## Build and checks
 
-Node 24+ and Python 3.10+ are the starting prerequisites. Native runtime verification was on macOS with the installed Codex app; other platforms are not verified.
+Node 24+ and Python 3.10+ are the starting prerequisites. Native Codex execution and the Ruflo OS sandbox have been verified only on macOS; unavailable capabilities are shown honestly in **System status**.
+
+For a clean model-free first run:
 
 ```sh
-cd company-hq
-npm ci --ignore-scripts
-npm run build
+python3 scripts/hq.py bootstrap --demo
 ```
 
-From the repository root, model-free checks:
+For the normal local workspace after reviewing the setup:
 
 ```sh
-python3 -m unittest -v test_check_updates test_discover
-python3 -m unittest discover -s clawteam/integration -p test_codex_bridge.py
-python3 scripts/check_source_bundle.py
+python3 scripts/hq.py bootstrap
 ```
 
-The full HTTP suite also needs the pinned ClawTeam dependency environment at `clawteam/venv` and the frontend build. See [portability limits](docs/STATUS.md) before starting the server: several copied integration paths still target the original installation. Do not point a fresh clone at another project's live state by accident. Refactor these paths in the first implementation milestone; don't change HOME or CODEX_HOME to compensate.
+Both commands keep runtime state outside this checkout (default: `~/.local/state/company-hq`, or `$XDG_STATE_HOME/company-hq`). They do not rewrite `HOME`/`CODEX_HOME`, copy authentication, start a provider in demo mode, or initialize the attached product repository. See [portable setup](docs/PORTABILITY.md).
 
-The original local installation can be opened using its `clawteam/integration/team-ui` launcher. That existing installation is not replaced by cloning this repository.
+From the repository root, run the complete model-free validation suite with:
+
+```sh
+python3 scripts/hq.py check
+```
+
+That command uses the system interpreter for root utilities and the pinned
+`clawteam/venv` interpreter for integration tests, then checks the source
+bundle, portability boundaries and truthful capability status.
+
+The original live installation remains a separate deployment target. Running this checkout does not replace it.
 
 ## Cost and data
 
@@ -62,4 +71,4 @@ No credentials, Codex conversations, runtime bindings, local task/message databa
 
 ## License
 
-Company HQ and its original adaptations are AGPL-3.0-only, with upstream notices retained. Agent Teams AI graph/avatar code is copyright © 2026 Илия (777genius). ClawTeam and other dependencies retain their own licenses. See [third-party notices](THIRD_PARTY_NOTICES.md). Private visibility does not erase third-party license obligations. New candidate repositories have not been copied or activated merely because they appear in the catalog.
+Company HQ and its original adaptations are AGPL-3.0-only, with upstream notices retained. Agent Teams AI graph/avatar code is copyright © 2026 Илия (777genius). ClawTeam and other dependencies retain their own licenses. See [third-party notices](THIRD_PARTY_NOTICES.md). Public visibility does not change third-party license obligations. New candidate repositories have not been copied or activated merely because they appear in the catalog.

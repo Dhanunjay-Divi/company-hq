@@ -12,16 +12,14 @@ import sys
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 from company_profile import load_profile
+from runtime_config import clawteam_data_dir, frontend_dist
 
 INTEGRATION_DIR = Path(__file__).resolve().parent
-DEFAULT_DATA_DIR = INTEGRATION_DIR.parent / "state"
 
 
 def _configure_environment() -> Path:
     os.umask(0o077)
-    testing = os.environ.get("CLAWTEAM_INTEGRATION_TESTING") == "1"
-    requested = os.environ.get("CLAWTEAM_INTEGRATION_TEST_DATA_DIR") if testing else None
-    data_dir = Path(requested).resolve() if requested else DEFAULT_DATA_DIR.resolve()
+    data_dir = clawteam_data_dir().resolve()
     data_dir.mkdir(parents=True, exist_ok=True)
     os.environ["CLAWTEAM_DATA_DIR"] = str(data_dir)
     os.environ["CLAWTEAM_TRANSPORT"] = "file"
@@ -48,7 +46,7 @@ redis_wakeup.publish_wakeup = lambda *args, **kwargs: False
 class SecureBoardHandler(BoardHandler):
     """Preserve the upstream board while enforcing its local trust boundary."""
 
-    static_dir = INTEGRATION_DIR.parent.parent / "company-hq" / "dist"
+    static_dir = frontend_dist()
     legacy_static_dir = INTEGRATION_DIR / "static"
     allowed_origins: frozenset[str] = frozenset()
     allowed_hosts: frozenset[str] = frozenset()

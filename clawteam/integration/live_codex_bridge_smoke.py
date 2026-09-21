@@ -2,27 +2,44 @@
 """One-turn live smoke test. Run manually; it consumes a small Codex turn."""
 from __future__ import annotations
 
+import argparse
 import json
 import time
 from pathlib import Path
 
 from codex_bridge import CodexBridge
+from runtime_config import REPO_ROOT
 
-PROJECT = Path(
-    "/Users/uno/.local/share/agent-toolkit/fixtures/codex-bridge-luna-20260913"
-)
-STATE = Path(
-    "/Users/uno/.local/share/agent-toolkit/clawteam/verification/"
-    "codex-bridge-luna-runtime"
-)
-TEAM = "bridge-luna-verification-20260913"
-RECEIPT = Path(
-    "/Users/uno/.local/share/agent-toolkit/clawteam/verification/"
-    "codex-bridge-luna-receipt.json"
-)
+TEAM = "bridge-luna-manual-verification"
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--project", required=True, help="explicit synthetic/approved fixture project")
+    parser.add_argument("--state", required=True, help="external runtime state directory")
+    parser.add_argument("--receipt", required=True, help="external one-run receipt path")
+    args = parser.parse_args()
+    PROJECT = Path(args.project).expanduser().resolve(strict=True)
+    STATE = Path(args.state).expanduser().resolve()
+    RECEIPT = Path(args.receipt).expanduser().resolve()
+    if not PROJECT.is_dir():
+        parser.error("--project must be a directory")
+    if PROJECT in {Path("/"), Path.home().resolve()}:
+        parser.error("refusing filesystem root or account home as the fixture project")
+    source = REPO_ROOT.resolve()
+    home = Path.home().resolve()
+    def validate_output(path: Path, label: str) -> Path:
+        value = path.resolve()
+        if value in {Path("/").resolve(), home, source, PROJECT}:
+            parser.error(f"{label} must be external fixture state")
+        if value.is_relative_to(source) or value.is_relative_to(PROJECT):
+            parser.error(f"{label} must not overlap source or project files")
+        return value
+    STATE = validate_output(STATE, "--state")
+    RECEIPT = validate_output(RECEIPT, "--receipt")
+    validate_output(RECEIPT.parent, "--receipt parent")
+    STATE.mkdir(parents=True, exist_ok=True)
+    RECEIPT.parent.mkdir(parents=True, exist_ok=True)
     if RECEIPT.exists():
         print(f"Live smoke already completed; refusing to run again: {RECEIPT}")
         return 64

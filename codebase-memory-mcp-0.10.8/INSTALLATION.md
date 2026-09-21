@@ -13,11 +13,13 @@ verify` also accepted the archive for repository
 The upstream `install` command was not run. It can edit detected coding-agent
 configuration, instructions, skills, and hooks. The local MCP wrapper instead
 uses a minimal environment, lowers logging, and passes `--ui=false` on every
-launch. Its state is rooted at the owner-private
-`/Users/Shared/agent-toolkit-codebase-memory-mcp-501`; `state/external` links to
-that durable location. CBM rejected every path below the user's home because
-that home has an inherited allow ACL. Its private-directory check was not
-weakened.
+launch. On macOS, the portable wrapper defaults to an owner-specific external
+directory under `/Users/Shared`, because the reviewed binary rejected every path
+below this account's home due to an inherited allow ACL. If
+`COMPANY_HQ_STATE_ROOT` is explicitly set, codebase-memory derives beneath it
+only when that path satisfies the same privacy constraint; otherwise set
+`COMPANY_HQ_CODEBASE_MEMORY_STATE_ROOT` to an external private directory.
+The upstream private-directory check is not weakened.
 
 The wrapper's stdio guard allows index and structural-query tools, forces
 `index_repository.persistence=false`, and refuses indexing a repository that
@@ -25,7 +27,7 @@ already contains `.codebase-memory` because upstream refreshes that artifact
 even with persistence false. It blocks `delete_project`, `manage_adr`, and
 `ingest_traces`.
 
-Persistent settings in `state/external/cache/_config.db`:
+The original verified installation stored persistent settings in its external cache database:
 
 - `auto_index=false`
 - `auto_watch=false`
@@ -38,21 +40,25 @@ Suggested MCP registration:
 
 ```toml
 [mcp_servers.codebase_memory]
-command = "/Users/uno/.local/share/agent-toolkit/codebase-memory-mcp-0.10.8/bin/codebase-memory-mcp-mcp"
+command = "<checkout>/codebase-memory-mcp-0.10.8/bin/codebase-memory-mcp-mcp"
 args = []
 enabled_tools = ["index_repository", "search_graph", "query_graph", "trace_path", "get_code_snippet", "get_graph_schema", "get_architecture", "search_code", "list_projects", "index_status", "check_index_coverage", "detect_changes"]
 ```
 
-The registration is intentionally global so it can index an explicitly chosen
+The wrapper can be registered by any supported client so it can index an explicitly chosen
 project anywhere below an upstream-accepted root. `CBM_ALLOWED_ROOT` is not set
 because one fixed path would conflict with the requested any-project behavior.
 The binary still refuses filesystem roots, home, system trees, and recognized
 credential directories as indexing roots. Treat `index_repository` as an
 explicit, project-scoped operation.
 
+## Portable checkout note
+
+The repository preserves the wrapper, guard and provenance but intentionally does not ship the Darwin arm64 binary or indexes. System status reports codebase-memory unavailable until the reviewed executable is installed beside the wrapper (or an explicit reviewed launcher is configured).
+
 ## Verification
 
-The durable synthetic fixture in `state/external/fixture/cbm-fixture` indexed
+The following verification describes the original reviewed installation. The durable synthetic fixture in `state/external/fixture/cbm-fixture` indexed
 seven nodes and seven edges. A deliberately unsafe MCP request with
 `persistence=true` was forced to false; source hashes remained identical and
 no `.codebase-memory` or `.gitattributes` appeared. `search_graph` found the

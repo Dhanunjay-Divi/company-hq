@@ -6,7 +6,13 @@ from company_profile import load_profile, validate_profile, profile_path
 from clawteam.team.manager import TeamManager
 from clawteam.team.tasks import TaskStore
 from clawteam.team.models import TaskStatus
-ROOT = Path('/Users/uno/.local/share/agent-toolkit')
+from runtime_config import (
+    demo_mode,
+    health_snapshot,
+    routing_path,
+    ruflo_launcher,
+    saved_projects_path,
+)
 _memory_cache = {}
 _memory_lock = threading.Lock()
 
@@ -35,7 +41,7 @@ def save_profile(state, name, profile, names):
 
 
 def memory_call(project, operations):
-    proc = subprocess.Popen([str(ROOT/'ruflo-integration/ruflo-mcp')], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+    proc = subprocess.Popen([str(ruflo_launcher())], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
     seq = 0
     def rpc(method, params):
         nonlocal seq
@@ -59,7 +65,39 @@ def memory_call(project, operations):
         if proc.stdout: proc.stdout.close()
 
 
+def demo_knowledge():
+    return {
+        'notes': [
+            {
+                'namespace': 'company-notes',
+                'key': 'demo-scope',
+                'value': {
+                    'title': 'Model-free demo',
+                    'content': 'This workspace is synthetic. No provider, Ruflo process, or model is called while demo mode is active.',
+                    'source': 'Demo fixture',
+                    'date': time.strftime('%Y-%m-%d'),
+                },
+            },
+            {
+                'namespace': 'operating-decisions',
+                'key': 'demo-boundaries',
+                'value': {
+                    'title': 'Boundaries stay explicit',
+                    'content': 'Runtime state remains outside the source checkout, provider account homes stay unchanged, and execution is disabled until normal mode is started.',
+                    'source': 'Demo fixture',
+                    'date': time.strftime('%Y-%m-%d'),
+                },
+            },
+        ],
+        'source': 'Demo fixture',
+        'codeGraph': 'unavailable-in-demo',
+        'codeGraphNote': 'Code graph tools are not required for the model-free walkthrough.',
+    }
+
+
 def knowledge(project):
+    if demo_mode():
+        return demo_knowledge()
     with _memory_lock:
         cached = _memory_cache.get(project)
         if cached and time.monotonic()-cached[0] < 20: return cached[1]
@@ -81,12 +119,14 @@ def bridge(state):
 
 def handle_get(handler, state):
     path = urlparse(handler.path).path
+    if path == '/api/health':
+        handler._serve_json(health_snapshot(state));return True
     if not path.startswith(('/api/runtime/','/api/knowledge/','/api/workspaces')): return False
     try:
         if path == '/api/workspaces':
-            config = ROOT/'company-hq/saved-projects.json'
-            routing=json.loads((ROOT/'routing.json').read_text())
-            handler._serve_json({'projects':json.loads(config.read_text()) if config.exists() else [],'models':routing.get('reviewed_codex_models',[])});return True
+            config = saved_projects_path()
+            routing=json.loads(routing_path().read_text())
+            handler._serve_json({'projects':json.loads(config.read_text()) if config.exists() else [],'models':routing.get('reviewed_codex_models',[]),'demo':demo_mode()});return True
         if path.startswith('/api/knowledge/'):
             name=unquote(path[len('/api/knowledge/'):]);handler._serve_json(knowledge(project_for(state,name)));return True
         parts=path.strip('/').split('/')
@@ -117,6 +157,8 @@ def handle_post(handler,state,path,body):
             handler._serve_json({'team':name,'company':profile,'started':False});return True
         parts=path.strip('/').split('/');name=unquote(parts[2]);project=project_for(state,name)
         if parts[1]=='knowledge':
+            if demo_mode():
+                raise ValueError('Saving memory is disabled in model-free demo mode')
             title=body.get('title','').strip();content=body.get('content','').strip()
             if not title or not content or len(title)>200 or len(content)>12000: raise ValueError('Enter a title and a note of at most 12000 characters')
             key=uuid.uuid4().hex
@@ -130,11 +172,13 @@ def handle_post(handler,state,path,body):
             handler._serve_json({'updated':True});return True
         if parts[1]!='runtime' or len(parts)!=4: raise ValueError('Unknown action')
         client=bridge(state);action=parts[3]
+        if demo_mode() and action in ('start','send','approve'):
+            raise ValueError('Model execution is disabled in model-free demo mode')
         if action in ('start','send'):
             prompt=body.get('prompt','')
             if not isinstance(prompt,str) or not prompt.strip() or len(prompt)>24000: raise ValueError('Enter a message of at most 24000 characters')
             if action=='start':
-                routing=json.loads((ROOT/'routing.json').read_text());model=body.get('model','auto')
+                routing=json.loads(routing_path().read_text());model=body.get('model','auto')
                 if model=='auto':model=routing['preferred_supervisors'][0]['model']
                 if model not in routing['reviewed_codex_models']: raise ValueError('Choose a reviewed available Codex model')
                 result=client.start(name,project,prompt.strip(),model)
