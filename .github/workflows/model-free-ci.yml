@@ -1,0 +1,59 @@
+name: Model-free CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: model-free-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      COMPANY_HQ_STATE_ROOT: ${{ runner.temp }}/company-hq-state
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: company-hq/package-lock.json
+
+      - name: Install pinned ClawTeam environment
+        run: |
+          python -m venv clawteam/venv
+          clawteam/venv/bin/python -m pip install --disable-pip-version-check -r clawteam/requirements.txt
+
+      - name: Build Company HQ
+        working-directory: company-hq
+        run: |
+          npm ci --ignore-scripts
+          npm run build
+
+      - name: Run root model-free tests
+        run: python -m unittest -v test_check_updates test_discover
+
+      - name: Run integration tests with pinned environment
+        run: clawteam/venv/bin/python -m unittest discover -s clawteam/integration -p 'test_*.py' -v
+
+      - name: Check public source bundle
+        run: python scripts/check_source_bundle.py
+
+      - name: Check active-source portability
+        run: python scripts/check_portability.py
+
+      - name: Check truthful capability status
+        run: python scripts/hq.py health
