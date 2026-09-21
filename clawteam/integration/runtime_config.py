@@ -315,6 +315,7 @@ def health_snapshot(data_dir: Path | None = None) -> dict[str, Any]:
         "graphify": external_executable("COMPANY_HQ_GRAPHIFY_PATH", "graphify"),
         "rtk": external_executable("COMPANY_HQ_RTK_PATH", "rtk"),
         "headroom": external_executable("COMPANY_HQ_HEADROOM_PATH", "headroom"),
+        "playwright": external_executable("COMPANY_HQ_PLAYWRIGHT_PATH", "playwright"),
         "kimi": external_executable("COMPANY_HQ_KIMI_PATH", "kimi"),
         "grok": external_executable("COMPANY_HQ_GROK_PATH", "grok"),
         "glm": external_executable("COMPANY_HQ_GLM_PATH", "glm"),
