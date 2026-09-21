@@ -13,11 +13,13 @@ verify` also accepted the archive for repository
 The upstream `install` command was not run. It can edit detected coding-agent
 configuration, instructions, skills, and hooks. The local MCP wrapper instead
 uses a minimal environment, lowers logging, and passes `--ui=false` on every
-launch. In the portable checkout, state defaults to
-`~/.local/state/company-hq/codebase-memory` (or the corresponding XDG state
-root) and can be redirected with `COMPANY_HQ_CODEBASE_MEMORY_STATE_ROOT`. CBM rejected every path below the user's home because
-that home has an inherited allow ACL. Its private-directory check was not
-weakened.
+launch. On macOS, the portable wrapper defaults to an owner-specific external
+directory under `/Users/Shared`, because the reviewed binary rejected every path
+below this account's home due to an inherited allow ACL. If
+`COMPANY_HQ_STATE_ROOT` is explicitly set, codebase-memory derives beneath it
+only when that path satisfies the same privacy constraint; otherwise set
+`COMPANY_HQ_CODEBASE_MEMORY_STATE_ROOT` to an external private directory.
+The upstream private-directory check is not weakened.
 
 The wrapper's stdio guard allows index and structural-query tools, forces
 `index_repository.persistence=false`, and refuses indexing a repository that
