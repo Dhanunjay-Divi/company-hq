@@ -37,9 +37,13 @@ def state_root() -> Path:
     path = _expand(raw) if raw else _default_state_root().resolve()
     source = REPO_ROOT.resolve()
     home = Path.home().resolve()
-    if path in {Path("/").resolve(), home, source} or path.is_relative_to(source):
+    if (
+        path in {Path("/").resolve(), home, source}
+        or path.is_relative_to(source)
+        or _inside_git_checkout(path)
+    ):
         raise ConfigurationError(
-            "COMPANY_HQ_STATE_ROOT must be outside the source checkout, filesystem root, and account home"
+            "COMPANY_HQ_STATE_ROOT must be outside Git working trees, the source checkout, filesystem root, and account home"
         )
     return path
 
