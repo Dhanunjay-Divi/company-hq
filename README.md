@@ -2,7 +2,7 @@
 
 A local AI team workspace for taking an idea through planning, implementation, review and launch. It combines the actual Agent Teams AI graph with ClawTeam task/inbox records, Ruflo decision memory and native Codex supervisor execution.
 
-This private repository preserves the shared toolkit source built on 13–14 September 2026. **It is a working prototype and development handoff.** The portability work keeps runtime state outside the checkout and does not deploy or modify the original live installation merely by cloning or starting this source.
+This public repository preserves the shared toolkit source built on 13–14 September 2026. **It is a working prototype and development handoff.** The portability work keeps runtime state outside the checkout and does not deploy or modify the original live installation merely by cloning or starting this source.
 
 ## Start here
 
@@ -14,7 +14,7 @@ This private repository preserves the shared toolkit source built on 13–14 Sep
 - [Portable setup and isolation](docs/PORTABILITY.md)
 - [Packaging provenance](docs/PACKAGING.md)
 
-For the current implementation sequence, changes are delivered as bounded PRs so the original Codex supervisor can review portable setup, onboarding, worker communication/visibility, and usage controls independently.
+For the current user-requested implementation sequence, portable setup, onboarding, worker communication/visibility, and usage controls are kept in separate bounded PRs so the original Codex supervisor can review them independently.
 
 The user talks primarily to the overall supervisor. Useful functional leads and specialists should be allocated according to the actual goal, available account access, complexity and cost. A visible roster is not proof that those agents are running.
 
@@ -71,4 +71,4 @@ No credentials, Codex conversations, runtime bindings, local task/message databa
 
 ## License
 
-Company HQ and its original adaptations are AGPL-3.0-only, with upstream notices retained. Agent Teams AI graph/avatar code is copyright © 2026 Илия (777genius). ClawTeam and other dependencies retain their own licenses. See [third-party notices](THIRD_PARTY_NOTICES.md). Private visibility does not erase third-party license obligations. New candidate repositories have not been copied or activated merely because they appear in the catalog.
+Company HQ and its original adaptations are AGPL-3.0-only, with upstream notices retained. Agent Teams AI graph/avatar code is copyright © 2026 Илия (777genius). ClawTeam and other dependencies retain their own licenses. See [third-party notices](THIRD_PARTY_NOTICES.md). Public visibility does not change third-party license obligations. New candidate repositories have not been copied or activated merely because they appear in the catalog.
