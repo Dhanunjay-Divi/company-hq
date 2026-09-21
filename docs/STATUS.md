@@ -46,6 +46,7 @@ The resulting target architecture is in [BEST-STACK.md](BEST-STACK.md).
 - Health/status view that disables unavailable runtime actions.
 - Source/build/portability checks via the documented launcher.
 - Per-workspace reported-token action gate in the native Codex bridge and Run overview.
+- IDE-style app shell slice with desktop frame, command bar, status bar, supervisor evidence dock and visible capability/budget indicators.
 
 ## Architecture decisions now locked
 
