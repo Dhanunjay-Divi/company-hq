@@ -20,8 +20,8 @@ SKIP_NAMES = {
     "graft-0.18.0/INSTALLATION.json",
 }
 BANNED = (
-    "/Users/uno",
-    "/Users/Shared/agent-toolkit-codebase-memory-mcp-501",
+    "/Users/" + "uno",
+    "/Users/Shared/" + "agent-toolkit-codebase-memory-mcp-501",
 )
 
 
