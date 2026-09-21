@@ -11,7 +11,7 @@ import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
-PYTHON = ROOT.parent / "venv" / "bin" / "python"
+PYTHON = ROOT.parent / "venv" / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
 SERVER = ROOT / "secure_board.py"
 CLI = ROOT / "clawteam-meta"
 TEAM_UI = ROOT / "team-ui"
@@ -59,7 +59,7 @@ class SecureBoardIntegrationTest(unittest.TestCase):
 
     def run_cli(self, *args, check=True):
         return subprocess.run(
-            [str(CLI), *args], cwd=ROOT, env=self.env,
+            [str(PYTHON), str(CLI), *args], cwd=ROOT, env=self.env,
             capture_output=True, text=True, check=check,
         )
 
@@ -225,7 +225,7 @@ class TeamUILifecycleTest(unittest.TestCase):
             })
             def run(command, check=True):
                 return subprocess.run(
-                    [str(TEAM_UI), command], cwd=ROOT, env=env,
+                    [str(PYTHON), str(TEAM_UI), command], cwd=ROOT, env=env,
                     capture_output=True, text=True, check=check,
                 )
             try:
