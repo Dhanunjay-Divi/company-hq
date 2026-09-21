@@ -15,10 +15,12 @@ import math
 import os
 from pathlib import Path
 import re
+import queue
 import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from typing import Any, Callable
 
@@ -205,13 +207,60 @@ def graft(project: Path, state: Path) -> tuple[list[dict[str, Any]], bool, str |
     return commands, commands[0]["returncode"] == 0, None
 
 
+def _mcp_record(
+    proc: subprocess.Popen[str],
+    responses: "queue.Queue[str]",
+    request_id: int,
+    method: str,
+    params: dict[str, Any],
+    timeout: int = 120,
+) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    started = time.perf_counter()
+    assert proc.stdin is not None
+    proc.stdin.write(json.dumps({"jsonrpc": "2.0", "id": request_id, "method": method, "params": params}) + "\n")
+    proc.stdin.flush()
+    deadline = time.monotonic() + timeout
+    response: dict[str, Any] | None = None
+    while time.monotonic() < deadline:
+        try:
+            line = responses.get(timeout=min(0.25, max(0.01, deadline - time.monotonic())))
+        except queue.Empty:
+            if proc.poll() is not None:
+                break
+            continue
+        try:
+            value = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if value.get("id") == request_id:
+            response = value
+            break
+    elapsed = round(time.perf_counter() - started, 4)
+    if response is None:
+        return {
+            "command": ["mcp", method],
+            "returncode": 124,
+            "seconds": elapsed,
+            "stdout": "",
+            "stderr": "MCP response timed out or server exited",
+        }, None
+    failed = bool(response.get("error")) or bool(response.get("result", {}).get("isError"))
+    return {
+        "command": ["mcp", method],
+        "returncode": 1 if failed else 0,
+        "seconds": elapsed,
+        "stdout": json.dumps(response, separators=(",", ":")) + "\n",
+        "stderr": "",
+    }, response
+
+
 def cbm(project: Path, state: Path) -> tuple[list[dict[str, Any]], bool, str | None]:
     binary = executable("CBM_BIN", "codebase-memory-mcp")
     if not binary:
         return [], False, "codebase-memory-mcp executable not installed"
-    # CBM uses Unix-domain coordination endpoints. Keep their paths short on
-    # Linux/macOS and owner-private; a deep GitHub runner path can exceed the
-    # socket limit before the graph is even exercised.
+    # CBM uses Unix-domain coordination endpoints. Keep their paths short and
+    # owner-private; a deep CI path can exceed the socket limit before the
+    # graph is exercised.
     short_root = Path(tempfile.mkdtemp(prefix="hq-cbm-", dir="/tmp"))
     cache = short_root / "c"
     runtime = short_root / "r"
@@ -227,28 +276,95 @@ def cbm(project: Path, state: Path) -> tuple[list[dict[str, Any]], bool, str | N
         "TMPDIR": str(scratch),
         "CBM_LOG_LEVEL": "error",
     })
-    payload = json.dumps({"repo_path": str(project), "mode": "full", "persistence": False})
-    commands = [run([binary, "cli", "index_repository", payload], cwd=project, env=env, timeout=120)]
-    project_name = parse_cbm_project(commands[0]["stdout"])
-    if commands[-1]["returncode"] == 0 and project_name:
-        commands.extend([
-            run([
-                binary, "cli", "search_graph",
-                json.dumps({"project": project_name, "query": "authentication verify token login", "limit": 20}),
-            ], cwd=project, env=env),
-            run([
-                binary, "cli", "trace_path",
-                json.dumps({
+    proc = subprocess.Popen(
+        [binary, "--ui=false"],
+        cwd=project,
+        env=env,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+        bufsize=1,
+    )
+    assert proc.stdin is not None and proc.stdout is not None
+    responses: "queue.Queue[str]" = queue.Queue()
+
+    def reader() -> None:
+        assert proc.stdout is not None
+        for line in proc.stdout:
+            responses.put(line)
+
+    thread = threading.Thread(target=reader, daemon=True)
+    thread.start()
+    commands: list[dict[str, Any]] = []
+    try:
+        init_record, _ = _mcp_record(
+            proc, responses, 1, "initialize",
+            {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {},
+                "clientInfo": {"name": "company-hq-bakeoff", "version": "1"},
+            },
+            timeout=15,
+        )
+        if init_record["returncode"] != 0:
+            return [init_record], False, "MCP initialization failed"
+        proc.stdin.write(json.dumps({"jsonrpc": "2.0", "method": "notifications/initialized"}) + "\n")
+        proc.stdin.flush()
+
+        index_record, index_response = _mcp_record(
+            proc, responses, 2, "tools/call",
+            {
+                "name": "index_repository",
+                "arguments": {"repo_path": str(project), "mode": "full", "persistence": False},
+            },
+        )
+        commands.append(index_record)
+        if index_record["returncode"] != 0 or index_response is None:
+            return commands, False, "index_repository failed"
+
+        project_name = parse_cbm_project(index_record["stdout"])
+        if not project_name:
+            return commands, False, "index succeeded but project id was not returned"
+
+        search_record, _ = _mcp_record(
+            proc, responses, 3, "tools/call",
+            {
+                "name": "search_graph",
+                "arguments": {
+                    "project": project_name,
+                    "query": "authentication verify token login",
+                    "limit": 20,
+                },
+            },
+            timeout=30,
+        )
+        trace_record, _ = _mcp_record(
+            proc, responses, 4, "tools/call",
+            {
+                "name": "trace_path",
+                "arguments": {
                     "project": project_name,
                     "function_name": "verify_token",
                     "direction": "inbound",
                     "depth": 5,
-                }),
-            ], cwd=project, env=env),
-        ])
-    elif commands[-1]["returncode"] == 0:
-        return commands, False, "index succeeded but project id was not returned"
-    return commands, commands[0]["returncode"] == 0, None
+                },
+            },
+            timeout=30,
+        )
+        commands.extend([search_record, trace_record])
+        return commands, True, None
+    finally:
+        try:
+            proc.stdin.close()
+        except Exception:
+            pass
+        try:
+            proc.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait(timeout=3)
+        thread.join(timeout=1)
 
 
 ADAPTERS: dict[str, Callable[[Path, Path], tuple[list[dict[str, Any]], bool, str | None]]] = {
