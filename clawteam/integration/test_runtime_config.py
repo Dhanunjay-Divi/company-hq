@@ -32,6 +32,26 @@ class RuntimeConfigTest(unittest.TestCase):
                 with self.assertRaises(config.ConfigurationError):
                     config.state_root()
 
+    def test_derived_clawteam_state_rejects_symlink_into_git_checkout(self):
+        with tempfile.TemporaryDirectory(prefix="company-hq-clawteam-symlink-") as temp:
+            root = Path(temp) / "state"
+            product = Path(temp) / "product"
+            root.mkdir()
+            (product / ".git").mkdir(parents=True)
+            (root / "clawteam").symlink_to(product, target_is_directory=True)
+            with patch.dict(os.environ, {"COMPANY_HQ_STATE_ROOT": str(root)}, clear=False):
+                with self.assertRaises(config.ConfigurationError):
+                    config.clawteam_data_dir()
+
+    def test_capabilities_override_rejects_product_checkout(self):
+        with tempfile.TemporaryDirectory(prefix="company-hq-capabilities-") as temp:
+            product = Path(temp) / "product"
+            (product / ".git").mkdir(parents=True)
+            target = product / "capabilities.json"
+            with patch.dict(os.environ, {"COMPANY_HQ_CAPABILITIES_PATH": str(target)}, clear=False):
+                with self.assertRaises(config.ConfigurationError):
+                    config.capabilities_path()
+
     def test_fixture_override_remains_test_only_and_isolated(self):
         with tempfile.TemporaryDirectory(prefix="company-hq-fixture-") as temp:
             env = {
