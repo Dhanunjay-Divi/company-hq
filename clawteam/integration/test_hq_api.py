@@ -3,6 +3,7 @@ from __future__ import annotations
 import unittest
 import tempfile
 import json
+import threading
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -90,6 +91,72 @@ class HQAPIDemoTest(unittest.TestCase):
             "tiers": {"standard": {"codex_model": "gpt-5.6-terra"}},
             "reviewed_codex_models": ["gpt-5.6-terra", "gpt-6-astra"],
         }), "gpt-5.6-terra")
+
+    def test_attach_waits_for_concurrent_start_binding_and_cannot_rewrite_profile(self):
+        class Handler:
+            response = None
+            error = None
+
+            def _serve_json(self, value):
+                self.response = value
+
+            def _json_error(self, status, message):
+                self.error = (status, message)
+
+        class BlockingBridge:
+            def __init__(self, project):
+                self.project = project
+                self.start_entered = threading.Event()
+                self.release_start = threading.Event()
+                self.bound = False
+
+            def status(self, team):
+                return {"project": str(self.project) if self.bound else None, "threadId": "thread-1" if self.bound else None}
+
+            def start(self, team, project, prompt, model):
+                self.asserted_project = project
+                self.start_entered.set()
+                if not self.release_start.wait(1):
+                    raise AssertionError("test did not release start")
+                self.bound = True
+                return {"accepted": True}
+
+        with tempfile.TemporaryDirectory(prefix="hq-api-attach-race-") as temporary:
+            root = Path(temporary)
+            state = root / "state"
+            managed = state / "managed-workspaces" / "chat-one"
+            attached = root / "attached-project"
+            managed.mkdir(parents=True)
+            attached.mkdir()
+            routing = root / "routing.json"
+            routing.write_text(json.dumps({"reviewed_codex_models": ["gpt-5.6-luna"]}))
+            hq_api.save_profile(state, "chat-one", {
+                "projectLabel": "New conversation", "projectRoot": str(managed.resolve()),
+                "workspaceKind": "managed", "goal": "Discuss and plan.",
+                "members": {"overall-head": {"displayName": "Overall head", "department": "Direction & delivery", "model": "", "reportsTo": None}},
+            }, {"overall-head"})
+            team = SimpleNamespace(members=[SimpleNamespace(name="overall-head")])
+            start_handler, attach_handler = Handler(), Handler()
+            fake_bridge = BlockingBridge(managed.resolve())
+            with patch.object(hq_api.TeamManager, "get_team", return_value=team), patch("hq_api.bridge", return_value=fake_bridge), patch("hq_api.routing_path", return_value=routing):
+                start_thread = threading.Thread(target=hq_api.handle_post, args=(start_handler, state, "/api/runtime/chat-one/start", {"prompt": "Start", "model": "gpt-5.6-luna"}))
+                attach_thread = threading.Thread(target=hq_api.handle_post, args=(attach_handler, state, "/api/workspaces/chat-one/attach", {"project": str(attached)}))
+                start_thread.start()
+                self.assertTrue(fake_bridge.start_entered.wait(1))
+                attach_thread.start()
+                attach_thread.join(0.05)
+                self.assertTrue(attach_thread.is_alive())
+                fake_bridge.release_start.set()
+                start_thread.join(1)
+                attach_thread.join(1)
+            self.assertFalse(start_thread.is_alive())
+            self.assertFalse(attach_thread.is_alive())
+            self.assertEqual(start_handler.response, {"accepted": True})
+            self.assertEqual(attach_handler.error[0], 400)
+            self.assertIn("already bound", attach_handler.error[1])
+            profile = hq_api.load_profile(state, "chat-one", {"overall-head"})
+            self.assertEqual(profile["workspaceKind"], "managed")
+            self.assertEqual(profile["projectRoot"], str(managed.resolve()))
 
 
 if __name__ == "__main__":

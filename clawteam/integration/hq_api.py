@@ -16,6 +16,8 @@ from runtime_config import (
 )
 _memory_cache = {}
 _memory_lock = threading.Lock()
+_workspace_locks = {}
+_workspace_locks_guard = threading.Lock()
 
 
 ADDITIONAL_COMPONENTS = [
@@ -247,6 +249,16 @@ def project_for(state, name):
     return str(path)
 
 
+def workspace_operation_lock(name):
+    """Serialize project attachment with the first native binding per team."""
+    with _workspace_locks_guard:
+        lock = _workspace_locks.get(name)
+        if lock is None:
+            lock = threading.RLock()
+            _workspace_locks[name] = lock
+        return lock
+
+
 def _project_folder(value):
     if not isinstance(value, str) or not value.strip():
         raise ValueError('Choose an existing project folder')
@@ -436,23 +448,26 @@ def handle_post(handler,state,path,body):
         if len(parts)==4 and parts[:2]==['api','workspaces'] and parts[3]=='attach':
             name=unquote(parts[2]);team=TeamManager.get_team(name)
             if team is None: raise ValueError('Workspace not found')
-            profile=load_profile(state,name,{m.name for m in team.members})
-            if profile.get('workspaceKind') != 'managed':
-                raise ValueError('Only an unopened managed workspace can attach a project folder')
-            runtime=bridge(state).status(name)
-            if runtime.get('project') is not None or runtime.get('threadId') is not None:
-                raise ValueError('This workspace is already bound to its managed folder; start a new project workspace instead')
-            folder=_project_folder(body.get('project'))
-            profile=save_profile(state,name,{**profile,'projectRoot':str(folder),'workspaceKind':'project'}, {m.name for m in team.members})
+            with workspace_operation_lock(name):
+                profile=load_profile(state,name,{m.name for m in team.members})
+                if profile.get('workspaceKind') != 'managed':
+                    raise ValueError('Only an unopened managed workspace can attach a project folder')
+                runtime=bridge(state).status(name)
+                if runtime.get('project') is not None or runtime.get('threadId') is not None:
+                    raise ValueError('This workspace is already bound to its managed folder; start a new project workspace instead')
+                folder=_project_folder(body.get('project'))
+                profile=save_profile(state,name,{**profile,'projectRoot':str(folder),'workspaceKind':'project'}, {m.name for m in team.members})
             handler._serve_json({'team':name,'company':profile,'attached':True});return True
-        name=unquote(parts[2]);project=project_for(state,name)
+        name=unquote(parts[2])
         if parts[1]=='budget':
             if len(parts)!=3: raise ValueError('Unknown budget route')
+            project_for(state,name)
             budget=bridge(state).set_budget(name, body.get('limitTokens', body.get('maxTotalTokens', 200000)), body.get('enforced', True))
             handler._serve_json({'updated':True,'budget':budget});return True
         if parts[1]=='knowledge':
             if demo_mode():
                 raise ValueError('Saving memory is disabled in model-free demo mode')
+            project=project_for(state,name)
             title=body.get('title','').strip();content=body.get('content','').strip()
             if not title or not content or len(title)>200 or len(content)>12000: raise ValueError('Enter a title and a note of at most 12000 characters')
             key=uuid.uuid4().hex
@@ -460,6 +475,7 @@ def handle_post(handler,state,path,body):
             _memory_cache.pop(project,None);handler._serve_json({'saved':True,'key':key});return True
         if parts[1]=='task':
             if len(parts)!=4: raise ValueError('Task ID required')
+            project_for(state,name)
             status=TaskStatus(body.get('status'))
             task=TaskStore(name).update(parts[3],status=status,caller='user')
             if task is None: raise ValueError('Task not found')
@@ -475,12 +491,21 @@ def handle_post(handler,state,path,body):
                 routing=json.loads(routing_path().read_text());model=body.get('model','auto')
                 if model=='auto':model=_default_supervisor_model(routing)
                 if model not in routing['reviewed_codex_models']: raise ValueError('Choose a reviewed available Codex model')
-                result=client.start(name,project,prompt.strip(),model)
-            else:result=client.send(name,prompt.strip())
+                with workspace_operation_lock(name):
+                    project=project_for(state,name)
+                    result=client.start(name,project,prompt.strip(),model)
+            else:
+                project_for(state,name)
+                result=client.send(name,prompt.strip())
         elif action=='execute':
+            project_for(state,name)
             result=client.begin_execution(name)
-        elif action=='stop':result=client.stop(name)
-        elif action=='approve':result=client.approve(name,body.get('requestId'),body.get('decision'))
+        elif action=='stop':
+            project_for(state,name)
+            result=client.stop(name)
+        elif action=='approve':
+            project_for(state,name)
+            result=client.approve(name,body.get('requestId'),body.get('decision'))
         else:raise ValueError('Unknown runtime action')
         handler._serve_json(result)
     except Exception as exc:handler._json_error(400,str(exc))

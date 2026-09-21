@@ -121,6 +121,35 @@ class ImmediateTurnNotificationsFactory:
         return connection
 
 
+class ImmediateApprovalConnection(FakeConnection):
+    def send(self, message: dict):
+        super().send(message)
+        if message.get("method") != "turn/start":
+            return
+        self.emit({
+            "id": 100 + self.turn_number,
+            "method": "item/commandExecution/requestApproval",
+            "params": {
+                "threadId": message["params"]["threadId"],
+                "turnId": f"turn-{self.number}-{self.turn_number}",
+                "itemId": f"approval-{self.turn_number}",
+                "command": "touch requested-file",
+                "cwd": message["params"]["cwd"],
+                "reason": "Immediate approval request",
+            },
+        })
+
+
+class ImmediateApprovalFactory:
+    def __init__(self):
+        self.connections: list[ImmediateApprovalConnection] = []
+
+    def __call__(self, codex_path: Path):
+        connection = ImmediateApprovalConnection(codex_path, len(self.connections) + 1)
+        self.connections.append(connection)
+        return connection
+
+
 class CodexBridgeTest(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory(prefix="codex-bridge-test-")
@@ -394,6 +423,32 @@ class CodexBridgeTest(unittest.TestCase):
             ("turn.completed", "Supervisor turn completed"),
         ])
         self.assertTrue(bridge.status("instant-steer")["planReady"])
+
+    def test_immediate_execution_approval_is_buffered_until_the_new_turn_is_registered(self):
+        factory = ImmediateApprovalFactory()
+        bridge = CodexBridge(
+            state_dir=self.root / "instant-approval-runtime",
+            connection_factory=factory,
+            request_timeout=0.2,
+            max_events=20,
+        )
+        self.addCleanup(bridge.shutdown_all)
+        bridge.start("instant-approval", self.project, "plan", "gpt-5.6-luna")
+        connection = factory.connections[0]
+        # The planning turn's immediate request remains denied.
+        self.assertTrue(any(item.get("id") == 101 and item.get("result", {}).get("decision") == "decline" for item in connection.sent))
+        self.assertEqual(bridge.status("instant-approval")["pendingApprovals"], [])
+        connection.emit({
+            "method": "turn/completed",
+            "params": {"threadId": "thr-1", "turn": {"id": "turn-1-1", "status": "completed"}},
+        })
+        started = bridge.begin_execution("instant-approval")
+        self.assertEqual(started["turnId"], "turn-1-2")
+        pending = bridge.status("instant-approval")["pendingApprovals"]
+        self.assertEqual(len(pending), 1)
+        self.assertEqual(pending[0]["command"], "touch requested-file")
+        bridge.approve("instant-approval", pending[0]["requestId"], "approve")
+        self.assertTrue(any(item.get("id") == 102 and item.get("result", {}).get("decision") == "accept" for item in connection.sent))
 
     def test_stop_interrupts_only_the_active_team_turn(self):
         self.start()

@@ -297,7 +297,7 @@ class _TeamSession:
     plan_ready: bool = False
     usage_summary: dict[str, Any] | None = None
     usage_event_count: int = 0
-    pending_turn_notifications: list[tuple[str, dict[str, Any]]] | None = None
+    pending_turn_notifications: list[tuple[Any, ...]] | None = None
     lock: threading.RLock = field(default_factory=threading.RLock)
     operation_lock: threading.Lock = field(default_factory=threading.Lock)
     closing: bool = False
@@ -1050,6 +1050,19 @@ class CodexBridge:
         method: str,
         params: dict[str, Any],
     ) -> None:
+        with session.lock:
+            if session.pending_turn_notifications is not None:
+                session.pending_turn_notifications.append(("request", wire_id, method, params))
+                return
+        self._process_server_request(session, wire_id, method, params)
+
+    def _process_server_request(
+        self,
+        session: _TeamSession,
+        wire_id: object,
+        method: str,
+        params: dict[str, Any],
+    ) -> None:
         approval_methods = {
             "item/commandExecution/requestApproval",
             "item/fileChange/requestApproval",
@@ -1136,8 +1149,13 @@ class CodexBridge:
         with session.lock:
             pending = session.pending_turn_notifications or []
             session.pending_turn_notifications = None
-            for method, params in pending:
-                self._process_notification(session, method, params)
+            for item in pending:
+                if item[0] == "notification":
+                    _, method, params = item
+                    self._process_notification(session, method, params)
+                else:
+                    _, wire_id, method, params = item
+                    self._process_server_request(session, wire_id, method, params)
 
     def _handle_notification(
         self,
@@ -1147,7 +1165,7 @@ class CodexBridge:
     ) -> None:
         with session.lock:
             if session.pending_turn_notifications is not None:
-                session.pending_turn_notifications.append((method, params))
+                session.pending_turn_notifications.append(("notification", method, params))
                 return
         self._process_notification(session, method, params)
 
