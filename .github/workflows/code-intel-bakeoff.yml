@@ -1,0 +1,66 @@
+name: Code intelligence bakeoff
+
+on:
+  push:
+    branches: [arch/best-of-all-bakeoff]
+    paths:
+      - "benchmarks/code-intel-fixture/**"
+      - "scripts/run_code_intel_bakeoff.py"
+      - ".github/workflows/code-intel-bakeoff.yml"
+      - "graft.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: code-intel-bakeoff-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      COMPANY_HQ_STATE_ROOT: ${{ runner.temp }}/company-hq-state
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "24"
+
+      - name: Install pinned candidates without provider credentials
+        shell: bash
+        run: |
+          set -u
+          python -m pip install --disable-pip-version-check "graphifyy==0.9.65"
+          echo "BAKEOFF_GRAPHIFY=$(command -v graphify)" >> "$GITHUB_ENV"
+
+          mkdir -p "$RUNNER_TEMP/codegraph-pkg"
+          npm install --prefix "$RUNNER_TEMP/codegraph-pkg" --ignore-scripts --no-audit --no-fund "@colbymchenry/codegraph@1.6.0"
+          echo "BAKEOFF_CODEGRAPH=$RUNNER_TEMP/codegraph-pkg/node_modules/.bin/codegraph" >> "$GITHUB_ENV"
+
+          mkdir -p "$RUNNER_TEMP/graft-pkg"
+          npm install --prefix "$RUNNER_TEMP/graft-pkg" --ignore-scripts --no-audit --no-fund "@nanonets/graft@0.18.0"
+          echo "BAKEOFF_GRAFT_INSTALL=$RUNNER_TEMP/graft-pkg" >> "$GITHUB_ENV"
+
+      - name: Run model-free structural benchmark
+        run: python scripts/run_code_intel_bakeoff.py
+
+      - name: Publish result summary
+        shell: bash
+        run: |
+          echo '## Model-free code-intelligence bakeoff' >> "$GITHUB_STEP_SUMMARY"
+          cat benchmarks/code-intel-results.json >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: code-intel-bakeoff
+          path: benchmarks/code-intel-results.json
+          if-no-files-found: error
