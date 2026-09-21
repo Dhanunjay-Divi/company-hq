@@ -1,7 +1,12 @@
 name: End-to-end acceptance
 on:
   push:
-    branches: [impl/e2e-workflow-validation]
+    branches: [main, impl/e2e-workflow-validation]
+    paths:
+      - 'company-hq/**'
+      - 'clawteam/integration/**'
+      - 'tests/acceptance/**'
+      - '.github/workflows/end-to-end-acceptance.yml'
   pull_request:
     paths:
       - 'company-hq/**'

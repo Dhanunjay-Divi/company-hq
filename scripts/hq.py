@@ -31,10 +31,14 @@ def run(command: list[str], *, cwd: Path = ROOT, env: dict[str, str] | None = No
     subprocess.run(command, cwd=cwd, env=env, check=True)
 
 
-def setup() -> None:
+def ensure_integration_venv() -> None:
     if not VENV_PYTHON.is_file():
         run([sys.executable, "-m", "venv", str(VENV)])
     run([str(VENV_PYTHON), "-m", "pip", "install", "--disable-pip-version-check", "-r", str(ROOT / "clawteam" / "requirements.txt")])
+
+
+def setup() -> None:
+    ensure_integration_venv()
     run(["npm", "ci", "--ignore-scripts"], cwd=ROOT / "company-hq")
     run(["npm", "run", "build"], cwd=ROOT / "company-hq")
     run([sys.executable, str(ROOT / "company-hq" / "build-source.py")])
@@ -108,8 +112,10 @@ def seed_demo(url: str) -> None:
 
 
 def checks() -> int:
+    ensure_integration_venv()
     commands = [
         [sys.executable, "-m", "unittest", "-v", "test_check_updates", "test_discover"],
+        [sys.executable, "-m", "unittest", "discover", "-s", "tests", "-p", "test_*.py", "-v"],
         [str(VENV_PYTHON), "-m", "unittest", "discover", "-s", "clawteam/integration", "-p", "test_*.py", "-v"],
         [sys.executable, "scripts/check_source_bundle.py"],
         [sys.executable, "scripts/check_portability.py"],

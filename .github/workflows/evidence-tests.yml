@@ -9,10 +9,12 @@ on:
       - ".github/workflows/*bakeoff.yml"
       - ".github/workflows/evidence-tests.yml"
   push:
-    branches: [fix/reproducible-bakeoff-evidence]
+    branches: [main, fix/reproducible-bakeoff-evidence]
     paths:
       - "scripts/*bakeoff*.py"
       - "tests/test_bakeoff*.py"
+      - "benchmarks/evidence/**"
+      - ".github/workflows/*bakeoff.yml"
       - ".github/workflows/evidence-tests.yml"
 
 permissions:

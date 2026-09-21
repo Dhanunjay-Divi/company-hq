@@ -47,6 +47,9 @@ jobs:
       - name: Run root model-free tests
         run: python -m unittest -v test_check_updates test_discover
 
+      - name: Run evidence regression tests
+        run: python -m unittest discover -s tests -p 'test_*.py' -v
+
       - name: Run integration tests with pinned environment
         run: clawteam/venv/bin/python -m unittest discover -s clawteam/integration -p 'test_*.py' -v
 

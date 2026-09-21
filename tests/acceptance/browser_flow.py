@@ -11,7 +11,7 @@ import time
 from playwright.sync_api import sync_playwright, expect
 
 ROOT = Path(__file__).resolve().parents[2]
-OUT = Path(os.environ['HQ_EVIDENCE_DIR']).resolve()
+OUT = Path(os.environ.get('HQ_EVIDENCE_DIR') or tempfile.mkdtemp(prefix='hq-evidence-')).resolve()
 OUT.mkdir(parents=True, exist_ok=True)
 errors = []
 with tempfile.TemporaryDirectory(prefix='hq-browser-') as td:
