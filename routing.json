@@ -1,15 +1,61 @@
 {
-  "schema": 1,
-  "reviewed_on": "2026-09-13",
-  "supervisor_policy": "best_reviewed_available",
-  "preferred_supervisors": [
-    {
-      "provider": "codex",
-      "model": "gpt-6-astra",
-      "effort": "high",
-      "reason": "Current runtime describes this as its most capable model; user requests a top-model supervisor."
+  "schema": 2,
+  "reviewed_on": "2026-09-21",
+  "policy": "smallest_capable_then_escalate",
+  "scope": "all_projects",
+  "provider_selection": {
+    "order": [
+      "authorized_native_subscription_runtime",
+      "reviewed_official_coding_plan_endpoint",
+      "explicit_user_enabled_api_fallback"
+    ],
+    "silent_billing_route_change": false,
+    "preserve_provider_account_home": true,
+    "unknown_provider": "unavailable_until_verified"
+  },
+  "tiers": {
+    "scout": {
+      "codex_model": "gpt-5.6-luna",
+      "default_effort": "low",
+      "use_for": [
+        "lookup",
+        "triage",
+        "tiny_edit",
+        "formatting",
+        "simple_tests"
+      ]
+    },
+    "standard": {
+      "codex_model": "gpt-5.6-terra",
+      "default_effort": "medium",
+      "use_for": [
+        "ordinary_bug",
+        "ordinary_feature",
+        "tests",
+        "moderate_refactor"
+      ]
+    },
+    "strong": {
+      "codex_model": "gpt-5.6-sol",
+      "default_effort": "medium",
+      "use_for": [
+        "cross_file_reasoning",
+        "hard_bug",
+        "complex_refactor",
+        "review"
+      ]
+    },
+    "flagship": {
+      "codex_model": "gpt-6-astra",
+      "default_effort": "high",
+      "use_for": [
+        "architecture",
+        "repeated_failure",
+        "high_risk_ambiguity",
+        "critical_review"
+      ]
     }
-  ],
+  },
   "reviewed_codex_models": [
     "gpt-6-astra",
     "gpt-5.6-sol",
@@ -18,22 +64,56 @@
     "gpt-5.5",
     "gpt-5.3-codex-spark"
   ],
-  "workers": {
-    "default": "gpt-5.6-terra",
-    "scout": "gpt-5.6-luna",
-    "reviewer": "gpt-5.6-sol",
-    "max_concurrent": 3
+  "escalation": {
+    "start_tier": "standard",
+    "downgrade_to_scout_when": [
+      "low_risk",
+      "small_scope",
+      "deterministic_task"
+    ],
+    "upgrade_one_tier_when": [
+      "tests_fail_after_valid_attempt",
+      "low_confidence",
+      "unresolved_dependency",
+      "risk_policy_requires"
+    ],
+    "flagship_only_when": [
+      "strong_tier_failed",
+      "architecture_or_security_gate",
+      "explicit_user_choice"
+    ],
+    "max_retries_per_tier": 1
   },
-  "follow_official_upgrade_hint": true,
-  "unknown_models": "review_current_official_capabilities_before_ranking",
-  "automatic_updates": "review_stage_test_activate_relevant_tools_with_rollback",
-  "scope": "all_projects",
-  "provider_note": "Codex execution is enabled. Other clients are discovered but need a verified integration and their own authorized login before use. Never put a third-party model ID into Codex's OpenAI-only model selector.",
+  "review": {
+    "independent_reviewer_required_when": [
+      "security_sensitive",
+      "architecture_change",
+      "high_risk",
+      "repeated_failure",
+      "protected_release_gate"
+    ],
+    "routine_low_risk_second_model": false,
+    "preferred_codex_tier": "strong"
+  },
+  "concurrency": {
+    "default_max_workers": 3,
+    "simple_task_max_workers": 1,
+    "parallelize_only_independent_work": true
+  },
+  "context": {
+    "task_store": "beads_target",
+    "code_primary": "codebase_memory_mcp",
+    "code_second_stage": "graphify",
+    "memory_target": "supermemory_local_after_acceptance",
+    "command_compression": "rtk",
+    "structured_compression": "headroom_above_threshold_only",
+    "load_skills": "lazy_only"
+  },
   "organization": {
-    "structure": "overall_head -> department_supervisors -> specialists",
-    "department_supervisor_default": "gpt-5.6-sol",
-    "department_supervisor_effort": "high",
-    "staffing": "goal_and_dependency_driven",
-    "concurrency_note": "Current worker limit schedules departments and specialists; it does not cap total project responsibilities."
-  }
+    "structure": "overall_head -> useful_department_leads -> specialists",
+    "staffing": "goal_dependency_and_parallelism_driven",
+    "no_idle_roster": true
+  },
+  "updates": "pin_review_benchmark_stage_activate_with_rollback",
+  "note": "Current live execution remains Codex-only until each additional provider adapter and its account/quota behavior pass acceptance. A provider name never means use its flagship model by default."
 }
