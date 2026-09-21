@@ -1,0 +1,66 @@
+name: Token-efficiency bake-off
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "benchmarks/token-efficiency/**"
+      - ".github/workflows/token-efficiency-bakeoff.yml"
+  push:
+    branches: [main, feat/best-of-all-bakeoff]
+    paths:
+      - "benchmarks/token-efficiency/**"
+      - ".github/workflows/token-efficiency-bakeoff.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: token-efficiency-bakeoff-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+
+      - name: Install verified RTK
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/rtk.tar.gz"
+          root="$RUNNER_TEMP/rtk"
+          curl --fail --location --silent --show-error             "https://github.com/rtk-ai/rtk/releases/download/v0.49.0/rtk-x86_64-unknown-linux-musl.tar.gz"             --output "$archive"
+          echo "7278231dfd7e6a730a4ab7f847b195bcf02289c2d57622b0dab75a6411100c8f  $archive" | sha256sum --check -
+          mkdir -p "$root"
+          tar -xzf "$archive" -C "$root"
+          binary="$(find "$root" -type f -name rtk -perm -u+x | head -n 1)"
+          test -n "$binary"
+          echo "RTK_BIN=$binary" >> "$GITHUB_ENV"
+
+      - name: Install verified Headroom
+        shell: bash
+        run: |
+          set -euo pipefail
+          wheel="$RUNNER_TEMP/headroom.whl"
+          venv="$RUNNER_TEMP/headroom"
+          curl --fail --location --silent --show-error             "https://github.com/headroomlabs-ai/headroom/releases/download/v0.37.0/headroom_ai-0.37.0-cp310-abi3-manylinux_2_28_x86_64.whl"             --output "$wheel"
+          echo "2efc5cdf681a10c5fc7a2a271a471179c409074537045f682b10e4d724976f46  $wheel" | sha256sum --check -
+          python -m venv "$venv"
+          "$venv/bin/pip" install --disable-pip-version-check "$wheel"
+          echo "HEADROOM_PYTHON=$venv/bin/python" >> "$GITHUB_ENV"
+
+      - name: Run token-efficiency bake-off
+        shell: bash
+        run: |
+          set -euo pipefail
+          python benchmarks/token-efficiency/run.py             --output "$RUNNER_TEMP/token-efficiency-results.json"             --markdown "$RUNNER_TEMP/token-efficiency-results.md"
+          cat "$RUNNER_TEMP/token-efficiency-results.md" >> "$GITHUB_STEP_SUMMARY"
+          echo
+          cat "$RUNNER_TEMP/token-efficiency-results.json"
