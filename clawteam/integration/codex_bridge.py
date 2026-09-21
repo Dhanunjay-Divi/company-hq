@@ -104,6 +104,70 @@ def _numeric_tree(value: object) -> object:
     return None
 
 
+def _usage_summary(counts: dict[str, Any]) -> dict[str, Any]:
+    """Summarize a native token usage payload without claiming billing facts.
+
+    The Codex app-server payload shape can evolve. Treat a top-level ``total``
+    object as the authoritative latest cumulative report when it exists, then
+    recognize common token field names. The raw numeric tree stays available for
+    inspection, but account-wide quota and billed cost remain outside this
+    bridge.
+    """
+    source = counts.get("total") if isinstance(counts.get("total"), dict) else counts
+    totals = {
+        "inputTokens": 0,
+        "cachedInputTokens": 0,
+        "outputTokens": 0,
+        "totalTokens": 0,
+    }
+    seen: set[str] = set()
+
+    def visit(node: object) -> None:
+        if isinstance(node, dict):
+            for key, item in node.items():
+                normalized = re.sub(r"[^a-z0-9]", "", str(key).lower())
+                if isinstance(item, (int, float)) and not isinstance(item, bool):
+                    if "cached" in normalized and "token" in normalized:
+                        totals["cachedInputTokens"] += item
+                        seen.add("cachedInputTokens")
+                    elif "cache" in normalized and "input" in normalized:
+                        totals["cachedInputTokens"] += item
+                        seen.add("cachedInputTokens")
+                    elif ("input" in normalized or "prompt" in normalized) and "token" in normalized:
+                        totals["inputTokens"] += item
+                        seen.add("inputTokens")
+                    elif ("output" in normalized or "completion" in normalized) and "token" in normalized:
+                        totals["outputTokens"] += item
+                        seen.add("outputTokens")
+                    elif normalized in {"totaltokens", "tokens"}:
+                        totals["totalTokens"] = max(totals["totalTokens"], item)
+                        seen.add("totalTokens")
+                else:
+                    visit(item)
+        elif isinstance(node, list):
+            for item in node:
+                visit(item)
+
+    visit(source)
+    if totals["totalTokens"] == 0 and (
+        totals["inputTokens"] or totals["outputTokens"]
+    ):
+        totals["totalTokens"] = totals["inputTokens"] + totals["outputTokens"]
+        seen.add("totalTokens")
+    summary = {
+        key: int(value) if isinstance(value, float) and value.is_integer() else value
+        for key, value in totals.items()
+        if key in seen
+    }
+    summary["coverage"] = (
+        "Latest native runtime token report only; not account quota, billing, or savings."
+        if seen
+        else "Native runtime reported token usage, but the fields were not recognized."
+    )
+    summary["latestCounts"] = counts
+    return summary
+
+
 def _supervisor_instructions(team: str, project: Path) -> str:
     return f"""You are the native Codex supervisor for Company HQ team {team!r}.
 The approved project root is {str(project)!r}. Keep project writes inside that root.
@@ -229,6 +293,8 @@ class _TeamSession:
     completed_turns: set[str] = field(default_factory=set)
     last_turn_status: str | None = None
     plan_ready: bool = False
+    usage_summary: dict[str, Any] | None = None
+    usage_event_count: int = 0
     lock: threading.RLock = field(default_factory=threading.RLock)
     operation_lock: threading.Lock = field(default_factory=threading.Lock)
     closing: bool = False
@@ -671,6 +737,7 @@ class CodexBridge:
                 "lastEventSeq": 0,
                 "pendingApprovals": [],
                 "children": [],
+                "usageSummary": None,
             }
         with session.lock:
             result = {
@@ -686,6 +753,7 @@ class CodexBridge:
                 "lastEventSeq": session.next_event_seq - 1,
                 "pendingApprovals": [dict(item.data) for item in session.approvals.values()],
                 "children": [dict(value) for value in session.children.values()],
+                "usageSummary": dict(session.usage_summary) if session.usage_summary else None,
             }
             if session.error:
                 result["error"] = session.error
@@ -897,10 +965,17 @@ class CodexBridge:
             self._handle_item(session, method, params)
             return
         if method == "thread/tokenUsage/updated":
+            raw_counts = _numeric_tree(params.get("tokenUsage")) or {}
+            counts = raw_counts if isinstance(raw_counts, dict) else {"value": raw_counts}
+            summary = _usage_summary(counts)
+            with session.lock:
+                session.usage_event_count += 1
+                summary["eventCount"] = session.usage_event_count
+                session.usage_summary = summary
             self._event(
                 session,
                 "usage",
-                {"text": "Token usage updated", "counts": _numeric_tree(params.get("tokenUsage")) or {}},
+                {"text": "Token usage updated", "counts": counts, "summary": summary},
                 thread_id,
                 turn_id,
             )

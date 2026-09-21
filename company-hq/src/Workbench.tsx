@@ -1,7 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Layers3, Play, Network, LayoutGrid, Brain, Settings2, X, Menu } from 'lucide-react';
+import { Layers3, Play, Network, LayoutGrid, Brain, Settings2, X, Menu, Scale, BookOpenCheck } from 'lucide-react';
 import TeamGraph from './TeamGraph';
 import RunOverview from './RunOverview';
+import DecisionCenter from './DecisionCenter';
+import OperatingGuide from './OperatingGuide';
 import './run-overview.css';
 
 type RecordData = Record<string, any>;
@@ -39,6 +41,9 @@ export default function Workbench() {
   const [member, setMember] = useState('');
   const [notes, setNotes] = useState<RecordData[]>([]);
   const [memoryError, setMemoryError] = useState('');
+  const [decisions, setDecisions] = useState<RecordData | null>(null);
+  const [decisionError, setDecisionError] = useState('');
+  const [decisionsLoading, setDecisionsLoading] = useState(false);
   const modal = useRef<HTMLDialogElement>(null);
   const selected = useRef(team); selected.current = team;
   const demo = health.mode === 'demo';
@@ -94,6 +99,17 @@ export default function Workbench() {
     request(`/api/knowledge/${encoded}`).then(data => !cancelled && setNotes(data.notes || [])).catch(e => !cancelled && setMemoryError(e.message));
     return () => { cancelled = true; };
   }, [team, view, demo, health]);
+  useEffect(() => {
+    if (view !== 'decisions' || decisions) return;
+    let cancelled = false;
+    setDecisionError('');
+    setDecisionsLoading(true);
+    request('/api/decisions')
+      .then(data => { if (!cancelled) setDecisions(data); })
+      .catch(e => { if (!cancelled) setDecisionError(e.message); })
+      .finally(() => { if (!cancelled) setDecisionsLoading(false); });
+    return () => { cancelled = true; };
+  }, [view, decisions]);
   const chooseView = (next: string) => { setView(next); setMobileNav(false); };
   async function action(path: string, body: RecordData = {}) {
     if (busy) return;
@@ -127,7 +143,7 @@ export default function Workbench() {
     <aside className={`sidebar ${mobileNav ? 'is-open' : ''}`}>
       <div className="brand"><Layers3/><b>Company HQ</b><button className="icon-btn close-nav" aria-label="Close navigation" onClick={() => setMobileNav(false)}><X/></button></div>
       <label className="workspace-picker">Project<select aria-label="Current workspace" value={team} onChange={e => setTeam(e.target.value)}><option value="" disabled>Select a workspace</option>{teams.map(t => <option key={t.name} value={t.name}>{t.name === team ? profile.projectLabel || t.name : t.name}</option>)}</select></label>
-      <nav>{[['run',Play,'Run overview'],['map',Network,'Company map'],['board',LayoutGrid,'Work board'],['memory',Brain,'Shared memory'],['system',Settings2,'System status']].map(([id,Icon,label]:any) => <button key={id} className={view === id ? 'active' : ''} onClick={() => chooseView(id)}><Icon size={17}/>{label}</button>)}</nav>
+      <nav>{[['run',Play,'Run overview'],['guide',BookOpenCheck,'How to use'],['map',Network,'Company map'],['board',LayoutGrid,'Work board'],['decisions',Scale,'Why this stack'],['memory',Brain,'Shared memory'],['system',Settings2,'System status']].map(([id,Icon,label]:any) => <button key={id} className={view === id ? 'active' : ''} onClick={() => chooseView(id)}><Icon size={17}/>{label}</button>)}</nav>
       <div className="section-label">REGISTERED TEAM · {members.length}</div>
       <div className="roster">{members.map((m:RecordData) => <button key={m.name} className="person-row" onClick={() => { setMember(m.name); setDialog('message'); }}><span><b>{name(m.name)}</b><small>{profile.members?.[m.name]?.department || 'Role record'} · runtime not inferred</small></span></button>)}</div>
       <button className="new-workspace" onClick={() => setDialog('workspace')}>+ Connect project</button>
@@ -142,8 +158,10 @@ export default function Workbench() {
       <div className={`work-area ${consoleOpen ? 'with-inspector' : ''}`}>
         <section className={`stage ${view === 'map' ? 'map-stage' : ''}`}>
           {view === 'run' && <RunOverview runtime={runtime} events={events as any} demo={demo} connectedProject={!!team} registeredCount={members.length} completedCount={tasks.filter(t => t.status === 'completed').length} taskCount={tasks.length} onConsole={() => setConsoleOpen(true)} onSystem={() => chooseView('system')} onDraft={text => setDrafts(old => ({...old,[team]:text}))}/>}
+          {view === 'guide' && <OperatingGuide demo={demo} health={health} runtime={runtime}/>}
           {view === 'map' && <><div className="stage-heading"><h2>Company map</h2><p>Task ownership and recorded reporting lines; runtime evidence stays separate.</p></div>{snapshot && <div className="graph-host"><TeamGraph snapshot={snapshot as any} company={profile} runtime={runtime} onSelectMember={id => {setMember(id);setDialog('message')}} onSelectTask={id => setTask(tasks.find(t=>t.id===id)||null)}/></div>}</>}
           {view === 'board' && <div className="board-view"><h2>Work board</h2><p>One canonical ClawTeam task list. Status alone is not test evidence.</p><div className="kanban">{phases.map(status => <section className="column" key={status}><header><h3>{phaseNames[status]}</h3></header>{tasks.filter(t=>t.status===status).map(t=><button className="task-card" key={t.id} onClick={()=>{setTask(t);setDialog('task-detail')}}><h4>{t.subject}</h4><p>{t.description}</p><footer>{name(t.owner)}</footer></button>)}</section>)}</div></div>}
+          {view === 'decisions' && <DecisionCenter data={decisions} loading={decisionsLoading} error={decisionError}/>}
           {view === 'memory' && <div className="memory-view"><h2>Shared project memory</h2><p>{demo ? 'Synthetic fixtures; no memory server is called.' : 'Scoped Ruflo decisions, not your entire chat history.'}</p>{memoryError && <p role="status">{memoryError}</p>}{notes.map(n=><article className="note" key={n.key}><h3>{n.value?.title || n.key}</h3><pre>{typeof n.value === 'string' ? n.value : n.value?.content || JSON.stringify(n.value,null,2)}</pre></article>)}</div>}
           {view === 'system' && <div className="memory-view"><h2>Connections & capabilities</h2><p>Installed is not the same as authenticated. Subscription quota and billing remain unknown unless a supported runtime reports them.</p><button className="small-button" onClick={()=>request('/api/health').then(setHealth).catch(e=>setError(e.message))}>Refresh capabilities</button><div className="note-grid">{Object.entries(health.capabilities || {}).map(([key,c]:any)=><article className="note" key={key}><h3>{key}</h3><b>{c.available ? 'Locally available' : 'Unavailable'}</b><p>{c.reason || 'Account access still requires native runtime verification.'}</p><pre>{c.path}</pre></article>)}</div><p>App state: {health.stateRoot}</p><p>No account credentials are copied into Company HQ.</p></div>}
         </section>

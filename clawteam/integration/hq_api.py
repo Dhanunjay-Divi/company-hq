@@ -9,12 +9,223 @@ from clawteam.team.models import TaskStatus
 from runtime_config import (
     demo_mode,
     health_snapshot,
+    REPO_ROOT,
     routing_path,
     ruflo_launcher,
     saved_projects_path,
 )
 _memory_cache = {}
 _memory_lock = threading.Lock()
+
+
+ADDITIONAL_COMPONENTS = [
+    {
+        "name": "777genius/agent-teams-ai",
+        "area": "Graph UI and team workspace reference",
+        "decision": "Reuse the licensed graph package and selected UI patterns inside Company HQ.",
+        "evidence": "Graph package and avatar source are already vendored with retained notices and source-download support.",
+        "boundary": "Do not run the separate desktop app because its runtime/auth behavior was blocked.",
+    },
+    {
+        "name": "ruvnet/ruflo",
+        "area": "Coordination and memory",
+        "decision": "Keep the reviewed scoped memory adapter; evaluate workflow, cost, observability and routing modules behind Company HQ contracts.",
+        "evidence": "Installed restricted MCP wrapper; expanded modules not yet accepted.",
+        "boundary": "No autopilot, provider routing, federation, hooks or second scheduler by default.",
+    },
+    {
+        "name": "HKUDS/ClawTeam",
+        "area": "Compatibility task and inbox layer",
+        "decision": "Use for the current visible board and inbox compatibility until the accepted task-store port replaces it.",
+        "evidence": "Current source tests and browser acceptance exercise the ClawTeam-backed routes.",
+        "boundary": "Not the permanent canonical DAG if Beads migration passes.",
+    },
+    {
+        "name": "NanmiCoder/dsh-agent-teams",
+        "area": "Team-management reference",
+        "decision": "Reference only until a concrete UI/backend pattern wins an acceptance test.",
+        "evidence": "No current source vendoring or runtime execution in Company HQ.",
+        "boundary": "No second scheduler or copied agent runtime.",
+    },
+    {
+        "name": "Orkas-AI/Orkas",
+        "area": "Agent orchestration reference",
+        "decision": "Reference only for possible workflow ideas.",
+        "evidence": "No current source vendoring or runtime execution in Company HQ.",
+        "boundary": "No provider routing, auth management or autonomous background workers.",
+    },
+    {
+        "name": "bradygaster/squad",
+        "area": "Team orchestration reference",
+        "decision": "Reference only; compare against Company HQ worker lifecycle before adoption.",
+        "evidence": "No current source vendoring or runtime execution in Company HQ.",
+        "boundary": "No duplicate work queue.",
+    },
+    {
+        "name": "2FastLabs/agent-squad",
+        "area": "Agent-team reference",
+        "decision": "Reference only; keep native Codex collaboration as the default execution route.",
+        "evidence": "No current source vendoring or runtime execution in Company HQ.",
+        "boundary": "No always-on alternate team runtime.",
+    },
+    {
+        "name": "Seeed-Solution/MeshClaw",
+        "area": "Distributed/mesh-agent reference",
+        "decision": "Reference only until mesh behavior is needed and sandboxed.",
+        "evidence": "No current source vendoring or runtime execution in Company HQ.",
+        "boundary": "No networked agent mesh or federation by default.",
+    },
+    {
+        "name": "trailhq/Graft / @nanonets/graft",
+        "area": "Optional code-structure visualization",
+        "decision": "Default-off optional wrapper; blocked from promotion until native install is reproducible.",
+        "evidence": "Prior fixture/install work exists, but the latest evidence run failed native parser setup.",
+        "boundary": "Not the primary code-intelligence path.",
+    },
+    {
+        "name": "DeusData/codebase-memory-mcp",
+        "area": "Code intelligence",
+        "decision": "Primary structural code-intelligence candidate.",
+        "evidence": "Smoke tests recovered 6/6 required code locations with external state.",
+        "boundary": "Source files remain authoritative; no global indexing or credential copying.",
+    },
+    {
+        "name": "Graphify-Labs/graphify",
+        "area": "Broad graph fallback",
+        "decision": "Second-stage graph for broad or cross-asset questions.",
+        "evidence": "Smoke tests recovered 6/6 required locations with no source changes.",
+        "boundary": "Not always-on beside Codebase Memory.",
+    },
+    {
+        "name": "rtk-ai/rtk",
+        "area": "Command output reduction",
+        "decision": "Selected for bounded pytest/log output when raw evidence is retained.",
+        "evidence": "Preserved required failure evidence in model-free reduction cases.",
+        "boundary": "Byte reduction is not billed-token savings; unsupported output falls back to raw.",
+    },
+    {
+        "name": "headroomlabs-ai/headroom",
+        "area": "Structured context reduction",
+        "decision": "Optional challenger for large structured payloads above thresholds.",
+        "evidence": "No benefit on the tested pytest text configuration.",
+        "boundary": "Never double-compress every prompt or replace raw evidence.",
+    },
+    {
+        "name": "msitarzewski/agency-agents",
+        "area": "Specialist roles",
+        "decision": "Lazy role catalog for task-specific prompts.",
+        "evidence": "Reviewed as guidance, not runtime execution.",
+        "boundary": "Do not spawn or load the whole roster.",
+    },
+]
+
+
+def _read_json(path):
+    return json.loads(path.read_text())
+
+
+def _safe_repo_entry(entry):
+    metadata = entry.get("metadata", {})
+    return {
+        "repo": entry.get("repo"),
+        "category": entry.get("category"),
+        "reviewStatus": entry.get("review_status"),
+        "installed": bool(entry.get("installed_by_this_handoff")),
+        "nextAction": entry.get("next_action"),
+        "license": metadata.get("license_spdx") or "unknown",
+        "url": metadata.get("url"),
+        "description": metadata.get("description"),
+        "observedHead": metadata.get("observed_head"),
+        "pushedAt": metadata.get("pushed_at"),
+    }
+
+
+def decisions():
+    routing = _read_json(routing_path())
+    candidates = _read_json(REPO_ROOT / "docs" / "repository-candidates.json")
+    evidence = _read_json(REPO_ROOT / "benchmarks" / "evidence" / "selection-2026-09-21.json")
+    code_results = evidence.get("code_intelligence", {}).get("results", {})
+    output_cases = evidence.get("output_reduction", {}).get("cases", [])
+    return {
+        "schema": 1,
+        "date": evidence.get("date"),
+        "scope": evidence.get("scope"),
+        "policy": routing.get("policy"),
+        "providerSelection": routing.get("provider_selection", {}),
+        "tiers": routing.get("tiers", {}),
+        "decisions": [
+            {
+                "area": "Supervisor and model routing",
+                "primary": "Company HQ router over authorized native runtimes",
+                "why": "Keeps provider account homes intact and starts from the smallest capable reviewed tier.",
+                "fallback": "Escalate one tier only after evidence, risk or failure justifies it.",
+                "notChosen": "Silent billing-route switching, copied auth, or flagship-by-default staffing.",
+                "evidence": f"{len(routing.get('reviewed_codex_models', []))} reviewed Codex model labels in routing policy.",
+            },
+            {
+                "area": "Code intelligence",
+                "primary": "Codebase Memory MCP",
+                "why": "Recovered required locations with the smallest median output in the smoke test and no project-tree writes.",
+                "fallback": "Graphify for broad or cross-asset questions; CodeGraph only after external-state adaptation.",
+                "notChosen": "Running every indexer for every task, or treating Graft setup failure as an accuracy verdict.",
+                "evidence": "Codebase Memory, Graphify and CodeGraph each matched 6/6 required queries in the final evidence run.",
+            },
+            {
+                "area": "Task and work authority",
+                "primary": "Current ClawTeam compatibility; Beads target migration",
+                "why": "The live UI and tests already exercise ClawTeam safely, while Beads better matches DAG/claim/readiness needs.",
+                "fallback": "Import ClawTeam records read-only during migration.",
+                "notChosen": "Two canonical task databases at the same time.",
+                "evidence": "Browser acceptance verifies current ClawTeam-backed flow; Beads remains a target contract.",
+            },
+            {
+                "area": "Memory and decisions",
+                "primary": "Restricted Ruflo memory adapter",
+                "why": "Project-scoped decision memory without granting Ruflo provider/runtime control.",
+                "fallback": "Current guarded memory until Supermemory/local target is accepted.",
+                "notChosen": "Autopilot, hooks, federation, copied chat history or duplicate always-on stores.",
+                "evidence": "Only the restricted allowlisted memory path is admitted today.",
+            },
+            {
+                "area": "Output and context efficiency",
+                "primary": "RTK for supported command output",
+                "why": "Preserved required pytest evidence while cutting repetitive output bytes in fixture cases.",
+                "fallback": "Raw output, then Headroom only for separately accepted structured payloads.",
+                "notChosen": "Claiming byte savings as billed-token savings or hiding raw diagnostics.",
+                "evidence": f"{sum(1 for case in output_cases if case.get('rtk_gate_passed'))}/{len(output_cases)} RTK evidence gates passed.",
+            },
+            {
+                "area": "User experience",
+                "primary": "Company HQ workbench with Agent Teams AI graph",
+                "why": "One cockpit can show plan, approvals, task ownership and observed runtime events without another scheduler.",
+                "fallback": "Borrow visual patterns from team dashboards only when backed by actual data.",
+                "notChosen": "A separate full Agent Teams runtime that manages auth or invents liveness.",
+                "evidence": "Main branch browser acceptance exercises the workbench with synthetic provider transport.",
+            },
+            {
+                "area": "Runtime language boundary",
+                "primary": "Python control plane now; Rust for proven runtime hot spots",
+                "why": "Python integrates fastest with Codex, ClawTeam, evidence scripts and browser acceptance while the product contract is still moving.",
+                "fallback": "Port process supervision, file watching, sandboxed command running, packaged desktop helpers or high-volume indexing when benchmarks justify it.",
+                "notChosen": "A C/Rust rewrite based on preference rather than measured bottlenecks and equal lifecycle tests.",
+                "evidence": "Architecture docs already reserve Rust/TypeScript for the runtime boundary; current checks pass on the Python integration.",
+            },
+        ],
+        "codeIntelligence": [
+            {"name": name, **value} for name, value in code_results.items()
+        ],
+        "outputReduction": output_cases,
+        "actualModelTokens": evidence.get("actual_model_tokens"),
+        "billedSavings": evidence.get("billed_savings"),
+        "repositories": [_safe_repo_entry(entry) for entry in candidates.get("repositories", [])],
+        "additionalComponents": ADDITIONAL_COMPONENTS,
+        "limitations": evidence.get("limitations", []),
+        "docs": {
+            "bestStack": "docs/BEST-STACK.md",
+            "selection": "docs/SELECTION-DECISIONS.md",
+            "upstream": "docs/UPSTREAM-REVIEW.md",
+        },
+    }
 
 
 def project_for(state, name):
@@ -121,6 +332,8 @@ def handle_get(handler, state):
     path = urlparse(handler.path).path
     if path == '/api/health':
         handler._serve_json(health_snapshot(state));return True
+    if path == '/api/decisions':
+        handler._serve_json(decisions());return True
     if not path.startswith(('/api/runtime/','/api/knowledge/','/api/workspaces')): return False
     try:
         if path == '/api/workspaces':

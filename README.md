@@ -7,6 +7,7 @@ This public repository preserves the shared toolkit source built on 13–14 Sept
 ## Start here
 
 - [Implementation handoff and acceptance criteria](docs/IMPLEMENTER-HANDOFF.md)
+- [How to use Company HQ](docs/USAGE.md)
 - [What works and what remains](docs/STATUS.md)
 - [Locked best-of-all stack and staged fallbacks](docs/BEST-STACK.md)
 - [Architecture and source map](docs/ARCHITECTURE.md)

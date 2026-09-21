@@ -419,7 +419,11 @@ class CodexBridgeTest(unittest.TestCase):
                 "threadId": "thr-1",
                 "turnId": "turn-1-1",
                 "tokenUsage": {
-                    "total": {"inputTokens": 7, "outputTokens": 3},
+                    "total": {
+                        "inputTokens": 7,
+                        "cachedInputTokens": 2,
+                        "outputTokens": 3,
+                    },
                     "accountEmail": "must-not-leak@example.com",
                 },
             },
@@ -440,6 +444,11 @@ class CodexBridgeTest(unittest.TestCase):
             "state": "running",
             "source": "collabAgentToolCall",
         }])
+        self.assertEqual(status["usageSummary"]["inputTokens"], 7)
+        self.assertEqual(status["usageSummary"]["cachedInputTokens"], 2)
+        self.assertEqual(status["usageSummary"]["outputTokens"], 3)
+        self.assertEqual(status["usageSummary"]["totalTokens"], 10)
+        self.assertEqual(status["usageSummary"]["eventCount"], 1)
         events = self.bridge.events("team-one", 0)
         self.assertEqual(len(events["events"]), 20)
         self.assertTrue(events["truncated"])

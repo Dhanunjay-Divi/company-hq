@@ -17,10 +17,14 @@ const names: Record<string, string> = {
   offline: 'Not connected', starting: 'Connecting', running: 'Working', idle: 'Ready',
   awaiting_approval: 'Needs your permission', stopping: 'Stopping', error: 'Needs attention',
 };
+function formatNumber(value: unknown) {
+  return typeof value === 'number' ? value.toLocaleString() : 'Unknown';
+}
 
 /** A view of backend evidence, not another scheduler or a fabricated agent roster. */
 export default function RunOverview(p: Props) {
   const r = p.runtime;
+  const usage = r.usageSummary || {};
   const completed = [...p.events].reverse().find(e => e.type === 'turn.completed');
   const result = [...p.events].reverse().find(e => e.type === 'message.completed');
   const executionFinished = r.mode === 'execute' && r.state === 'idle' && completed?.data?.status === 'completed';
@@ -49,6 +53,15 @@ export default function RunOverview(p: Props) {
       <article><span>Execution access</span><strong>{p.demo ? 'Disabled' : r.mode === 'execute' ? 'Approved workspace' : 'Read-only planning'}</strong><small>Provider permissions still apply</small></article>
       <article><span>Recorded tasks</span><strong>{p.completedCount} / {p.taskCount}</strong><small>Task status is separate from test evidence</small></article>
     </div>
+    <section className="usage-section" aria-label="Usage and budget signal"><div><h3>Usage and budget signal</h3>
+      <p>{usage.eventCount ? usage.coverage : 'No native runtime usage report has arrived yet. Account quota and billed cost are checked outside this local project dashboard.'}</p></div>
+      <div className="usage-grid">
+        <article><span>Input</span><strong>{formatNumber(usage.inputTokens)}</strong><small>runtime tokens</small></article>
+        <article><span>Cached</span><strong>{formatNumber(usage.cachedInputTokens)}</strong><small>reported cache</small></article>
+        <article><span>Output</span><strong>{formatNumber(usage.outputTokens)}</strong><small>runtime tokens</small></article>
+        <article><span>Total</span><strong>{formatNumber(usage.totalTokens)}</strong><small>{usage.eventCount ? `${usage.eventCount} report${usage.eventCount === 1 ? '' : 's'}` : 'no report'}</small></article>
+      </div>
+    </section>
     <section className="worker-section"><h3>Observed runtime workers</h3>
       <p>{p.registeredCount} registered team record{p.registeredCount === 1 ? '' : 's'}. Only provider-reported worker IDs appear below.</p>
       {!workers.length ? <p className="quiet-state">No child worker has been reported. Simple work does not need a whole team.</p>
