@@ -181,8 +181,8 @@ def handle_post(handler,state,path,body):
                 routing=json.loads(routing_path().read_text());model=body.get('model','auto')
                 if model=='auto':model=routing['preferred_supervisors'][0]['model']
                 if model not in routing['reviewed_codex_models']: raise ValueError('Choose a reviewed available Codex model')
-                mode=body.get('mode','plan')
-                if mode not in ('plan','execute'): raise ValueError('Mode must be plan or execute')
+                existing=client.status(name)
+                mode=(existing.get('mode') or 'plan') if existing.get('threadId') else 'plan'
                 result=client.start(name,project,prompt.strip(),model,mode)
             else:result=client.send(name,prompt.strip())
         elif action=='execute':
