@@ -1,0 +1,16 @@
+[package]
+name = "company-hq-app"
+version = "0.1.0"
+description = "Company HQ desktop shell"
+edition = "2021"
+license = "AGPL-3.0-only"
+
+[lib]
+name = "company_hq_app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.5.3", features = [] }
+
+[dependencies]
+tauri = { version = "2.9.3", features = [] }

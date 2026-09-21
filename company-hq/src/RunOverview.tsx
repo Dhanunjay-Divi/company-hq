@@ -41,17 +41,13 @@ export default function RunOverview(p: Props) {
     : executionFinished ? 'Inspect the result and test evidence. A finished turn is not proof that every task passed.'
     : 'Follow the work here. Send direction or stop from the composer below.';
   const workers = (r.children ?? []).filter(w => typeof w.threadId === 'string');
-  if (!p.connectedProject) return <div className="run-overview onboarding-view" data-testid="run-overview">
-    <section className="onboarding-hero" aria-label="Start Company HQ"><span className="eyebrow">START HERE</span>
-      <h2>Connect a project. Then tell the supervisor what you want.</h2>
-      <p>Company HQ will not call a model or edit files just because you open it. First connect a folder, then the supervisor creates a read-only plan, and execution starts only after you approve it.</p>
-      <div className="onboarding-actions"><button className="primary-button" onClick={p.onConnect}>Connect project</button><button className="small-button" onClick={p.onSystem}>Check setup</button></div></section>
-    <section className="starter-steps" aria-label="Simple workflow">
-      <article><span>1</span><h3>Pick the project folder</h3><p>This only records the folder path and keeps Company HQ state outside your repo.</p></article>
-      <article><span>2</span><h3>Describe the outcome</h3><p>Say what you want built, who it is for, constraints, and what proof should count as done.</p></article>
-      <article><span>3</span><h3>Approve work only after the plan</h3><p>The first supervisor turn is read-only. File changes require your separate execution approval.</p></article>
-    </section>
-    <section className="onboarding-prompt"><h3>A good first request</h3><p>“Inspect this project and propose the smallest safe plan. Ask only material questions. Include tests, risks, budget limits and the first implementation slice. Do not edit files yet.”</p></section>
+  if (!p.connectedProject) return <div className="run-overview chat-home" data-testid="run-overview">
+    <section className="chat-hero" aria-label="Start a project chat"><span className="eyebrow">NEW PROJECT CHAT</span>
+      <h2>What do you want the team to build?</h2>
+      <p>Choose a local project folder once. Company HQ drafts a safe first message for you, then you press <b>Discuss & plan</b> when you are ready. No model call or file edit happens just by opening this screen.</p>
+      <div className="onboarding-actions"><button className="primary-button" onClick={p.onConnect}>Start project chat</button><button className="small-button" onClick={p.onSystem}>Check setup</button></div></section>
+    <section className="chat-examples" aria-label="Example requests"><h3>Examples you can ask after connecting</h3>
+      <p>“Plan the smallest first version of this idea.”</p><p>“Investigate this bug and propose a safe fix.”</p><p>“Review this repo and tell me what team should work on it.”</p></section>
   </div>;
   return <div className="run-overview" data-testid="run-overview">
     <header className="view-heading"><div><span className="eyebrow">ONE CONVERSATION. VISIBLE WORK.</span>

@@ -4,22 +4,29 @@
   "type": "module",
   "license": "AGPL-3.0-only",
   "scripts": {
-    "build": "vite build"
+    "build": "vite build",
+    "dev": "vite --host 127.0.0.1",
+    "app:dev": "tauri dev",
+    "app:build": "tauri build",
+    "app:check": "cargo check --manifest-path src-tauri/Cargo.toml"
   },
   "dependencies": {
-    "react": "19.2.4",
-    "react-dom": "19.2.4",
-    "lucide-react": "0.577.0",
     "@floating-ui/dom": "1.7.6",
-    "vite": "6.4.3",
-    "tailwindcss": "3.4.19",
-    "postcss": "8.5.23",
-    "autoprefixer": "10.4.23",
-    "typescript": "5.9.3",
+    "@radix-ui/react-tooltip": "1.2.8",
+    "@types/d3-force": "3.0.10",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
+    "autoprefixer": "10.4.23",
     "d3-force": "3.0.0",
-    "@types/d3-force": "3.0.10",
-    "@radix-ui/react-tooltip": "1.2.8"
+    "lucide-react": "0.577.0",
+    "postcss": "8.5.23",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "tailwindcss": "3.4.19",
+    "typescript": "5.9.3",
+    "vite": "6.4.3"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.11.5"
   }
 }

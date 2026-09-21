@@ -11,7 +11,7 @@ cd /path/to/company-hq
 python3 scripts/hq.py bootstrap --demo
 ```
 
-Use demo mode first. It opens a local URL with fake fixture data, does not call a model, and does not edit any project. When the page opens, try the flow: **Run overview → Connect project → Discuss & plan → Approve plan & start execution**.
+Use demo mode first. It opens a local URL with fake fixture data, does not call a model, and does not edit any project. When the page opens, try the flow: **Chat → Start project chat → Discuss & plan → Approve plan & start execution**.
 
 For real local use after demo works:
 
@@ -20,7 +20,16 @@ cd /path/to/company-hq
 python3 scripts/hq.py bootstrap
 ```
 
-Open the URL printed by the command. Connect the project folder you want Company HQ to help with, describe the goal, and keep the first turn as planning. Execution starts only after the plan finishes and you approve it.
+Open the URL printed by the command. Start a project chat, choose the project folder you want Company HQ to help with, describe the goal, and keep the first turn as planning. Execution starts only after the plan finishes and you approve it.
+
+To run the native desktop shell from the source checkout:
+
+```sh
+cd /path/to/company-hq/company-hq
+npm run app:dev
+```
+
+The desktop shell starts or reuses the same guarded local backend under the hood. This is the developer app wrapper, not the final signed distributable package yet.
 
 Useful commands:
 
@@ -44,7 +53,7 @@ The simple default is: use Codex now, keep the supervisor model on automatic pol
 
 ## Everyday flow
 
-1. Connect a local project folder. This creates Company HQ state outside the repo and does not edit project files.
+1. Start a project chat and choose a local project folder. This creates Company HQ state outside the repo and does not edit project files.
 2. Tell the overall supervisor what you want to build, who it is for, constraints, and what proof should count as done.
 3. The first native supervisor turn is read-only planning. It should choose the smallest useful team, reuse code intelligence where available, define acceptance checks, and call out risks.
 4. Approve execution only after the plan is acceptable. That separate approval switches the native session to workspace-write inside the approved project folder.

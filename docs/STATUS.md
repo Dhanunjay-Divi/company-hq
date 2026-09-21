@@ -47,6 +47,7 @@ The resulting target architecture is in [BEST-STACK.md](BEST-STACK.md).
 - Source/build/portability checks via the documented launcher.
 - Per-workspace reported-token action gate in the native Codex bridge and Run overview.
 - IDE-style app shell slice with desktop frame, command bar, status bar, supervisor evidence dock and visible capability/budget indicators.
+- Source-checkout Tauri desktop shell scaffold that starts/reuses the guarded local backend and opens Company HQ in a native window.
 
 ## Architecture decisions now locked
 

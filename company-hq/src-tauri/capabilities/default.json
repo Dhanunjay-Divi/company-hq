@@ -1,0 +1,6 @@
+{
+  "identifier": "default",
+  "description": "Default Company HQ desktop capability set.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

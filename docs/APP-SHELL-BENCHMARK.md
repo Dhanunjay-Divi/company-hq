@@ -22,10 +22,11 @@ Company HQ is moving toward a desktop IDE-style app, not another hidden chat wra
 - The run overview remains first because the founder should understand the next safe action.
 - The supervisor console is now an evidence dock with approval/event/thread counters.
 - The active workbench keeps existing controls for budget gates, memory, system status, decisions and task ownership.
+- A first Tauri v2 desktop shell is scaffolded for the source checkout; it starts/reuses the guarded local backend and navigates the native window to that loopback app.
 
 ## Next app-quality gates
 
-1. Package the web shell as a local Tauri app with an explicit state directory and loopback binding checks.
+1. Turn the source-checkout Tauri shell into a signed distributable app with explicit state directory, loopback binding checks, bundled icons and installer notarization where needed.
 2. Add a command palette for “start plan”, “set budget”, “open evidence”, “create team” and “review changes”.
 3. Add worker/session lanes that distinguish assigned, started, delivered, acknowledged, blocked and verified states.
 4. Add an editor/diff panel only after runtime writes are safely isolated in a project worktree.

@@ -1,0 +1,33 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Company HQ",
+  "version": "0.1.0",
+  "identifier": "com.companyhq.desktop",
+  "build": {
+    "beforeDevCommand": "npm run dev -- --port 1420",
+    "devUrl": "http://127.0.0.1:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Company HQ",
+        "width": 1440,
+        "height": 950,
+        "minWidth": 1040,
+        "minHeight": 720
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": false,
+    "targets": "all",
+    "category": "DeveloperTool",
+    "shortDescription": "Local AI project team cockpit"
+  }
+}

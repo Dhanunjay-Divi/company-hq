@@ -43,3 +43,6 @@ config.toml
 *.db
 codebase-memory-mcp-0.10.8/bin/codebase-memory-mcp
 codebase-memory-mcp-0.10.8/bin/codebase-memory-mcp.exe
+# Rust/Tauri generated files
+company-hq/src-tauri/target/
+company-hq/src-tauri/gen/
