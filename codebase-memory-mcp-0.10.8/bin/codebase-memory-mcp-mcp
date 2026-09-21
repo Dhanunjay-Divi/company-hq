@@ -3,9 +3,8 @@ set -eu
 umask 077
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+REPO_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)
 HOME_DIR=${HOME:?HOME is required but is preserved unchanged}
-STATE_BASE=${XDG_STATE_HOME:-"$HOME_DIR/.local/state"}
-STATE_ROOT=${COMPANY_HQ_CODEBASE_MEMORY_STATE_ROOT:-"$STATE_BASE/company-hq/codebase-memory"}
 PYTHON=${COMPANY_HQ_PYTHON:-$(command -v python3 || true)}
 GUARD="$SCRIPT_DIR/mcp_guard.py"
 BINARY="$SCRIPT_DIR/codebase-memory-mcp"
@@ -14,6 +13,7 @@ if [ -z "$PYTHON" ] || [ ! -x "$PYTHON" ]; then
   echo "codebase-memory-mcp: python3 is unavailable" >&2
   exit 1
 fi
+STATE_ROOT=$("$PYTHON" "$REPO_ROOT/scripts/resolve_state_path.py" codebase-memory) || exit $?
 if [ ! -f "$GUARD" ] || [ ! -x "$BINARY" ]; then
   echo "codebase-memory-mcp: pinned binary/guard is not installed in this checkout; see INSTALLATION.md" >&2
   exit 1
