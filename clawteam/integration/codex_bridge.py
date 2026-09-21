@@ -404,7 +404,15 @@ class CodexBridge:
                 "approvalPolicy": "on-request",
                 "approvalsReviewer": "user",
                 "sandbox": "workspace-write",
-                "developerInstructions": _supervisor_instructions(team, project_path),
+                "developerInstructions": _supervisor_instructions(team, project_path)
+                + (
+                    "\nThis session begins in read-only planning mode. Clarify only material unknowns, "
+                    "inspect efficiently, and return a concise plan with deliverables, owners, likely "
+                    "model tier, verification, risks, and user decisions. Do not attempt project writes "
+                    "until Company HQ explicitly changes the session to execution mode."
+                    if mode == "plan"
+                    else ""
+                ),
             }
             previous_thread = binding.get("threadId") if binding else None
             if isinstance(previous_thread, str) and previous_thread:
