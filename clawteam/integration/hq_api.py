@@ -6,6 +6,8 @@ from company_profile import load_profile, validate_profile, profile_path
 from clawteam.team.manager import TeamManager
 from clawteam.team.tasks import TaskStore
 from clawteam.team.models import TaskStatus
+from capability_router import apply_review, compact_packet, route_task
+from preflight_review import ReviewError, review_is_sufficient, review_plan
 from runtime_config import (
     demo_mode,
     health_snapshot,
@@ -171,17 +173,51 @@ def handle_post(handler,state,path,body):
             if task is None: raise ValueError('Task not found')
             handler._serve_json({'updated':True});return True
         if parts[1]!='runtime' or len(parts)!=4: raise ValueError('Unknown action')
-        client=bridge(state);action=parts[3]
+        action=parts[3]
+        if action=='route':
+            prompt=body.get('prompt','')
+            if not isinstance(prompt,str) or not prompt.strip() or len(prompt)>24000: raise ValueError('Enter a message of at most 24000 characters')
+            handler._serve_json(route_task(prompt.strip(),Path(project)));return True
+        client=bridge(state)
         if demo_mode() and action in ('start','send','approve'):
             raise ValueError('Model execution is disabled in model-free demo mode')
         if action in ('start','send'):
             prompt=body.get('prompt','')
             if not isinstance(prompt,str) or not prompt.strip() or len(prompt)>24000: raise ValueError('Enter a message of at most 24000 characters')
             if action=='start':
-                routing=json.loads(routing_path().read_text());model=body.get('model','auto')
-                if model=='auto':model=routing['preferred_supervisors'][0]['model']
+                routing=json.loads(routing_path().read_text());requested_model=body.get('model','auto')
+                plan=route_task(prompt.strip(),Path(project))
+                review=review_plan(plan,executor_family='openai',allow_model_calls=True)
+                if not review_is_sufficient(plan,review):
+                    reason=str(review.get('reason') or 'Independent preflight review blocked execution')[:1200]
+                    raise ValueError('Preflight review blocked execution: '+reason)
+                plan=apply_review(plan,review)
+                model=plan['supervisor']['codexModel'] if requested_model=='auto' else requested_model
                 if model not in routing['reviewed_codex_models']: raise ValueError('Choose a reviewed available Codex model')
-                result=client.start(name,project,prompt.strip(),model)
+                plan['supervisor']['selectedModel']=model
+                packet=compact_packet(plan)
+                execution_prompt=(
+                    prompt.strip()
+                    +'\n\n[COMPANY_HQ_REVIEWED_ROUTING_PACKET]\n'
+                    +packet
+                    +'\n[/COMPANY_HQ_REVIEWED_ROUTING_PACKET]\n'
+                    +'Follow this reviewed packet as the staffing/tool context. Spawn only useful independent roles listed there; '
+                    +'do not load unrelated skill catalogs or claim unavailable tools. Verify actual capabilities before use.'
+                )
+                result=client.start(name,project,execution_prompt,model)
+                client.record_event(name,'preflight.reviewed',{
+                    'text':'Routing plan reviewed before worker execution',
+                    'verdict':review.get('verdict'),
+                    'reviewerFamily':review.get('providerFamily'),
+                    'reviewerModel':review.get('model'),
+                    'crossFamily':bool(review.get('crossFamily')),
+                    'risk':plan.get('risk',{}).get('level'),
+                    'supervisorModel':model,
+                    'agents':[item.get('id') for item in plan.get('agents',[])],
+                    'skills':[item.get('id') for item in plan.get('skills',[])],
+                    'tools':[item.get('id') for item in plan.get('tools',[])],
+                })
+                result['routingPlan']=plan
             else:result=client.send(name,prompt.strip())
         elif action=='stop':result=client.stop(name)
         elif action=='approve':result=client.approve(name,body.get('requestId'),body.get('decision'))
