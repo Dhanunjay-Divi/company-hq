@@ -9,6 +9,7 @@ This public repository preserves the shared toolkit source built on 13–14 Sept
 - [Implementation handoff and acceptance criteria](docs/IMPLEMENTER-HANDOFF.md)
 - [What works and what remains](docs/STATUS.md)
 - [Architecture and source map](docs/ARCHITECTURE.md)
+- [Automatic routing, review, model tiers and token efficiency](docs/AUTOMATIC-ROUTING.md)
 - [New upstream candidates: ECC, gstack, Superpowers and the 40-repo list](docs/UPSTREAM-REVIEW.md)
 - [Reviewer instructions](docs/REVIEWER.md)
 - [Portable setup and isolation](docs/PORTABILITY.md)
