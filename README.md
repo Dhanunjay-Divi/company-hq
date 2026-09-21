@@ -51,15 +51,15 @@ python3 scripts/hq.py bootstrap
 
 Both commands keep runtime state outside this checkout (default: `~/.local/state/company-hq`, or `$XDG_STATE_HOME/company-hq`). They do not rewrite `HOME`/`CODEX_HOME`, copy authentication, start a provider in demo mode, or initialize the attached product repository. See [portable setup](docs/PORTABILITY.md).
 
-From the repository root, model-free checks include:
+From the repository root, run the complete model-free validation suite with:
 
 ```sh
-python3 -m unittest -v test_check_updates test_discover
-python3 -m unittest discover -s clawteam/integration -p 'test_*.py'
-python3 scripts/check_source_bundle.py
-python3 scripts/check_portability.py
-python3 scripts/hq.py health
+python3 scripts/hq.py check
 ```
+
+That command uses the system interpreter for root utilities and the pinned
+`clawteam/venv` interpreter for integration tests, then checks the source
+bundle, portability boundaries and truthful capability status.
 
 The original live installation remains a separate deployment target. Running this checkout does not replace it.
 
