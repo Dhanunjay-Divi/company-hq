@@ -260,6 +260,8 @@ def main() -> int:
     def terminate(signum, frame):
         raise KeyboardInterrupt
     signal.signal(signal.SIGTERM, terminate)
+    if hasattr(signal, "SIGBREAK"):
+        signal.signal(signal.SIGBREAK, terminate)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

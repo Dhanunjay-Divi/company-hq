@@ -399,6 +399,7 @@ def knowledge(project):
 
 
 _provider_hubs = {}
+_closing_provider_states = set()
 _provider_hubs_lock = threading.RLock()
 
 def bridge(state):
@@ -406,6 +407,8 @@ def bridge(state):
     from provider_hub import ProviderHub
     directory=(state / "runtime").resolve()
     with _provider_hubs_lock:
+        if directory in _closing_provider_states:
+            raise ValueError("Company HQ is shutting down. Reopen it before starting more work.")
         if directory not in _provider_hubs:
             _provider_hubs[directory]=ProviderHub(directory,codex=get_codex_bridge(directory))
         return _provider_hubs[directory]
@@ -413,7 +416,9 @@ def bridge(state):
 def shutdown_runtime(state):
     # Shutdown must not create a new runtime directory or provider connection.
     with _provider_hubs_lock:
-        hub=_provider_hubs.pop((state / "runtime").resolve(),None)
+        directory=(state / "runtime").resolve()
+        _closing_provider_states.add(directory)
+        hub=_provider_hubs.pop(directory,None)
     if hub is not None: hub.shutdown_all()
 
 def native_client(client,team):

@@ -284,6 +284,17 @@ class SecureBoardIntegrationTest(unittest.TestCase):
 
 
 class TeamUILifecycleTest(unittest.TestCase):
+    def test_windows_stop_uses_graceful_process_group_signal(self):
+        import runpy
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        module=runpy.run_path(str(TEAM_UI),run_name='hq_lifecycle_test')
+        choose=module['stop_signal']
+        with patch.dict(choose.__globals__,{'os':SimpleNamespace(name='nt'),'signal':SimpleNamespace(CTRL_BREAK_EVENT=123,SIGTERM=999)}):
+            self.assertEqual(choose(),123)
+        with patch.dict(choose.__globals__,{'os':SimpleNamespace(name='posix'),'signal':SimpleNamespace(SIGTERM=15)}):
+            self.assertEqual(choose(),15)
+
     def test_start_reuse_status_and_stop_in_fixture_scope(self):
         with tempfile.TemporaryDirectory(prefix="clawteam-ui-fixture-") as temp:
             env = os.environ.copy()

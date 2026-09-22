@@ -1,6 +1,7 @@
 """Real browser + HTTP API + synthetic JSONL process. No real model calls."""
 from pathlib import Path
 import base64
+import faulthandler
 import hashlib
 import json
 import os
@@ -16,6 +17,7 @@ ROOT = Path(__file__).resolve().parents[2]
 OUT = Path(os.environ.get('HQ_EVIDENCE_DIR') or tempfile.mkdtemp(prefix='hq-evidence-')).resolve()
 OUT.mkdir(parents=True, exist_ok=True)
 errors = []
+faulthandler.dump_traceback_later(90, repeat=True)
 PNG = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLJ7wAAAABJRU5ErkJggg==')
 
 
@@ -90,6 +92,7 @@ with tempfile.TemporaryDirectory(prefix='hq-browser-') as td:
 
             page.route('**/api/providers**', provider_route)
             page.route('**/api/folders/pick', picker_route)
+            print('acceptance: open',flush=True)
             page.goto(url)
             expect(page.get_by_role('heading', name='What are we making today?')).to_be_visible()
             expect(page.get_by_label('Direction for the team')).to_be_visible()
@@ -97,6 +100,7 @@ with tempfile.TemporaryDirectory(prefix='hq-browser-') as td:
             assert page.locator('.traffic-lights').count() == 0, 'Duplicate fake window controls'
             page.screenshot(path=str(OUT / 'chat-home.png'), full_page=True, animations='disabled')
 
+            print('acceptance: settings',flush=True)
             page.get_by_role('button', name='Settings', exact=True).click()
             expect(page.get_by_role('heading', name='Connections and allowance')).to_be_visible()
             expect(page.get_by_text('5-hour account allowance', exact=False)).to_be_visible()
@@ -135,6 +139,7 @@ with tempfile.TemporaryDirectory(prefix='hq-browser-') as td:
             expect(page.get_by_text('41% remaining', exact=True)).to_be_visible()
             page.screenshot(path=str(OUT / 'settings.png'), full_page=True, animations='disabled')
 
+            print('acceptance: tasks',flush=True)
             # Provider tasks are native read-only metadata; opening a summary never starts a turn.
             page.get_by_role('button', name='Provider tasks', exact=True).click()
             expect(page.get_by_role('heading', name='Provider tasks')).to_be_visible()
@@ -145,6 +150,7 @@ with tempfile.TemporaryDirectory(prefix='hq-browser-') as td:
             expect(page.get_by_text('Fixture task preview', exact=True)).to_be_visible()
             page.get_by_label('Close task summary').click()
 
+            print('acceptance: folders',flush=True)
             # Folder picking is optional and cancellation leaves the first-message draft intact.
             page.get_by_role('button', name='Chat', exact=True).click()
             page.get_by_role('button', name='Add project', exact=True).click()
@@ -175,6 +181,7 @@ with tempfile.TemporaryDirectory(prefix='hq-browser-') as td:
             expect(page.get_by_text(re.compile(r'1,000,000 reported tokens'))).to_be_visible()
             page.get_by_role('button', name='Chat', exact=True).click()
 
+            print('acceptance: plan',flush=True)
             # Legacy plan-first remains an explicit choice, with both plan and native write approvals.
             page.get_by_label('Work mode').select_option('plan')
             page.get_by_role('button', name='Choose model', exact=True).click()
@@ -200,6 +207,7 @@ with tempfile.TemporaryDirectory(prefix='hq-browser-') as td:
             expect(page.get_by_role('img', name='fixture.png')).to_be_visible(timeout=15000)
             assert urllib.request.urlopen(image_url, timeout=5).read() == PNG
 
+            print('acceptance: permissions',flush=True)
             # Native questions, permission grants, and elicitation forms stay in the current provider turn.
             page.get_by_label('Direction for the team').fill('NATIVE_REQUESTS_TEST')
             page.get_by_role('button', name='Send message', exact=True).click()
@@ -215,6 +223,7 @@ with tempfile.TemporaryDirectory(prefix='hq-browser-') as td:
             page.get_by_role('button', name='Send response', exact=True).click()
             expect(page.get_by_text('Native interaction fixture passed', exact=True)).to_be_visible(timeout=15000)
 
+            print('acceptance: full access',flush=True)
             # Full access is an explicit new-chat selection, persisted as full and sent as native dangerFullAccess.
             page.get_by_role('button', name='New chat', exact=False).click()
             expect(page.get_by_label('Work mode')).to_have_value('plan')

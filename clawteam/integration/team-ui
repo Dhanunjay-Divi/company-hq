@@ -131,12 +131,18 @@ def status() -> int:
     return 1
 
 
+def stop_signal():
+    # The child owns a new Windows process group; CTRL_BREAK permits cleanup.
+    # os.kill(SIGTERM) on Windows is TerminateProcess and skips finally blocks.
+    return signal.CTRL_BREAK_EVENT if os.name == "nt" else signal.SIGTERM
+
+
 def stop() -> int:
     current = tracked()
     if not current:
         print("ClawTeam metadata board is not running")
         return 0
-    os.kill(current[0], signal.SIGTERM)
+    os.kill(current[0], stop_signal())
     deadline=time.monotonic()+15
     while _pid_exists(current[0]):
         # Orphaned Linux children can briefly remain as reaped-by-init zombies.

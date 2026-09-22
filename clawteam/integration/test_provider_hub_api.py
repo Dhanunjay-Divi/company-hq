@@ -23,6 +23,25 @@ class ProviderHubAPITest(unittest.TestCase):
             hub.shutdown_all.assert_called_once()
             self.assertFalse(state.exists())
 
+    def test_inflight_handler_cannot_recreate_hub_during_shutdown(self):
+        import threading
+        from unittest.mock import Mock
+        entered=threading.Event();release=threading.Event()
+        with tempfile.TemporaryDirectory() as temp,patch.dict(hq_api._provider_hubs,{},clear=True):
+            state=Path(temp);directory=(state/'runtime').resolve()
+            hub=Mock();hub.shutdown_all.side_effect=lambda:(entered.set(),release.wait(3))
+            hq_api._provider_hubs[directory]=hub
+            closing=threading.Thread(target=hq_api.shutdown_runtime,args=(state,));closing.start()
+            try:
+                self.assertTrue(entered.wait(2))
+                with patch('provider_hub.ProviderHub') as constructor:
+                    with self.assertRaisesRegex(ValueError,'shutting down'):hq_api.bridge(state)
+                    constructor.assert_not_called()
+                self.assertNotIn(directory,hq_api._provider_hubs)
+            finally:release.set();closing.join(3)
+            self.assertFalse(closing.is_alive())
+            with self.assertRaisesRegex(ValueError,'shutting down'):hq_api.bridge(state)
+
     def test_claude_selected_via_route_then_restart_keeps_provider_and_history(self):
         with tempfile.TemporaryDirectory() as temp:
             state=Path(temp)/'state';project=Path(temp)/'project';project.mkdir()
