@@ -97,7 +97,6 @@ runpy.run_path(str(integration / 'secure_board.py'), run_name='__main__')
 
 
 def build_bundle(*, dmg: bool) -> None:
-    run(['npm', 'run', 'build'], cwd=UI)
     sidecar = build_sidecar()
     if not sidecar.is_file() or not os.access(sidecar, os.X_OK):
         raise RuntimeError('backend sidecar is not executable')
@@ -111,6 +110,7 @@ def main() -> int:
     parser.add_argument('--dmg', action='store_true', help='request Tauri all bundle targets, including DMG when available')
     parser.add_argument('--sidecar-only', action='store_true')
     args = parser.parse_args()
+    run([sys.executable, 'build-source.py'], cwd=UI)
     run(['npm', 'run', 'build'], cwd=UI)
     if args.sidecar_only:
         build_sidecar()

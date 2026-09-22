@@ -38,28 +38,59 @@ function errorMessage(code?: string) {
 
 /** Local-only Web Speech input. It never falls back to a cloud recognizer. */
 export default function VoiceInput({ onTranscript, disabled = false, onError }: VoiceInputProps) {
-  const [available, setAvailable] = useState(false);
-  const [checking, setChecking] = useState(true);
+  const supported = Boolean(localConstructor());
+  const [available, setAvailable] = useState<boolean | null>(null);
+  const [checking, setChecking] = useState(false);
+  const checkingRef = useRef(false);
+  const mounted = useRef(true);
+  const disabledRef = useRef(disabled);
+  disabledRef.current = disabled;
   const [listening, setListening] = useState(false);
   const recognition = useRef<LocalRecognition | null>(null);
   const finalIndexes = useRef(new Set<number>());
   const callbacks=useRef({onTranscript,onError});callbacks.current={onTranscript,onError};
 
   useEffect(() => {
-    let active = true;
-    const Constructor = localConstructor();
-    if (!Constructor?.available) { setChecking(false); return; }
-    Constructor.available({ langs: [navigator.language || 'en-US'], processLocally: true })
-      .then(status => { if (active) setAvailable(status === 'available'); })
-      .catch(() => { if (active) setAvailable(false); })
-      .finally(() => { if (active) setChecking(false); });
-    return () => { active = false; const instance=recognition.current;if(instance){instance.onresult=null;instance.onerror=null;instance.onend=null;instance.stop();}recognition.current = null; };
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      const instance = recognition.current;
+      if (instance) {
+        instance.onresult = null; instance.onerror = null; instance.onend = null;
+        instance.stop();
+      }
+      recognition.current = null;
+    };
   }, []);
 
   function stop() { recognition.current?.stop(); }
-  function start() {
+  async function start() {
     const Constructor = localConstructor();
-    if (!Constructor || !available || disabled) { onError('Local voice input is unavailable in this browser.'); return; }
+    if (!Constructor?.available || disabledRef.current || checkingRef.current) return;
+    checkingRef.current = true;
+    setChecking(true);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      // Query native speech only after a deliberate click: an exposed API does
+      // not guarantee a working on-device service in an embedded browser.
+      const status = await Promise.race([
+        Constructor.available({ langs: [navigator.language || 'en-US'], processLocally: true }),
+        new Promise<string>((_, reject) => { timer = setTimeout(() => reject(Error('timeout')), 5000); }),
+      ]);
+      if (!mounted.current || disabledRef.current) return;
+      setAvailable(status === 'available');
+      if (status !== 'available') {
+        callbacks.current.onError('On-device speech for this language is not installed or available. You can keep typing; HQ will not use a cloud recognizer.');
+        return;
+      }
+    } catch {
+      if (mounted.current) callbacks.current.onError('Local speech support could not be checked. Your typed draft is unchanged.');
+      return;
+    } finally {
+      clearTimeout(timer);
+      checkingRef.current = false;
+      if (mounted.current) setChecking(false);
+    }
     const instance = new Constructor();
     recognition.current = instance;
     finalIndexes.current.clear();
@@ -80,9 +111,9 @@ export default function VoiceInput({ onTranscript, disabled = false, onError }: 
     try { instance.start(); setListening(true); } catch { recognition.current = null; setListening(false); onError('Local voice input could not start. Your typed draft is unchanged.'); }
   }
 
-  const unavailable = checking ? 'Checking local voice support…' : 'Local voice input is unavailable in this browser.';
+  const unavailable = checking ? 'Checking local voice support…' : !supported ? 'Local voice input is unavailable in this browser.' : available === false ? 'On-device speech for this language is unavailable. Click to check again.' : 'Click to check local voice support. No cloud recognition.';
   return <span className="voice-input">
-    <button type="button" className="attach-button" aria-label={listening ? 'Stop voice input' : 'Start local voice input'} aria-pressed={listening} disabled={disabled || !available || checking} title={available ? 'Local-only voice input' : unavailable} onClick={listening ? stop : start}>
+    <button type="button" className="attach-button" aria-label={listening ? 'Stop voice input' : 'Start local voice input'} aria-pressed={listening} disabled={disabled || !supported || checking} title={available ? 'Local-only voice input' : unavailable} onClick={listening ? stop : start}>
       {listening ? <Square size={15} /> : <Mic size={15} />}<span>{listening ? 'Stop voice' : 'Voice'}</span>
     </button>
     <span className="sr-only" role="status" aria-live="polite">{listening ? 'Listening locally.' : available ? 'Local voice input ready.' : unavailable}</span>
