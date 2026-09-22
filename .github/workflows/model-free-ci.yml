@@ -44,6 +44,12 @@ jobs:
           npm ci --ignore-scripts
           npm run build
 
+      - name: Install checksum-verified task and output engines
+        run: python scripts/install_engines.py
+
+      - name: Test durable draft helpers
+        run: node --test tests/test_draft_storage.mjs tests/test_native_team_view.mjs
+
       - name: Run root model-free tests
         run: python -m unittest -v test_check_updates test_discover test_provider_registry
 

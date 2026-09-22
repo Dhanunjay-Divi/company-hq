@@ -75,6 +75,7 @@ export interface CompanyProfile {
 }
 
 export interface NativeRuntimeStatus {
+  children?: {threadId:string;status?:string;stale?:boolean;model?:string}[];
   state?: 'offline' | 'starting' | 'idle' | 'running' | 'awaiting_approval' | 'stopping' | 'error' | string;
   model?: string;
   threadId?: string;
@@ -306,7 +307,9 @@ export function adaptClawTeamGraph(
     const currentTask = tasks.find((task) => task.status === 'in_progress' && record.aliases.has(task.owner ?? ''));
     const depth = hierarchyDepth(record, byKey);
     const isLead = record.key === lead?.key;
-    const liveLead = isLead ? leadRuntimePresentation(runtime) : null;
+    const child=runtime?.children?.find(worker=>worker.threadId===record.member.agentId);
+    const childState=child?.status==='active'?'running':child?.status==='pendingInit'?'starting':child?.status==='systemError'?'error':child?.status;
+    const liveLead = isLead ? leadRuntimePresentation(runtime) : child&&!child.stale ? leadRuntimePresentation({state:childState,model:child.model}) : null;
     nodes.push({
       id: `${MEMBER_PREFIX}${record.key}`,
       kind: isLead ? 'lead' : 'member',

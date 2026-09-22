@@ -20,8 +20,8 @@ export function conversationMessages(events:Data[]):Message[] {
   }
   return messages;
 }
-export default function ChatView({events,runtime,empty,composer,onDraft,busy,demo,onApproval,onRespond}:{
-  events:Data[];runtime:Data;empty:boolean;composer:React.ReactNode;onDraft:(text:string)=>void;
+export default function ChatView({events,runtime,empty,composer,onDraft,busy,demo,onApproval,onRespond,historyControl}:{
+  historyControl?:React.ReactNode;events:Data[];runtime:Data;empty:boolean;composer:React.ReactNode;onDraft:(text:string)=>void;
   busy:boolean;demo:boolean;onApproval:(id:string,decision:string)=>void;onRespond:(id:string,response:Data)=>unknown;
 }) {
   const scroll=useRef<HTMLDivElement>(null); const follow=useRef(true); const [atBottom,setAtBottom]=useState(true);
@@ -39,15 +39,17 @@ export default function ChatView({events,runtime,empty,composer,onDraft,busy,dem
     </div></div>:<>
       <div className="conversation-scroll" ref={scroll} onScroll={()=>{const el=scroll.current;if(el){follow.current=el.scrollHeight-el.scrollTop-el.clientHeight<100;setAtBottom(follow.current)}}}>
         <div className="message-list" role="log" aria-label="Conversation" aria-live="polite" aria-relevant="additions text">
+          {historyControl}
           {demo&&<p className="fixture-notice">Synthetic demo · no provider calls</p>}
           {messages.map((message,index)=><article className={`chat-message ${message.role}`} key={message.key}>
             {message.role==='assistant'&&messages[index-1]?.role!=='assistant'&&<div className="message-byline"><span className="mini-mark"><Layers3 size={15}/></span>Supervisor<span>{runtime.model?.replace('gpt-','GPT ').replaceAll('-',' ') || 'Your team'}</span></div>}
             <div className="message-body">{message.role==='user'?<>{message.text}{message.attachments?.length ? <div className="message-attachments">{message.attachments.map(attachment => <img key={attachment.id} src={safeAttachmentUrl(attachment.url)} alt={attachment.name || 'Attached image'} />)}</div> : null}</>:<Markdown skipHtml components={{a:({children,...props})=><a {...props} target="_blank" rel="noopener noreferrer">{children}</a>,img:({alt})=><span>{alt?`[Image: ${alt}]`:'[Image]'}</span>}}>{message.text}</Markdown>}</div>
           </article>)}
-          {working&&<div className="thinking-indicator" role="status"><span/><span/><span/>{busy?'Sending your message…':runtime.state==='starting'?'Connecting to Codex…':runtime.state==='stopping'?'Stopping…':'Working on it…'}</div>}
+          {working&&<div className="thinking-indicator" role="status"><span/><span/><span/>{busy?'Sending your message…':runtime.state==='starting'?'Connecting to your provider…':runtime.state==='stopping'?'Stopping…':'Working on it…'}</div>}
           <NativeRequests requests={runtime.pendingApprovals||[]} busy={busy || demo} onApproval={onApproval} onRespond={onRespond}/>
+          {runtime.historyWarning&&<p role="status">{runtime.historyWarning}</p>}
           {runtime.error&&<p className="chat-runtime-error" role="alert">{runtime.error}</p>}
-          {!messages.length&&!working&&<p className="chat-recovery">This chat is ready to continue. Earlier messages may be unavailable after a server restart.</p>}
+          {!messages.length&&!working&&<p className="chat-recovery">This chat is ready to continue. Send a message to pick up where you left off.</p>}
         </div>
       </div>
       {!atBottom&&<button className="jump-to-latest" aria-label="Jump to latest message" onClick={()=>{follow.current=true;scroll.current?.scrollTo({top:scroll.current.scrollHeight,behavior:'instant'});setAtBottom(true)}}><ArrowDown size={16}/></button>}

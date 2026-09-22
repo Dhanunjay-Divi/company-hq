@@ -29,6 +29,9 @@ def _configure_environment() -> Path:
 
 DATA_DIR = _configure_environment()
 
+from task_authority import install_task_authority  # noqa: E402
+install_task_authority()
+
 from clawteam.board.collector import BoardCollector  # noqa: E402
 from clawteam.board.server import BoardHandler, TeamSnapshotCache  # noqa: E402
 from clawteam.events.bus import EventBus  # noqa: E402
@@ -140,13 +143,13 @@ class SecureBoardHandler(BoardHandler):
             self.send_error(400, "Invalid Content-Length")
             return
         path = urlparse(self.path).path
-        max_body = 9 * 1024 * 1024 if path.startswith('/api/attachments/') else 65536
+        max_body = 9 * 1024 * 1024 if path.startswith('/api/attachments/') else 2 * 1024 * 1024 if path.startswith('/api/files/') else 65536
         if length <= 0 or length > max_body:
             self.send_error(413, "Request body exceeds the allowed size")
             return
 
         path = urlparse(self.path).path
-        if path.startswith(('/api/runtime/','/api/knowledge/','/api/workspaces','/api/task/','/api/budget/','/api/providers/','/api/folders/','/api/attachments/','/api/access/')):
+        if path.startswith(('/api/runtime/','/api/knowledge/','/api/workspaces','/api/task/','/api/budget/','/api/providers/','/api/folders/','/api/attachments/','/api/access/','/api/plans/', '/api/files/','/api/drafts/')):
             from hq_api import handle_post
             try:
                 payload = json.loads(self.rfile.read(length).decode('utf-8'))
@@ -247,6 +250,8 @@ def main() -> int:
     args = parser.parse_args()
     if not 0 <= args.port <= 65535:
         parser.error("port must be between 0 and 65535")
+    from instance_lock import InstanceLock
+    instance_lock=InstanceLock(DATA_DIR).acquire()
     server = make_server(args.port)
     host, port = server.server_address
     print(f"ClawTeam metadata board: http://{host}:{port}", flush=True)
@@ -260,9 +265,10 @@ def main() -> int:
     except KeyboardInterrupt:
         pass
     finally:
-        from codex_bridge import get_codex_bridge
-        get_codex_bridge(DATA_DIR / "runtime").shutdown_all()
+        from hq_api import bridge
+        bridge(DATA_DIR).shutdown_all()
         server.server_close()
+        instance_lock.close()
     return 0
 
 

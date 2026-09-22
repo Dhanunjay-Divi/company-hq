@@ -25,9 +25,12 @@
     }
   },
   "bundle": {
-    "active": false,
+    "active": true,
     "targets": "all",
     "category": "DeveloperTool",
-    "shortDescription": "Local AI project team cockpit"
+    "shortDescription": "Local AI project team cockpit",
+    "resources": [
+      "resources/backend/company-hq-backend-aarch64-apple-darwin"
+    ]
   }
 }

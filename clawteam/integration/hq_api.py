@@ -4,7 +4,7 @@ from urllib.parse import unquote, urlparse, parse_qs
 import json, os, re, select, subprocess, tempfile, threading, time, uuid
 from company_profile import load_profile, validate_profile, profile_path
 from clawteam.team.manager import TeamManager
-from clawteam.team.tasks import TaskStore
+from task_authority import TaskStore
 from clawteam.team.models import TaskStatus
 from runtime_config import (
     demo_mode,
@@ -159,9 +159,9 @@ def decisions():
             {
                 "area": "Supervisor and model routing",
                 "primary": "Company HQ router over authorized native runtimes",
-                "why": "Keeps provider account homes intact and starts from the smallest capable reviewed tier.",
+                "why": "Keeps provider account homes intact, uses the reviewed flagship supervisor, and assigns bounded work to economical capable workers.",
                 "fallback": "Escalate one tier only after evidence, risk or failure justifies it.",
-                "notChosen": "Silent billing-route switching, copied auth, or flagship-by-default staffing.",
+                "notChosen": "Silent billing-route switching, copied auth, or putting the flagship model in every worker role.",
                 "evidence": f"{len(routing.get('reviewed_codex_models', []))} reviewed Codex model labels in routing policy.",
             },
             {
@@ -174,11 +174,11 @@ def decisions():
             },
             {
                 "area": "Task and work authority",
-                "primary": "Current ClawTeam compatibility; Beads target migration",
-                "why": "The live UI and tests already exercise ClawTeam safely, while Beads better matches DAG/claim/readiness needs.",
+                "primary": "Beads task authority with ClawTeam wire compatibility",
+                "why": "Beads supplies dependencies, readiness and atomic claims; existing board and inbox clients keep their familiar task model.",
                 "fallback": "Import ClawTeam records read-only during migration.",
                 "notChosen": "Two canonical task databases at the same time.",
-                "evidence": "Browser acceptance verifies current ClawTeam-backed flow; Beads remains a target contract.",
+                "evidence": "Migration, dependencies, claims, close/restart and unchanged legacy-source tests pass using the pinned Beads binary.",
             },
             {
                 "area": "Memory and decisions",
@@ -214,8 +214,8 @@ def decisions():
             },
             {
                 "area": "Runtime language boundary",
-                "primary": "Python control plane now; Rust for proven runtime hot spots",
-                "why": "Python integrates fastest with Codex, ClawTeam, evidence scripts and browser acceptance while the product contract is still moving.",
+                "primary": "Rust desktop lifecycle with a frozen Python control plane",
+                "why": "Rust owns the desktop window and backend process lifecycle. The frozen control plane integrates provider protocols and tested project boundaries without requiring a user Python installation.",
                 "fallback": "Port process supervision, file watching, sandboxed command running, packaged desktop helpers or high-volume indexing when benchmarks justify it.",
                 "notChosen": "A C/Rust rewrite based on preference rather than measured bottlenecks and equal lifecycle tests.",
                 "evidence": "Architecture docs already reserve Rust/TypeScript for the runtime boundary; current checks pass on the Python integration.",
@@ -323,7 +323,11 @@ def save_profile(state, name, profile, names):
 
 
 def memory_call(project, operations):
-    proc = subprocess.Popen([str(ruflo_launcher())], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+    from runtime_config import node_executable
+    node=node_executable()
+    env=dict(os.environ)
+    if node: env['COMPANY_HQ_NODE']=str(node)
+    proc = subprocess.Popen([str(ruflo_launcher())], env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
     seq = 0
     def rpc(method, params):
         nonlocal seq
@@ -394,13 +398,47 @@ def knowledge(project):
         result = memory_call(project,read);_memory_cache[project]=(time.monotonic(),result);return result
 
 
+_provider_hubs = {}
+_provider_hubs_lock = threading.RLock()
+
 def bridge(state):
     from codex_bridge import get_codex_bridge
-    return get_codex_bridge(state / "runtime")
+    from provider_hub import ProviderHub
+    directory=(state / "runtime").resolve()
+    with _provider_hubs_lock:
+        if directory not in _provider_hubs:
+            _provider_hubs[directory]=ProviderHub(directory,codex=get_codex_bridge(directory))
+        return _provider_hubs[directory]
+
+def native_client(client,team):
+    from provider_hub import ProviderHub
+    if isinstance(client,ProviderHub):
+        if client.status(team).get('provider') != 'codex':
+            raise ValueError('This control uses the Codex native runtime. Ask Claude in chat to use its native tools and permissions.')
+        return client.codex
+    return client
 
 
 def handle_get(handler, state):
     path = urlparse(handler.path).path
+    if path.startswith(('/api/files/', '/api/drafts/')):
+        try:
+            from workspace_files import listing, read, draft
+            parts = path.strip('/').split('/')
+            if len(parts) != 3: raise ValueError('Invalid project route.')
+            name = unquote(parts[2])
+            if parts[1] == 'drafts':
+                if name != 'new': project_for(state, name)
+                result = draft(state, name)
+            else:
+                project = project_for(state, name)
+                query = parse_qs(urlparse(handler.path).query, keep_blank_values=True)
+                if set(query) - {'path', 'kind'}: raise ValueError('Invalid file filters.')
+                relative = query.get('path', [''])[0]
+                result = read(project, relative) if query.get('kind', ['folder'])[0] == 'file' else listing(project, relative)
+            handler._serve_json(result)
+        except (ValueError, OSError) as exc: handler._json_error(400, str(exc))
+        return True
     if path == '/api/health':
         handler._serve_json(health_snapshot(state));return True
     if path == '/api/decisions':
@@ -421,12 +459,16 @@ def handle_get(handler, state):
         except Exception:
             handler._json_error(404, 'Image not found in this chat')
         return True
-    if path.startswith('/api/providers/codex/tasks'):
+    if path.startswith(('/api/providers/codex/tasks','/api/providers/claude/tasks')):
         try:
             from provider_connections import connections
             parts = path.strip('/').split('/')
             query = parse_qs(urlparse(handler.path).query, keep_blank_values=True)
-            if parts == ['api', 'providers', 'codex', 'tasks']:
+            provider=parts[2]
+            if provider=='claude':
+                import claude_tasks as task_service
+            else: task_service=connections()
+            if parts == ['api', 'providers', provider, 'tasks']:
                 allowed = {'cursor', 'search', 'archived', 'includeAgents'}
                 if set(query) - allowed or any(len(values) != 1 for values in query.values()):
                     raise ValueError('Invalid task filters.')
@@ -434,10 +476,10 @@ def handle_get(handler, state):
                     value = query.get(key, ['false'])[0]
                     if value not in ('true', 'false'): raise ValueError('Invalid task filter.')
                     return value == 'true'
-                result = connections().list_tasks(cursor=query.get('cursor', [None])[0],
+                result = task_service.list_tasks(cursor=query.get('cursor', [None])[0],
                     search=query.get('search', [''])[0], archived=flag('archived'), include_agents=flag('includeAgents'))
-            elif len(parts) == 5 and parts[:4] == ['api', 'providers', 'codex', 'tasks'] and not query:
-                result = connections().read_task(unquote(parts[4]))
+            elif len(parts) == 5 and parts[:4] == ['api', 'providers', provider, 'tasks'] and not query:
+                result = task_service.read_task(unquote(parts[4]))
             else: raise ValueError('Invalid task route.')
             handler._serve_json(result)
         except Exception:
@@ -462,6 +504,16 @@ def handle_get(handler, state):
         if len(parts)!=4: raise ValueError('Unknown runtime route')
         name=unquote(parts[2]); project_for(state,name)
         if parts[3]=='status': result=bridge(state).status(name)
+        elif parts[3]=='history':
+            from transcript_archive import TranscriptArchive
+            query=parse_qs(urlparse(handler.path).query)
+            before=int(query['before'][0]) if query.get('before') else None
+            result=TranscriptArchive(state/'runtime').page(name,before)
+        elif parts[3]=='workers': result=bridge(state).workers(name)
+        elif parts[3]=='evidence':
+            from runtime_actions import evidence
+            query=parse_qs(urlparse(handler.path).query)
+            result=evidence(state,name,project_for(state,name),query.get('id',[None])[0],int(query.get('offset',['0'])[0]))
         elif parts[3]=='tools': result=bridge(state).tools(name)
         elif parts[3]=='events':
             after=int(parse_qs(urlparse(handler.path).query).get('after',['0'])[0]);result=bridge(state).events(name,max(0,after))
@@ -473,6 +525,43 @@ def handle_get(handler, state):
 
 
 def handle_post(handler,state,path,body):
+    if path.startswith('/api/plans/'):
+        try:
+            from workflow_plan import WorkflowPlans
+            parts = path.strip('/').split('/')
+            if len(parts) != 4 or parts[3] not in ('preview','apply') or not isinstance(body,dict):
+                raise ValueError('Unknown plan action.')
+            if set(body) - {'plan','requestId'}: raise ValueError('Unsupported plan fields.')
+            name=unquote(parts[2]); project_for(state,name)
+            team=TeamManager.get_team(name)
+            members=[member.name for member in team.members]
+            plans=WorkflowPlans(state)
+            with workspace_operation_lock(name):
+                if parts[3]=='preview': result=plans.preview(name,body.get('plan'),members)
+                else:
+                    if demo_mode(): raise ValueError('Plan import is disabled in demo mode.')
+                    result=plans.apply(name,body.get('requestId'),body.get('plan'),members)
+            handler._serve_json(result)
+        except (ValueError,OSError) as exc: handler._json_error(400,str(exc))
+        return True
+    if path.startswith(('/api/files/', '/api/drafts/')):
+        try:
+            from workspace_files import write, draft
+            parts = path.strip('/').split('/')
+            if len(parts) != 3 or not isinstance(body, dict): raise ValueError('Invalid project request.')
+            name = unquote(parts[2])
+            if parts[1] == 'drafts':
+                if name != 'new': project_for(state, name)
+                result = draft(state, name, body)
+            else:
+                project = project_for(state, name)
+                status = bridge(state).status(name)
+                if demo_mode() or status.get('mode') != 'execute': raise ValueError('Enable workspace or full access before editing files.')
+                if set(body) != {'path', 'text', 'revision'}: raise ValueError('Invalid file edit.')
+                result = write(project, body['path'], body['text'], body['revision'])
+            handler._serve_json(result)
+        except (ValueError, OSError) as exc: handler._json_error(400, str(exc))
+        return True
     if path.startswith('/api/attachments/'):
         try:
             parts = path.strip('/').split('/')
@@ -576,9 +665,17 @@ def handle_post(handler,state,path,body):
             attachments = resolve(state, name, body.get('attachmentIds', []))
             image_options = {'attachments': attachments} if attachments else {}
             if action=='start':
-                routing=json.loads(routing_path().read_text());model=body.get('model','auto')
-                if model=='auto':model=_default_supervisor_model(routing)
-                if model not in routing['reviewed_codex_models']: raise ValueError('Choose a reviewed available Codex model')
+                routing=json.loads(routing_path().read_text());model=body.get('model','auto');provider=body.get('provider','codex')
+                if provider=='codex':
+                    if model=='auto':model=_default_supervisor_model(routing)
+                    if model not in routing['reviewed_codex_models']: raise ValueError('Choose a reviewed available Codex model')
+                elif provider=='claude':
+                    if not isinstance(model,str) or not model or len(model)>200 or model=='auto':
+                        raise ValueError('Check the Claude connection and choose a reported model.')
+                    # ProviderHub verifies this exact selection against the
+                    # official initialize response before sending any prompt.
+                    image_options['provider']='claude'
+                else: raise ValueError('This provider does not have a verified HQ execution adapter.')
                 with workspace_operation_lock(name):
                     project=project_for(state,name)
                     work_mode=body.get('workMode','plan')
@@ -597,6 +694,24 @@ def handle_post(handler,state,path,body):
         elif action=='stop':
             project_for(state,name)
             result=client.stop(name)
+        elif action=='worker-message':
+            project_for(state,name)
+            if demo_mode(): raise ValueError('Worker execution is disabled in demo mode.')
+            if set(body) != {'threadId', 'prompt'}: raise ValueError('Choose a worker and enter a message.')
+            result=client.send_worker(name,body['threadId'],body['prompt'])
+        elif action=='stop-workers':
+            project_for(state,name)
+            result=client.stop_workers(name)
+        elif action=='command':
+            project_for(state,name)
+            from runtime_actions import command
+            if set(body) != {'command'}: raise ValueError('Enter a terminal command.')
+            result=command(native_client(client,name),state,name,body['command'])
+        elif action=='tool-action':
+            project_for(state,name)
+            from runtime_actions import tool_action
+            if set(body)-{'action','name','enabled'}: raise ValueError('Unsupported tool setting.')
+            result=tool_action(native_client(client,name),name,body.get('action'),body.get('name'),body.get('enabled'))
         elif action=='respond':
             project_for(state,name)
             if set(body) != {'requestId', 'response'}: raise ValueError('A request ID and response are required.')

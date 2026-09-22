@@ -22,6 +22,9 @@ os.environ["CLAWTEAM_TRANSPORT"] = "file"
 os.environ.setdefault("CLAWTEAM_USER", "local")
 os.environ.pop("CLAWTEAM_REDIS_URL", None)
 
+from task_authority import install_task_authority
+install_task_authority()
+
 from clawteam.events.bus import EventBus  # noqa: E402
 from clawteam.events import global_bus  # noqa: E402
 from clawteam.team import redis_wakeup  # noqa: E402

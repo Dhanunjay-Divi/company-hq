@@ -1,0 +1,68 @@
+{
+  "beads": {
+    "repository": "gastownhall/beads",
+    "version": "v1.3.0",
+    "binary": "bd",
+    "assets": {
+      "beads_1.3.0_android_arm64.tar.gz": {
+        "sha256": "19610e85d3c0e4f365c0ddeb792e525b34b76dbe4c059a3b03aea2942ea2db31",
+        "url": "https://github.com/gastownhall/beads/releases/download/v1.3.0/beads_1.3.0_android_arm64.tar.gz"
+      },
+      "beads_1.3.0_darwin_amd64.tar.gz": {
+        "sha256": "dfd8a6918bc2a58a0dbc727f7e4039766e323dfa15e4ccab250d640851e290d5",
+        "url": "https://github.com/gastownhall/beads/releases/download/v1.3.0/beads_1.3.0_darwin_amd64.tar.gz"
+      },
+      "beads_1.3.0_darwin_arm64.tar.gz": {
+        "sha256": "7cc77367d0b84c50243a1108bc1f73648699211257d414b917540bf868e6bb85",
+        "url": "https://github.com/gastownhall/beads/releases/download/v1.3.0/beads_1.3.0_darwin_arm64.tar.gz"
+      },
+      "beads_1.3.0_freebsd_amd64.tar.gz": {
+        "sha256": "89e340a02bec56f106faf6a759843175be3ad42f7b6a8df43b6442ae5ac14565",
+        "url": "https://github.com/gastownhall/beads/releases/download/v1.3.0/beads_1.3.0_freebsd_amd64.tar.gz"
+      },
+      "beads_1.3.0_linux_amd64.tar.gz": {
+        "sha256": "2f92b904ecf35b607e44dc5c39229173af69c54f1183e8d709f1773540cdcf3b",
+        "url": "https://github.com/gastownhall/beads/releases/download/v1.3.0/beads_1.3.0_linux_amd64.tar.gz"
+      },
+      "beads_1.3.0_linux_arm64.tar.gz": {
+        "sha256": "4ce9446a68edc13202b76c84a47d66fb3dad2787b6464c9522a108faf9c1c608",
+        "url": "https://github.com/gastownhall/beads/releases/download/v1.3.0/beads_1.3.0_linux_arm64.tar.gz"
+      },
+      "beads_1.3.0_windows_amd64.zip": {
+        "sha256": "fa4c72c5d27f68f906e89a759656b5a051b330088c4acc38fa445cbb561e5cdf",
+        "url": "https://github.com/gastownhall/beads/releases/download/v1.3.0/beads_1.3.0_windows_amd64.zip"
+      },
+      "beads_1.3.0_windows_arm64.zip": {
+        "sha256": "bfd28da754f6adc271b77a5a21e59ac4053a0d794bcbe4ff6d5d8effca1bcb0d",
+        "url": "https://github.com/gastownhall/beads/releases/download/v1.3.0/beads_1.3.0_windows_arm64.zip"
+      }
+    }
+  },
+  "rtk": {
+    "repository": "rtk-ai/rtk",
+    "version": "v0.49.0",
+    "binary": "rtk",
+    "assets": {
+      "rtk-aarch64-apple-darwin.tar.gz": {
+        "sha256": "bbbfebabb22686993a80da731aa4d5d35116fb8ae24abb00608efa028e13ae01",
+        "url": "https://github.com/rtk-ai/rtk/releases/download/v0.49.0/rtk-aarch64-apple-darwin.tar.gz"
+      },
+      "rtk-aarch64-unknown-linux-gnu.tar.gz": {
+        "sha256": "c8ea4b6560841e73157c134fd4a3293914c6ede42e786ee985cf491fde691ba7",
+        "url": "https://github.com/rtk-ai/rtk/releases/download/v0.49.0/rtk-aarch64-unknown-linux-gnu.tar.gz"
+      },
+      "rtk-x86_64-apple-darwin.tar.gz": {
+        "sha256": "d297388f4a8a786e79abe5f55b80451725bfe8c5835b4736c05d7cff4d68f627",
+        "url": "https://github.com/rtk-ai/rtk/releases/download/v0.49.0/rtk-x86_64-apple-darwin.tar.gz"
+      },
+      "rtk-x86_64-pc-windows-msvc.zip": {
+        "sha256": "cb971046598f0e8bd51f6c27780fcdd2c39a4c459a811bd95b0d77ba8c0d7c9f",
+        "url": "https://github.com/rtk-ai/rtk/releases/download/v0.49.0/rtk-x86_64-pc-windows-msvc.zip"
+      },
+      "rtk-x86_64-unknown-linux-musl.tar.gz": {
+        "sha256": "7278231dfd7e6a730a4ab7f847b195bcf02289c2d57622b0dab75a6411100c8f",
+        "url": "https://github.com/rtk-ai/rtk/releases/download/v0.49.0/rtk-x86_64-unknown-linux-musl.tar.gz"
+      }
+    }
+  }
+}

@@ -1,126 +1,38 @@
-# Verified baseline and current gaps
+# Verified features and release boundaries
 
-Updated 2026-09-21 UTC. Latest review: [HQ task visibility, access and dogfood findings](HQ-READINESS-AND-ACCESS.md). Previous verification: [connections, images and access acceptance](CONNECTIONS-AND-ACCESS-ACCEPTANCE.md).
+Updated 2026-09-21. This is a local development release for macOS Apple Silicon. The [release acceptance record](RELEASE-ACCEPTANCE.md) distinguishes automated checks, actual native runtime observations, and work that still requires a user's account or operating-system permission.
 
-## Complete and merged
+## Available in this release
 
-### Portable isolated baseline
+- A Rust/Tauri desktop application with a frozen Python backend and React interface. The core app runs without launching a terminal or keeping the source checkout available. State stays outside the application bundle.
+- Chat first, optional project attachment with a native folder chooser, Markdown replies, image attachments, persistent text drafts, and paged durable user/final-message history. Private state survives a changed loopback port. Attachment drafts must be selected again after reload.
+- Codex's native app-server for actual model work, permissions, questions, account windows, skills/MCP inventory, and native collaboration. The reviewed flagship is the default supervisor; specialist work can use smaller models.
+- A Claude Code adapter using the official stream/control protocol, native sign-in, provider-reported models, images, approvals and questions. The local CLI is installed; this machine is signed out. A real authenticated Claude turn is an outstanding account acceptance check.
+- Separate Codex and Claude native task metadata browsing. Opening a summary does not resume/import another task. Claude's SDK filters the current metadata page; archive and global-search parity are not claimed.
+- Canonical Beads tasks, dependency validation, blocked/readiness states, and resumable plan application. Legacy boards migrate on first mutation and remain backed up. Missing Beads after migration fails closed.
+- Actual Codex descendant reconciliation, worker direction/steering and stop requests. The team graph joins observed workers with recorded board data. Stale workers and incomplete discovery are explicitly marked; a sent direction is not an acknowledgment.
+- Project file tree, small UTF-8 editor with revision conflict detection, and a native Codex command runner that follows the chat's sandbox policy.
+- Supervisor client tools for the canonical plan/tasks, native commands, and raw-evidence recall. These are attached to newly created Codex chats. Existing older native chats may need a new chat to gain these tools.
+- RTK filtering of captured command output with complete bounded raw evidence and paging. Commands are executed once. Codebase Memory remains primary code intelligence; optional Graphify handles broad/cross-asset questions using an external output directory.
+- Scoped Ruflo memory remains available through the reviewed adapter. The desktop uses the existing shared adapter if present; that optional tool still requires its Node/Python dependencies. A second unverified memory backend is not enabled by default.
+- Per-chat automatic workspace access, Plan first, and explicit Full access. Provider, administrator and operating-system rules remain authoritative. Claude's normal permission mode is not an OS filesystem sandbox.
+- Reported account allowance percentages and reset times, separate local chat budget percentages, individual worker usage when reported, and best-effort interruption after the local threshold is observed.
+- Local-only voice input where the browser supports on-device speech recognition. Unsupported browsers clearly disable it; HQ does not silently send audio to another service.
 
-Milestone 1 is merged to main.
+## Boundaries users should know
 
-- Portable external runtime state and account/project boundaries.
-- Model-free synthetic demo.
-- Truthful capability/status UI.
-- Model-free CI on standard GitHub-hosted runners. Repository visibility is private.
-- Loopback/Host/Origin protections.
-- Existing provider account home preserved.
-- Cross-platform state/root checks and Windows-safe integration paths.
+Kimi, Z.ai, Grok, Cursor and Ollama are detected and explained, but this release does not pretend that installing their desktop applications supplies an HQ execution adapter. Their runtime/authentication contracts require separate implementations and acceptance. Codex and Claude use distinct accounts and expose different capabilities; HQ cannot add Claude models to Codex's own picker.
 
-Baseline merge:
-7c62305b27cd18ed49ce45399c0c6c85157e3ccd
+Browser control through HQ's Codex runtime has a real Chrome acceptance record. Codex's embedded browser was unavailable to that standalone runtime. Native desktop computer-control actions remain unverified. The user enables native plugins and grants macOS Accessibility/Screen Recording; Full access does not replace those grants. HQ can inspect supported tools, connect supported OAuth MCP servers and change exposed skill enablement, but it is not the complete native plugin marketplace or every provider's IDE.
 
-Post-merge readiness fixes:
-c903e6ad569efb7aa6e4e959a25467736b8ec330
+Pending provider approval handles cannot be fabricated after a process restart; HQ recovers the conversation and fails closed until the native runtime reissues the request. Complete cross-provider team messages, arbitrary cross-provider task resume, and exact child/account billing aggregation are not claimed.
 
-The final post-merge reviewer reported no major issues on the reviewed head.
+The token gate sees usage after the provider reports it. It cannot guarantee a hard spending limit. Earlier HQ-built features were useful but overran their local budgets; **cost-efficiency acceptance has not passed**. Creating more agents is not the default for a small task.
 
-### Best-of-all bakeoffs
+The macOS artifact is a local, unsigned/not-notarized development build. Public distribution needs Apple signing credentials. Windows/Linux desktop artifacts have not been built or tested. The Rust shell owns the window/backend lifecycle; the core Python services have not been rewritten in Rust without a measured reason.
 
-The architecture branch contains reproducible public model-free tests.
+## Reuse decisions
 
-- Code intelligence: run 35553804431.
-- Token efficiency: run 35553431498.
-- Beads task store: run 35554136836.
+[Best stack](BEST-STACK.md), [upstream review](UPSTREAM-REVIEW.md), and the [40-repository inventory](repository-candidates.json) retain the candidate analysis. This release uses Agent Teams AI's licensed graph/avatar code, native provider execution, Beads task authority, RTK output reduction, Codebase Memory, and scoped Ruflo. Graphify is optional. Graft and a second scheduler are outside the default path. Supermemory migration and Headroom activation remain conditional on measured benefit and isolation checks. Repository availability alone is not evidence of compatibility or savings.
 
-The resulting target architecture is in [BEST-STACK.md](BEST-STACK.md).
-
-## Working today
-
-- Company HQ React/Vite control UI and Agent Teams graph adapter.
-- Folder-optional chats with isolated managed workspaces, optional project chats, locked project binding, and a native folder picker. Picker unit tests and mocked UI cancellation/selection pass; the real OS chooser is not browser-automation verified.
-- Central Markdown conversation with native user/reply events, PNG/JPEG/WebP upload, paste, and drop (four images up to 6 MiB each), simplified Connections/model picker, reduced-motion-aware visual depth, and lazy-loaded team views.
-- Private bounded event replay across server restarts with monotonic native resume; user/final replies persisted, up to 500 events / 4 MiB per chat.
-- Native Codex app-server start/resume/steer/stop/approval bridge; new chats default to automatic workspace access, with Plan first and explicit per-chat Full access modes.
-- Current task/inbox compatibility through ClawTeam.
-- Guarded project-scoped Ruflo memory path, installed by setup with lifecycle scripts disabled.
-- Guarded Codebase Memory capability path, installed by setup from checksum-verified pinned release binary into ignored local state.
-- Demo mode that blocks provider/model execution.
-- Read-only native Codex task metadata and selected summaries, with explicit search/archive/agent filters; other providers remain unavailable.
-- Computer-access setup guide and fixed macOS settings links; these do not grant OS permissions.
-- Connections view that distinguishes installed desktop providers from a usable HQ adapter; Codex sign-in, catalog, and reported account windows are live.
-- Source/build/portability checks via the documented launcher.
-- Per-workspace reported-token action gate, plus one best-effort background interrupt after native usage reports exhaustion; late reporting can exceed the allowance.
-- Native questions, exact requested permission categories and bounded primitive MCP forms can be answered in chat; malformed/unsupported and stale requests fail closed.
-- Chat-first app shell with an optional activity panel; duplicate window chrome and empty startup counters removed.
-- Bounded live hierarchy acceptance: Astra supervisor, Terra lead, Luna QA specialist; parent links and completed turns independently verified through native thread/read.
-- Source-checkout Tauri desktop shell scaffold that starts/reuses the guarded local backend and opens Company HQ in a native window.
-
-## Architecture decisions now locked
-
-- Company HQ remains the only orchestration/control authority.
-- Beads is the target canonical task/DAG store.
-- Codebase Memory MCP is primary warm code intelligence.
-- Graphify is second-stage broad/cross-asset graph retrieval.
-- Graft leaves the default path.
-- RTK is first-stage command/test/log compression.
-- Headroom is conditional second-stage structured-context compression.
-- Supermemory local is the target cross-provider long-term memory backend, but
-  migration waits for an isolated acceptance fixture.
-- Ruflo remains important for selected goals/workflows/intelligence/cost/
-  observability/security capabilities, not provider auth or competing scheduling.
-- Provider-native subscription/coding runtimes are preferred over gateways.
-- The overall supervisor uses the reviewed flagship tier, currently Astra. Useful department leads prefer Terra/Sol; bounded leaf work can use Luna. Model catalog availability is not account entitlement or a quality benchmark.
-- Rust is the target machine/runtime core; TypeScript remains the UI/control
-  policy layer; Python is transitional/optional tooling rather than the desired
-  permanent launch dependency.
-
-## Not finished yet
-
-1. **Desktop packaging.** Current source serves a loopback web UI; it is not yet
-   packaged as the final Tauri-style desktop application.
-2. **Founder workflow.** Folderless chat, readable model/settings controls, central conversation, folder picking, and bounded image attachments now pass acceptance. Guided plan cards, integrated editor/terminal, plugin management, voice, and full desktop-plugin parity remain future work.
-3. **Beads migration.** Current UI/API task routes still use ClawTeam. Beads has
-   passed its external-state bakeoff but is not yet wired into Company HQ.
-4. **Provider-neutral runtime adapters.** Live execution is still Codex-only.
-   Claude/Kimi/GLM/Grok/etc. require separate verified adapters and authorized
-   account/quota acceptance.
-5. **Real worker lifecycle and messaging.** Native supervisor → lead → worker delegation passed one bounded live check. Nested child IDs, queued/delivered/
-   acknowledged states, wake behavior and cross-team messages are not yet
-   synchronized end to end.
-6. **Full execution recovery.** Bounded sanitized chat/event replay and native resume now pass restart tests. Complete transcripts beyond retention, pending-approval recovery, child-worker reconciliation and unsent drafts across app restarts remain incomplete.
-7. **Budget scope beyond the local gate.** Company HQ now enforces a
-   per-workspace reported-token action gate for start/send/execute/approval
-   boundaries. Account-wide quota, billed spend, guaranteed mid-turn hard stops,
-   child aggregation and provider-neutral escalation budgets remain separate
-   work.
-8. **RTK integration.** The bakeoff passed, but production command interception
-   and raw-evidence recall are not yet wired into the runtime.
-9. **Graphify stage-two integration.** Measured and selected, not yet wrapped by
-   the Company HQ context builder.
-10. **Supermemory local acceptance/migration.** Selected as target, but no
-    provider/account memory is moved until isolation, recall and correctness
-    tests pass.
-11. **Rust runtime sidecar.** Architecture is decided; implementation has not
-    begun.
-12. **End-to-end daily-ready acceptance.** A full idea -> plan -> dependency DAG
-    -> parallel isolated execution -> tests -> conditional independent review ->
-    merge proposal has not yet passed as one bounded scenario.
-
-## Meaning of "ready"
-
-The latest chat and native-delegation evidence, including the failed Luna-lead attempt, is recorded in [CHAT-FIRST-ACCEPTANCE.md](CHAT-FIRST-ACCEPTANCE.md).
-
-Do not call Company HQ daily-ready merely because each subsystem starts.
-
-Daily-ready requires:
-- one-command desktop launch;
-- provider/account health visible before execution;
-- plan/execute separation;
-- task DAG and worker ownership visible;
-- crash/restart recovery;
-- budget/escalation enforcement beyond the current local reported-token action gate;
-- compact context/evidence with raw recall;
-- deterministic checks;
-- conditional cross-model review;
-- no product/account pollution;
-- one bounded end-to-end acceptance pass.
+[Workflow](WORKFLOW.md), [provider runtimes](PROVIDER-RUNTIMES.md), [context pipeline](CONTEXT-PIPELINE.md) and [desktop packaging](DESKTOP.md) describe the implementation boundaries.

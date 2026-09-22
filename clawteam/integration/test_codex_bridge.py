@@ -151,6 +151,103 @@ class ImmediateApprovalFactory:
         return connection
 
 
+def native_thread(thread_id, parent=None, *, session_id="native-session", status="idle", **extra):
+    return {
+        "id": thread_id,
+        "sessionId": session_id,
+        "parentThreadId": parent,
+        "status": {"type": status, "activeFlags": []} if status == "active" else {"type": status},
+        "updatedAt": extra.pop("updatedAt", 1),
+        "turns": extra.pop("turns", []),
+        **extra,
+    }
+
+
+class WorkerConnection(FakeConnection):
+    def __init__(self, codex_path: Path, number: int):
+        super().__init__(codex_path, number)
+        self.root_status = "active"
+        self.root_turn_id = f"turn-{number}-1"
+        self.rows: list[dict] = []
+        self.worker_turns: dict[str, str] = {}
+        self.reissue_question = False
+        self.reissue_permission = False
+
+    def root(self):
+        turns = ([{"id": self.root_turn_id, "status": "inProgress", "items": []}]
+                 if self.root_status == "active" else [])
+        return native_thread(
+            f"thr-{self.number}", status=self.root_status, turns=turns,
+        )
+
+    def send(self, message: dict):
+        method = message.get("method")
+        if "id" in message and method in {
+            "thread/read", "thread/list", "thread/turns/list", "thread/resume",
+        }:
+            self.sent.append(json.loads(json.dumps(message)))
+            if method == "thread/read":
+                result = {"thread": self.root()}
+            elif method == "thread/list":
+                result = {"data": [self.root(), *self.rows], "nextCursor": None}
+            elif method == "thread/turns/list":
+                turn_id = self.worker_turns.get(message["params"]["threadId"])
+                result = {"data": ([{"id": turn_id, "status": "inProgress", "items": []}]
+                                   if turn_id else [])}
+            else:
+                thread_id = message["params"]["threadId"]
+                if thread_id == f"thr-{self.number}":
+                    thread = self.root()
+                else:
+                    thread = next(row for row in self.rows if row["id"] == thread_id)
+                    active_turn = self.worker_turns.get(thread_id)
+                    thread = {**thread, "turns": ([{
+                        "id": active_turn, "status": "inProgress", "items": [],
+                    }] if active_turn else [])}
+                result = {"thread": thread}
+            self.on_message({"id": message["id"], "result": result})
+            if method == "thread/resume" and self.reissue_question:
+                self.emit({
+                    "id": "reissued-question", "method": "item/tool/requestUserInput",
+                    "params": {
+                        "threadId": f"thr-{self.number}", "turnId": self.root_turn_id,
+                        "itemId": "question-reissued", "isBlocking": True,
+                        "questions": [{"id": "continue", "header": "Continue", "question": "Proceed?"}],
+                    },
+                })
+            if method == "thread/resume" and self.reissue_permission:
+                self.emit({
+                    "id": "reissued-permission", "method": "item/permissions/requestApproval",
+                    "params": {
+                        "threadId": f"thr-{self.number}", "turnId": self.root_turn_id,
+                        "itemId": "permission-reissued", "cwd": "/workspace",
+                        "startedAtMs": 1, "permissions": {"network": {"enabled": True}},
+                    },
+                })
+            return
+        super().send(message)
+
+
+class WorkerFactory:
+    def __init__(self):
+        self.connections: list[WorkerConnection] = []
+        self.rows: list[dict] = []
+        self.worker_turns: dict[str, str] = {}
+        self.root_status = "active"
+        self.reissue_question = False
+        self.reissue_permission = False
+
+    def __call__(self, codex_path: Path):
+        connection = WorkerConnection(codex_path, len(self.connections) + 1)
+        connection.rows = json.loads(json.dumps(self.rows))
+        connection.worker_turns = dict(self.worker_turns)
+        connection.root_status = self.root_status
+        connection.reissue_question = self.reissue_question
+        connection.reissue_permission = self.reissue_permission
+        self.connections.append(connection)
+        return connection
+
+
 class CodexBridgeTest(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory(prefix="codex-bridge-test-")
@@ -933,6 +1030,288 @@ class CodexBridgeTest(unittest.TestCase):
         self.assertEqual(len(events["events"]), 20)
         self.assertTrue(events["truncated"])
         self.assertNotIn("accountEmail", json.dumps(events))
+
+    def test_workers_reconcile_only_same_session_parent_linked_descendants(self):
+        factory = WorkerFactory()
+        factory.rows = [
+            native_thread("lead", "thr-1", status="active", model="gpt-5.6-terra"),
+            native_thread("worker", "lead", model="gpt-5.6-luna"),
+            native_thread("unrelated", None, status="active"),
+            native_thread("cross-session", "thr-1", session_id="other", status="active"),
+        ]
+        factory.worker_turns = {"lead": "lead-turn"}
+        bridge = CodexBridge(
+            state_dir=self.root / "workers-runtime", connection_factory=factory,
+            request_timeout=0.2, max_events=40,
+        )
+        self.addCleanup(bridge.shutdown_all)
+        bridge.start("workers-team", self.project, "work", "gpt-5.6-terra", work_mode="auto")
+        result = bridge.workers("workers-team")
+        self.assertTrue(result["authoritative"])
+        self.assertTrue(result["complete"])
+        self.assertEqual(
+            [item["threadId"] for item in result["workers"]], ["lead", "worker"],
+        )
+        lead = next(item for item in result["workers"] if item["threadId"] == "lead")
+        self.assertEqual(lead["activeTurnId"], "lead-turn")
+        serialized = json.dumps(result)
+        self.assertNotIn("sessionId", serialized)
+        listing = next(
+            item for item in factory.connections[0].sent
+            if item.get("method") == "thread/list"
+        )
+        self.assertTrue(listing["params"]["useStateDbOnly"])
+        self.assertEqual(listing["params"]["cwd"], str(self.project.resolve()))
+        bridge.shutdown_all()
+        offline = CodexBridge(
+            state_dir=self.root / "workers-runtime", connection_factory=WorkerFactory(),
+            request_timeout=0.2, max_events=40,
+        )
+        self.addCleanup(offline.shutdown_all)
+        snapshot = offline.workers("workers-team")
+        self.assertFalse(snapshot["connected"])
+        self.assertFalse(snapshot["authoritative"])
+        self.assertTrue(all(item["stale"] for item in snapshot["workers"]))
+        self.assertNotIn("activeTurnId", json.dumps(snapshot))
+
+    def test_send_worker_steers_active_starts_idle_and_rejects_unrelated(self):
+        factory = WorkerFactory()
+        factory.rows = [
+            native_thread("lead", "thr-1", status="active"),
+            native_thread("idle-worker", "lead", status="idle"),
+            native_thread("unrelated", None, status="idle"),
+        ]
+        factory.worker_turns = {"lead": "lead-turn"}
+        bridge = CodexBridge(
+            state_dir=self.root / "worker-send-runtime", connection_factory=factory,
+            request_timeout=0.2, max_events=40,
+        )
+        self.addCleanup(bridge.shutdown_all)
+        bridge.start("send-team", self.project, "work", "gpt-5.6-terra", work_mode="auto")
+        active = bridge.send_worker("send-team", "lead", "Check the result")
+        self.assertEqual(active["mode"], "turn/steer")
+        self.assertEqual(active["turnId"], "lead-turn")
+        idle = bridge.send_worker("send-team", "idle-worker", "Run QA")
+        self.assertEqual(idle["mode"], "turn/start")
+        child_start = next(
+            item for item in reversed(factory.connections[0].sent)
+            if item.get("method") == "turn/start"
+            and item.get("params", {}).get("threadId") == "idle-worker"
+        )
+        self.assertEqual(set(child_start["params"]), {"threadId", "input"})
+        with self.assertRaisesRegex(BridgeError, "verified descendant"):
+            bridge.send_worker("send-team", "unrelated", "Must not send")
+        self.assertFalse(any(
+            item.get("method") == "thread/resume"
+            and item.get("params", {}).get("threadId") == "unrelated"
+            for item in factory.connections[0].sent
+        ))
+
+    def test_stop_workers_interrupts_only_observed_bound_descendants(self):
+        factory = WorkerFactory()
+        factory.rows = [
+            native_thread("lead", "thr-1", status="active"),
+            native_thread("nested", "lead", status="active"),
+            native_thread("unrelated", None, status="active"),
+        ]
+        factory.worker_turns = {"lead": "lead-turn", "nested": "nested-turn", "unrelated": "other-turn"}
+        bridge = CodexBridge(
+            state_dir=self.root / "worker-stop-runtime", connection_factory=factory,
+            request_timeout=0.2, max_events=40,
+        )
+        self.addCleanup(bridge.shutdown_all)
+        bridge.start("stop-team", self.project, "work", "gpt-5.6-terra", work_mode="auto")
+        result = bridge.stop_workers("stop-team")
+        self.assertEqual(
+            {item["workerThreadId"] for item in result["results"]},
+            {"lead", "nested"},
+        )
+        interrupted = {
+            item["params"]["threadId"]
+            for item in factory.connections[0].sent
+            if item.get("method") == "turn/interrupt"
+        }
+        self.assertEqual(interrupted, {"lead", "nested"})
+        self.assertTrue(all(item["status"] == "stopRequested" for item in result["results"]))
+
+    def test_child_request_is_bound_without_changing_root_state_and_expires_on_completion(self):
+        factory = WorkerFactory()
+        factory.rows = [native_thread("lead", "thr-1", status="active")]
+        factory.worker_turns = {"lead": "lead-turn"}
+        bridge = CodexBridge(
+            state_dir=self.root / "child-request-runtime", connection_factory=factory,
+            request_timeout=0.2, max_events=40,
+        )
+        self.addCleanup(bridge.shutdown_all)
+        bridge.start("child-request-team", self.project, "work", "gpt-5.6-terra", work_mode="auto")
+        bridge.workers("child-request-team")
+        connection = factory.connections[0]
+        connection.emit({
+            "id": "child-question", "method": "item/tool/requestUserInput",
+            "params": {
+                "threadId": "lead", "turnId": "lead-turn", "itemId": "lead-q",
+                "isBlocking": True,
+                "questions": [{"id": "choice", "header": "Choice", "question": "Continue?"}],
+            },
+        })
+        status = bridge.status("child-request-team")
+        self.assertEqual(status["state"], "running")
+        request_id = status["pendingApprovals"][0]["requestId"]
+        connection.emit({
+            "id": "child-command", "method": "item/commandExecution/requestApproval",
+            "params": {
+                "threadId": "lead", "turnId": "lead-turn", "itemId": "lead-command",
+                "command": "echo child", "cwd": str(self.project),
+            },
+        })
+        command = next(
+            item for item in bridge.status("child-request-team")["pendingApprovals"]
+            if item["kind"] == "command"
+        )
+        bridge.approve("child-request-team", command["requestId"], "reject")
+        self.assertIn({"id": "child-command", "result": {"decision": "decline"}}, connection.sent)
+        self.assertEqual(bridge.status("child-request-team")["state"], "running")
+        connection.emit({
+            "method": "thread/tokenUsage/updated",
+            "params": {
+                "threadId": "lead", "turnId": "lead-turn",
+                "tokenUsage": {"total": {"totalTokens": 37}},
+            },
+        })
+        worker = bridge.workers("child-request-team")["workers"][0]
+        self.assertEqual(worker["usageSummary"]["totalTokens"], 37)
+        self.assertFalse(worker["usageSummary"]["budgetIncluded"])
+        connection.emit({
+            "method": "turn/completed",
+            "params": {
+                "threadId": "lead",
+                "turn": {"id": "lead-turn", "status": "completed"},
+            },
+        })
+        self.assertEqual(bridge.status("child-request-team")["pendingApprovals"], [])
+        with self.assertRaisesRegex(BridgeError, "unknown|already resolved"):
+            bridge.respond("child-request-team", request_id, {"answers": {}})
+
+    def test_stop_worker_race_reports_observed_completion(self):
+        factory = WorkerFactory()
+        factory.rows = [native_thread("lead", "thr-1", status="active")]
+        factory.worker_turns = {"lead": "lead-turn"}
+        bridge = CodexBridge(
+            state_dir=self.root / "worker-stop-race-runtime", connection_factory=factory,
+            request_timeout=0.2, max_events=40,
+        )
+        self.addCleanup(bridge.shutdown_all)
+        bridge.start("stop-race-team", self.project, "work", "gpt-5.6-terra", work_mode="auto")
+        connection = factory.connections[0]
+        original_send = connection.send
+
+        def complete_during_interrupt(message):
+            original_send(message)
+            if (
+                message.get("method") == "turn/interrupt"
+                and message.get("params", {}).get("threadId") == "lead"
+            ):
+                connection.emit({
+                    "method": "turn/completed",
+                    "params": {
+                        "threadId": "lead",
+                        "turn": {"id": "lead-turn", "status": "interrupted"},
+                    },
+                })
+
+        connection.send = complete_during_interrupt
+        result = bridge.stop_workers("stop-race-team")
+        self.assertEqual(result["results"], [{
+            "workerThreadId": "lead",
+            "turnId": "lead-turn",
+            "status": "completionObserved",
+            "observedStatus": "idle",
+        }])
+
+    def test_restart_steers_active_root_marks_old_request_and_accepts_reissue(self):
+        first_factory = WorkerFactory()
+        first = CodexBridge(
+            state_dir=self.root / "recovery-runtime", connection_factory=first_factory,
+            request_timeout=0.2, max_events=40,
+        )
+        first.start("recovery-team", self.project, "first", "gpt-5.6-terra", work_mode="auto")
+        first_connection = first_factory.connections[0]
+        first_connection.emit({
+            "id": "old-question", "method": "item/tool/requestUserInput",
+            "params": {
+                "threadId": "thr-1", "turnId": "turn-1-1", "itemId": "old-q",
+                "isBlocking": True,
+                "questions": [{"id": "old", "header": "Old", "question": "Old question?"}],
+            },
+        })
+        old_public_id = first.status("recovery-team")["pendingApprovals"][0]["requestId"]
+        first.shutdown_all()
+
+        second_factory = WorkerFactory()
+        second_factory.reissue_question = True
+        second = CodexBridge(
+            state_dir=self.root / "recovery-runtime", connection_factory=second_factory,
+            request_timeout=0.2, max_events=40,
+        )
+        self.addCleanup(second.shutdown_all)
+        status = second.start(
+            "recovery-team", self.project, "continue", "gpt-5.6-terra", work_mode="auto",
+        )
+        methods = [item.get("method") for item in second_factory.connections[0].sent]
+        self.assertIn("turn/steer", methods)
+        self.assertNotIn("turn/start", methods)
+        self.assertEqual(status["state"], "awaiting_approval")
+        self.assertEqual(status["unrecoverableRequests"][0]["requestId"], old_public_id)
+        self.assertEqual(len(status["pendingApprovals"]), 1)
+        self.assertEqual(status["pendingApprovals"][0]["kind"], "questions")
+        events = second.events("recovery-team")["events"]
+        self.assertTrue(any(event["type"] == "request.unrecoverable" for event in events))
+
+    def test_restart_never_recreates_permission_grant_without_fresh_native_request(self):
+        first_factory = WorkerFactory()
+        first = CodexBridge(
+            state_dir=self.root / "permission-recovery-runtime", connection_factory=first_factory,
+            request_timeout=0.2, max_events=40,
+        )
+        first.start("permission-recovery", self.project, "first", "gpt-5.6-terra", work_mode="auto")
+        first_factory.connections[0].emit({
+            "id": "old-permission", "method": "item/permissions/requestApproval",
+            "params": {
+                "threadId": "thr-1", "turnId": "turn-1-1", "itemId": "old-p",
+                "cwd": str(self.project), "startedAtMs": 1,
+                "permissions": {"network": {"enabled": True}},
+            },
+        })
+        old_id = first.status("permission-recovery")["pendingApprovals"][0]["requestId"]
+        first.shutdown_all()
+
+        second_factory = WorkerFactory()
+        second_factory.reissue_permission = True
+        second = CodexBridge(
+            state_dir=self.root / "permission-recovery-runtime", connection_factory=second_factory,
+            request_timeout=0.2, max_events=40,
+        )
+        self.addCleanup(second.shutdown_all)
+        status = second.start(
+            "permission-recovery", self.project, "continue", "gpt-5.6-terra", work_mode="auto",
+        )
+        self.assertEqual(status["unrecoverableRequests"][0]["requestId"], old_id)
+        fresh = status["pendingApprovals"]
+        self.assertEqual(len(fresh), 1)
+        self.assertEqual(fresh[0]["kind"], "permissions")
+        with self.assertRaisesRegex(BridgeError, "unknown|already resolved"):
+            second.respond("permission-recovery", old_id, {
+                "permissions": {"network": {"enabled": True}}, "scope": "turn",
+            })
+        second.respond("permission-recovery", fresh[0]["requestId"], {
+            "permissions": {"network": {"enabled": True}}, "scope": "turn",
+        })
+        self.assertIn({
+            "id": "reissued-permission",
+            "result": {
+                "permissions": {"network": {"enabled": True}}, "scope": "turn",
+            },
+        }, second_factory.connections[0].sent)
 
     def test_budget_gate_blocks_later_runtime_actions(self):
         self.bridge.set_budget("team-one", 10, True)

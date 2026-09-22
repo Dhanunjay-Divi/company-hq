@@ -317,6 +317,8 @@ class CodexSignIn:
 class ProviderConnections:
     def __init__(self, auth=None):
         self.auth = auth or CodexSignIn()
+        from claude_connection import ClaudeConnection
+        self.claude = ClaudeConnection()
         self.activity = deque(maxlen=60)
         self.lock = threading.RLock()
 
@@ -333,6 +335,14 @@ class ProviderConnections:
             row['activity'] = [item for item in activity if item['provider'] == row['id']][-10:]
             if row['id'] == 'codex':
                 row.update(self.auth.snapshot())
+            elif row['id'] == 'claude':
+                from claude_runtime import claude_binary
+                binary=claude_binary()
+                row.update(self.claude.snapshot())
+                row['installed']=bool(row.get('installed') or binary)
+                row['runtimeReady']=bool(binary)
+                if binary: row['cliPath']=binary
+                row['reason']='Official Claude Code adapter. Sign in to load available models.'
             # File locations remain server-side implementation details.
             row['desktopInstalled'] = bool(row.pop('desktopPath', None))
             row['cliInstalled'] = bool(row.pop('cliPath', None))
@@ -358,6 +368,10 @@ class ProviderConnections:
             row = next((item for item in rows if item['id'] == provider), None)
             if not row:
                 raise ValueError('Provider is not available.')
+            if provider == 'claude' and action != 'open':
+                result=getattr(self.claude,action)()
+                self._record(provider,result.get('message','Connection checked'),result.get('authentication','completed'))
+                return result
             if provider == 'codex' and action != 'open':
                 result = getattr(self.auth, {'connect': 'connect', 'check': 'check', 'cancel': 'cancel'}[action])()
                 self._record(provider, result.get('message', 'Connection checked'), result.get('authentication', 'completed'))
@@ -384,6 +398,7 @@ class ProviderConnections:
 
 _connections = ProviderConnections()
 atexit.register(_connections.auth.close)
+atexit.register(_connections.claude.close)
 
 
 def connections():

@@ -133,6 +133,8 @@ def setup() -> None:
     ensure_integration_venv()
     ensure_ruflo_dependencies()
     ensure_codebase_memory_binary()
+    from install_engines import install_engines
+    install_engines()
     run(["npm", "ci", "--ignore-scripts"], cwd=ROOT / "company-hq")
     run(["npm", "run", "build"], cwd=ROOT / "company-hq")
     run([sys.executable, str(ROOT / "company-hq" / "build-source.py")])
@@ -211,6 +213,7 @@ def checks() -> int:
         [sys.executable, "-m", "unittest", "-v", "test_check_updates", "test_discover", "test_provider_registry"],
         [sys.executable, "-m", "unittest", "discover", "-s", "tests", "-p", "test_*.py", "-v"],
         [str(VENV_PYTHON), "-m", "unittest", "discover", "-s", "clawteam/integration", "-p", "test_*.py", "-v"],
+        ["node", "--test", "tests/test_draft_storage.mjs", "tests/test_native_team_view.mjs"],
         [sys.executable, "scripts/check_source_bundle.py"],
         [sys.executable, "scripts/check_portability.py"],
     ]

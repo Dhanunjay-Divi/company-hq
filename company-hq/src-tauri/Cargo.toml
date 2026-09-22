@@ -14,3 +14,4 @@ tauri-build = { version = "2.5.3", features = [] }
 
 [dependencies]
 tauri = { version = "2.9.3", features = [] }
+url = "2.5.7"

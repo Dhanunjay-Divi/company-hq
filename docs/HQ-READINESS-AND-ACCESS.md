@@ -1,5 +1,7 @@
 # HQ readiness and access
 
+Historical checkpoint, 2026-09-21. Superseded for current capability status by [STATUS](STATUS.md) and [release acceptance](RELEASE-ACCEPTANCE.md).
+
 Reviewed 2026-09-21. Company HQ is a usable Codex-backed prototype, not a replacement for every native provider application.
 
 ## What the user can do

@@ -6,6 +6,8 @@ CODEX_HOME, auth variables, or Codex configuration overrides.
 """
 from __future__ import annotations
 
+import sqlite3
+
 import atexit
 import hashlib
 import json
@@ -20,6 +22,16 @@ from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
+
+from native_workers import (
+    MAX_WORKERS,
+    SOURCE_KINDS,
+    WorkerDataError,
+    WorkerStore,
+    descendant_workers,
+    latest_active_turn,
+    normalize_thread,
+)
 from runtime_config import REPO_ROOT, codex_executable, runtime_dir
 
 CODEX_PATH = codex_executable()
@@ -392,6 +404,35 @@ def _elicitation_response(response: object, fields: list[dict[str, Any]]) -> dic
     return {"action": "accept", "content": cleaned}
 
 
+def _unresolved_replay_requests(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Find durable request cards that lost their connection-local wire ID."""
+    pending: dict[str, dict[str, Any]] = {}
+    for event in events:
+        event_type = event.get("type")
+        data = event.get("data") if isinstance(event.get("data"), dict) else {}
+        request_id = data.get("requestId")
+        if event_type in {"approval.requested", "request.pending"} and isinstance(request_id, str):
+            pending[request_id] = {
+                "requestId": request_id,
+                "kind": _safe_text(data.get("kind", "nativeRequest"), 100),
+                "threadId": event.get("threadId"),
+                "turnId": event.get("turnId"),
+                "recoverable": False,
+                "reason": "The runtime restarted before this native request could be matched to a live response handle.",
+            }
+        elif event_type in {
+            "approval.resolved", "request.resolved", "request.unrecoverable",
+        } and isinstance(request_id, str):
+            pending.pop(request_id, None)
+        elif event_type == "turn.completed":
+            turn_id = event.get("turnId")
+            pending = {
+                key: value for key, value in pending.items()
+                if value.get("turnId") != turn_id
+            }
+    return list(pending.values())[:100]
+
+
 def _numeric_tree(value: object) -> object:
     if isinstance(value, bool):
         return None
@@ -422,6 +463,7 @@ def _usage_summary(counts: dict[str, Any]) -> dict[str, Any]:
         "inputTokens": 0,
         "cachedInputTokens": 0,
         "outputTokens": 0,
+        "reasoningTokens": 0,
         "totalTokens": 0,
     }
     seen: set[str] = set()
@@ -431,7 +473,10 @@ def _usage_summary(counts: dict[str, Any]) -> dict[str, Any]:
             for key, item in node.items():
                 normalized = re.sub(r"[^a-z0-9]", "", str(key).lower())
                 if isinstance(item, (int, float)) and not isinstance(item, bool):
-                    if "cached" in normalized and "token" in normalized:
+                    if "reasoning" in normalized and "token" in normalized:
+                        totals["reasoningTokens"] += item
+                        seen.add("reasoningTokens")
+                    elif "cached" in normalized and "token" in normalized:
                         totals["cachedInputTokens"] += item
                         seen.add("cachedInputTokens")
                     elif "cache" in normalized and "input" in normalized:
@@ -486,8 +531,12 @@ browser; use an available authorized browser instead. A listed tool proves only
 exposure, not that an action succeeded. Do not inspect broad app or history
 inventories when the requested task does not require them.
 Use registered Ruflo and codebase-memory tools when available; do not replace the
-user's Codex configuration or account environment. Treat ClawTeam team IDs, task IDs, member IDs,
-inboxes, and events as canonical coordination state. Delegate useful independent work
+user's Codex configuration or account environment. Treat HQ team IDs, Beads-backed task IDs, member IDs,
+inboxes, and events as canonical coordination state. Use hq_tasks and hq_plan when exposed
+to keep the visible work board current. hq_plan records a DAG; it does not execute it.
+Use native collaboration to assign work, then record actual progress. Use hq_command
+for bounded verification output with raw evidence, and hq_recall to inspect omitted details.
+These HQ client tools are supervisor-only; workers use their own native tools and report back. Delegate useful independent work
 through native Codex collaboration tools. Company HQ's controlled routing selects the
 overall supervisor model (currently gpt-6-astra). When nested delegation is useful,
 prefer gpt-5.6-terra or gpt-5.6-sol for department leads and reserve gpt-5.6-luna for
@@ -628,6 +677,12 @@ class _TeamSession:
     pending_calls: dict[object, _PendingCall] = field(default_factory=dict)
     approvals: dict[str, _Approval] = field(default_factory=dict)
     children: dict[str, dict[str, Any]] = field(default_factory=dict)
+    root_session_id: str | None = None
+    workers_reconciled_at_ms: int | None = None
+    workers_authoritative: bool = False
+    workers_complete: bool = False
+    worker_reconcile_error: str | None = None
+    unrecoverable_requests: list[dict[str, Any]] = field(default_factory=list)
     completed_turns: set[str] = field(default_factory=set)
     last_turn_status: str | None = None
     plan_ready: bool = False
@@ -636,7 +691,9 @@ class _TeamSession:
     pending_turn_notifications: list[tuple[Any, ...]] | None = None
     budget_interrupt_turns: set[str] = field(default_factory=set)
     lock: threading.RLock = field(default_factory=threading.RLock)
-    operation_lock: threading.Lock = field(default_factory=threading.Lock)
+    operation_lock: threading.RLock = field(default_factory=threading.RLock)
+    archive_pending: list[dict[str, Any]] = field(default_factory=list)
+    archive_error: bool = False
     closing: bool = False
 
 
@@ -947,6 +1004,9 @@ class CodexBridge:
         self._binding_lock = threading.Lock()
         self._budget = _BudgetStore(self.state_dir)
         self._event_store = _EventStore(self.state_dir, max_events)
+        self._worker_store = WorkerStore(self.state_dir)
+        from transcript_archive import TranscriptArchive
+        self._transcripts = TranscriptArchive(self.state_dir)
         atexit.register(self.shutdown_all)
 
     def _binding_path(self, team: str) -> Path:
@@ -1064,6 +1124,7 @@ class CodexBridge:
         plan_ready: bool = False,
     ) -> _TeamSession:
         restored = self._event_store.load(team)
+        worker_snapshot = self._worker_store.load(team)
         next_event_seq = self._event_store.next_sequence(
             team, (restored[-1]["seq"] + 1) if restored else 1,
         )
@@ -1077,7 +1138,18 @@ class CodexBridge:
             events=deque(restored, maxlen=self.max_events),
             replay_events=deque(restored, maxlen=self.max_events),
             next_event_seq=next_event_seq,
+            unrecoverable_requests=_unresolved_replay_requests(restored),
         )
+        if worker_snapshot:
+            session.workers_reconciled_at_ms = worker_snapshot.get("reconciledAtMs")
+            session.children = {
+                item["threadId"]: {
+                    **item,
+                    "activeTurnId": None,
+                    "stale": True,
+                }
+                for item in worker_snapshot["workers"]
+            }
         with self._sessions_lock:
             current = self._sessions.get(team)
             if current is not None and (
@@ -1118,6 +1190,295 @@ class CodexBridge:
     def _notify(self, session: _TeamSession, method: str, params: dict[str, Any]) -> None:
         session.connection.send({"method": method, "params": params})
 
+    def _reconcile_workers(
+        self,
+        session: _TeamSession,
+        root_thread: dict[str, Any] | None = None,
+        *,
+        emit_event: bool = False,
+    ) -> list[dict[str, Any]]:
+        """Refresh the verified descendant tree using metadata-only APIs."""
+        if not session.thread_id:
+            raise BridgeError("team has no native Codex thread")
+        try:
+            if normalize_thread(root_thread) is None:
+                result = self._rpc(session, "thread/read", {
+                    "threadId": session.thread_id,
+                    "includeTurns": False,
+                })
+                root_thread = result.get("thread")
+            root = normalize_thread(root_thread)
+            if root is None or root["threadId"] != session.thread_id:
+                raise BridgeProtocolError("native root thread metadata is unavailable")
+            rows: list[dict[str, Any]] = []
+            cursor: str | None = None
+            complete = False
+            for _ in range(2):
+                result = self._rpc(session, "thread/list", {
+                    "cursor": cursor,
+                    "limit": 100,
+                    "cwd": str(session.project),
+                    "sourceKinds": SOURCE_KINDS,
+                    "useStateDbOnly": True,
+                    "sortKey": "updated_at",
+                    "sortDirection": "desc",
+                })
+                page = result.get("data")
+                if not isinstance(page, list):
+                    raise BridgeProtocolError("native worker metadata listing is invalid")
+                rows.extend(item for item in page if isinstance(item, dict))
+                next_cursor = result.get("nextCursor")
+                if next_cursor is None:
+                    complete = True
+                    break
+                if not isinstance(next_cursor, str) or not next_cursor or next_cursor == cursor:
+                    raise BridgeProtocolError("native worker metadata cursor is invalid")
+                cursor = next_cursor
+            workers = descendant_workers(root_thread, rows)
+            for worker in workers:
+                worker["stale"] = False
+                if worker["status"] == "active":
+                    turns = self._rpc(session, "thread/turns/list", {
+                        "threadId": worker["threadId"],
+                        "limit": 1,
+                        "sortDirection": "desc",
+                        "itemsView": "notLoaded",
+                    })
+                    worker["activeTurnId"] = latest_active_turn(turns)
+            persisted = [
+                {key: value for key, value in worker.items() if key != "stale"}
+                for worker in workers
+            ]
+            self._worker_store.save(session.team, session.thread_id, persisted)
+            with session.lock:
+                previous_children = session.children
+                for worker in workers:
+                    previous = previous_children.get(worker["threadId"])
+                    if previous and previous.get("usageSummary"):
+                        worker["usageSummary"] = previous["usageSummary"]
+                session.root_session_id = root["sessionId"]
+                session.children = {item["threadId"]: item for item in workers}
+                session.workers_reconciled_at_ms = _now_ms()
+                session.workers_authoritative = True
+                session.workers_complete = complete
+                session.worker_reconcile_error = None
+            if emit_event:
+                self._event(session, "workers.reconciled", {
+                    "text": "Native worker hierarchy reconciled",
+                    "workerCount": len(workers),
+                    "complete": complete,
+                })
+            return workers
+        except (BridgeError, WorkerDataError) as exc:
+            with session.lock:
+                session.workers_authoritative = False
+                session.workers_complete = False
+                session.worker_reconcile_error = _safe_text(exc, 1000)
+            if emit_event:
+                self._event(session, "workers.reconcile_failed", {
+                    "text": session.worker_reconcile_error,
+                })
+            raise BridgeError("native worker hierarchy could not be reconciled") from exc
+
+    @staticmethod
+    def _public_workers(session: _TeamSession) -> dict[str, Any]:
+        with session.lock:
+            workers = []
+            for value in session.children.values():
+                workers.append({
+                    key: value.get(key)
+                    for key in (
+                        "threadId", "parentThreadId", "status", "activeTurnId",
+                        "model", "role", "nickname", "updatedAt", "source", "stale",
+                        "usageSummary",
+                    )
+                    if value.get(key) is not None
+                })
+            workers.sort(key=lambda item: (item.get("updatedAt") or 0, item["threadId"]))
+            return {
+                "team": session.team,
+                "rootThreadId": session.thread_id,
+                "connected": bool(session.connection.running()),
+                "authoritative": session.workers_authoritative,
+                "complete": session.workers_complete,
+                "reconciledAtMs": session.workers_reconciled_at_ms,
+                "workers": workers,
+                "error": session.worker_reconcile_error,
+            }
+
+    def workers(self, team: str) -> dict[str, Any]:
+        team = _validate_team(team)
+        with self._sessions_lock:
+            session = self._sessions.get(team)
+        if not session or not session.connection.running():
+            binding = self._read_binding(team)
+            snapshot = self._worker_store.load(team)
+            workers = []
+            if snapshot and binding and snapshot["rootThreadId"] == binding.get("threadId"):
+                workers = [
+                    {
+                        key: value
+                        for key, value in item.items()
+                        if key not in {"sessionId", "activeFlags", "activeTurnId"}
+                    } | {"stale": True}
+                    for item in snapshot["workers"]
+                ]
+            return {
+                "team": team,
+                "rootThreadId": binding.get("threadId") if binding else None,
+                "connected": False,
+                "authoritative": False,
+                "complete": False,
+                "reconciledAtMs": snapshot.get("reconciledAtMs") if snapshot else None,
+                "workers": workers,
+                "error": "Connect this chat to refresh native worker status",
+            }
+        with session.operation_lock:
+            self._reconcile_workers(session)
+            return self._public_workers(session)
+
+    def send_worker(self, team: str, thread_id: str, prompt: str) -> dict[str, Any]:
+        session = self._require_session(_validate_team(team))
+        prompt = _validate_prompt(prompt)
+        if not isinstance(thread_id, str) or not thread_id:
+            raise BridgeError("worker thread ID is invalid")
+        self._budget.authorize(team)
+        with session.operation_lock:
+            workers = self._reconcile_workers(session)
+            known = {item["threadId"]: item for item in workers}.get(thread_id)
+            if known is None:
+                raise BridgeError("worker is not a verified descendant of this team")
+            self._begin_turn_notification_buffer(session)
+            try:
+                resumed = self._rpc(session, "thread/resume", {"threadId": thread_id})
+                thread = resumed.get("thread")
+                current = normalize_thread(thread)
+                if (
+                    current is None
+                    or current["threadId"] != thread_id
+                    or current["sessionId"] != session.root_session_id
+                    or current.get("parentThreadId") != known.get("parentThreadId")
+                ):
+                    raise BridgeProtocolError("native worker identity changed during resume")
+                active_turn_id = None
+                raw_turns = thread.get("turns") if isinstance(thread, dict) else None
+                if isinstance(raw_turns, list):
+                    active_turn_id = latest_active_turn({"data": raw_turns})
+                if current["status"] == "active":
+                    active_turn_id = active_turn_id or latest_active_turn(
+                        self._rpc(session, "thread/turns/list", {
+                            "threadId": thread_id,
+                            "limit": 1,
+                            "sortDirection": "desc",
+                            "itemsView": "notLoaded",
+                        })
+                    )
+                    if not active_turn_id:
+                        raise BridgeError("active worker turn ID is unavailable; no message was sent")
+                    result = self._rpc(session, "turn/steer", {
+                        "threadId": thread_id,
+                        "expectedTurnId": active_turn_id,
+                        "input": [{"type": "text", "text": prompt}],
+                    })
+                    if result.get("turnId") != active_turn_id:
+                        raise BridgeProtocolError("native Codex steered a different worker turn")
+                    mode = "turn/steer"
+                elif current["status"] in {"idle", "notLoaded"}:
+                    result = self._rpc(session, "turn/start", {
+                        "threadId": thread_id,
+                        "input": [{"type": "text", "text": prompt}],
+                    })
+                    turn = result.get("turn")
+                    active_turn_id = turn.get("id") if isinstance(turn, dict) else None
+                    if not isinstance(active_turn_id, str) or not active_turn_id:
+                        raise BridgeProtocolError("native Codex did not return a worker turn ID")
+                    mode = "turn/start"
+                else:
+                    raise BridgeError("worker is in a system error state")
+                with session.lock:
+                    worker = session.children.get(thread_id, known)
+                    worker.update({
+                        "status": "active",
+                        "activeTurnId": active_turn_id,
+                        "stale": False,
+                    })
+                    session.children[thread_id] = worker
+                self._event(session, "worker.message_sent", {
+                    "text": "Message accepted by native worker",
+                    "workerThreadId": thread_id,
+                    "mode": mode,
+                }, thread_id=thread_id, turn_id=active_turn_id)
+            finally:
+                self._flush_turn_notification_buffer(session)
+        return {
+            "accepted": True,
+            "workerThreadId": thread_id,
+            "turnId": active_turn_id,
+            "mode": mode,
+        }
+
+    def stop_workers(self, team: str) -> dict[str, Any]:
+        session = self._require_session(_validate_team(team))
+        results = []
+        with session.operation_lock:
+            workers = self._reconcile_workers(session)
+            for worker in workers:
+                if worker["status"] != "active":
+                    continue
+                thread_id = worker["threadId"]
+                turn_id = worker.get("activeTurnId")
+                if not isinstance(turn_id, str) or not turn_id:
+                    results.append({
+                        "workerThreadId": thread_id,
+                        "status": "unresolved",
+                        "reason": "Active worker turn ID is unavailable",
+                    })
+                    continue
+                try:
+                    self._rpc(session, "turn/interrupt", {
+                        "threadId": thread_id,
+                        "turnId": turn_id,
+                    })
+                    with session.lock:
+                        current = session.children.get(thread_id)
+                        still_active = bool(
+                            current
+                            and current.get("status") == "active"
+                            and current.get("activeTurnId") == turn_id
+                        )
+                        if still_active:
+                            current["stopRequested"] = True
+                    if still_active:
+                        results.append({
+                            "workerThreadId": thread_id,
+                            "turnId": turn_id,
+                            "status": "stopRequested",
+                        })
+                        self._event(session, "worker.stop_requested", {
+                            "text": "Native worker stop requested; completion is not yet confirmed",
+                            "workerThreadId": thread_id,
+                        }, thread_id=thread_id, turn_id=turn_id)
+                    else:
+                        results.append({
+                            "workerThreadId": thread_id,
+                            "turnId": turn_id,
+                            "status": "completionObserved",
+                            "observedStatus": current.get("status") if current else "unknown",
+                        })
+                except Exception as exc:
+                    results.append({
+                        "workerThreadId": thread_id,
+                        "turnId": turn_id,
+                        "status": "failed",
+                        "reason": _safe_text(exc, 1000),
+                    })
+        return {
+            "accepted": True,
+            "completeHierarchy": session.workers_complete,
+            "results": results,
+            "childrenMayHaveIndependentDescendants": not session.workers_complete,
+        }
+
     def start(
         self,
         team: str,
@@ -1154,7 +1515,8 @@ class CodexBridge:
                     "name": "company_hq_clawteam",
                     "title": "Company HQ ClawTeam",
                     "version": "1.0.0",
-                }
+                },
+                "capabilities": {"experimentalApi": True},
             })
             self._notify(session, "initialized", {})
             common = {
@@ -1174,19 +1536,52 @@ class CodexBridge:
                 ),
             }
             previous_thread = binding.get("threadId") if binding else None
+            resumed_active = False
             if isinstance(previous_thread, str) and previous_thread:
-                result = self._rpc(
-                    session, "thread/resume", {"threadId": previous_thread, **common}
-                )
+                with session.lock:
+                    session.thread_id = previous_thread
+                self._begin_turn_notification_buffer(session)
+                try:
+                    result = self._rpc(
+                        session, "thread/resume", {"threadId": previous_thread, **common}
+                    )
+                    resumed_thread = result.get("thread")
+                    normalized = normalize_thread(resumed_thread)
+                    if normalized is not None and normalized["status"] == "active":
+                        raw_turns = resumed_thread.get("turns") if isinstance(resumed_thread, dict) else None
+                        active_turn_id = latest_active_turn({"data": raw_turns}) if isinstance(raw_turns, list) else None
+                        active_turn_id = active_turn_id or latest_active_turn(
+                            self._rpc(session, "thread/turns/list", {
+                                "threadId": previous_thread,
+                                "limit": 1,
+                                "sortDirection": "desc",
+                                "itemsView": "notLoaded",
+                            })
+                        )
+                        if not active_turn_id:
+                            raise BridgeError(
+                                "native supervisor is active but its turn ID is unavailable; message was not sent"
+                            )
+                        with session.lock:
+                            session.turn_id = active_turn_id
+                            session.state = "running"
+                        resumed_active = True
+                    else:
+                        with session.lock:
+                            session.state = "idle"
+                finally:
+                    self._flush_turn_notification_buffer(session)
             else:
-                result = self._rpc(session, "thread/start", common)
+                from hq_tools import tool_specs
+                result = self._rpc(session, "thread/start", {**common,"dynamicTools":tool_specs()})
             thread = result.get("thread")
             thread_id = thread.get("id") if isinstance(thread, dict) else None
             if not isinstance(thread_id, str) or not thread_id:
                 raise BridgeProtocolError("native Codex did not return a thread ID")
             with session.lock:
                 session.thread_id = thread_id
-                session.state = "idle"
+                if not resumed_active:
+                    session.state = "idle"
             with self._binding_lock:
                 self._write_binding(
                     team,
@@ -1201,7 +1596,19 @@ class CodexBridge:
                 "text": "Native supervisor connected",
                 "mode": mode,
             })
-            self._start_turn(session, prompt, attachments=attachments)
+            for request in session.unrecoverable_requests:
+                self._event(session, "request.unrecoverable", dict(request))
+            if normalize_thread(thread) is not None:
+                try:
+                    self._reconcile_workers(session, thread, emit_event=True)
+                except BridgeError:
+                    # Root work remains usable. Worker actions stay fail-closed
+                    # until a later metadata reconciliation succeeds.
+                    pass
+            if resumed_active:
+                self.send(team, prompt, attachments=attachments)
+            else:
+                self._start_turn(session, prompt, attachments=attachments)
             return self.status(team)
         except Exception as exc:
             with session.lock:
@@ -1343,6 +1750,8 @@ class CodexBridge:
                 state, thread_id, turn_id = session.state, session.thread_id, session.turn_id
             if not thread_id or state in {"starting", "stopping", "error", "offline"}:
                 raise BridgeError(f"team supervisor cannot accept input while {state}")
+            if state not in {"idle", "running", "awaiting_approval"}:
+                raise BridgeError(f"team supervisor cannot accept input while {state}")
             if state in {"running", "awaiting_approval"} and turn_id:
                 self._budget.authorize(team)
                 self._begin_turn_notification_buffer(session)
@@ -1412,25 +1821,32 @@ class CodexBridge:
             with session.lock:
                 if session.mode == "plan":
                     raise BridgeError("approvals cannot be granted during read-only planning")
-                budget_stopping = (
-                    session.state == "stopping"
-                    and session.turn_id in session.budget_interrupt_turns
-                )
-                if session.state != "awaiting_approval" and not (
-                    budget_stopping and decision == "reject"
-                ):
-                    raise BridgeError("team is not awaiting an approval")
                 approval = session.approvals.get(request_id)
                 if not approval:
                     raise BridgeError("approval request is unknown or already resolved")
-                if approval.thread_id != session.thread_id or approval.turn_id != session.turn_id:
+                root_request = approval.thread_id == session.thread_id
+                budget_stopping = (
+                    root_request
+                    and
+                    session.state == "stopping"
+                    and session.turn_id in session.budget_interrupt_turns
+                )
+                if root_request and session.state != "awaiting_approval" and not (
+                    budget_stopping and decision == "reject"
+                ):
+                    raise BridgeError("team is not awaiting an approval")
+                if not self._approval_is_current(session, approval):
                     raise BridgeError("approval request does not belong to the active team turn")
             result = self._approval_response(approval.method, decision)
             session.connection.send({"id": approval.wire_id, "result": result})
             with session.lock:
                 session.approvals.pop(request_id, None)
-                if not budget_stopping:
-                    session.state = "awaiting_approval" if session.approvals else "running"
+                if root_request and not budget_stopping:
+                    root_pending = any(
+                        item.thread_id == session.thread_id
+                        for item in session.approvals.values()
+                    )
+                    session.state = "awaiting_approval" if root_pending else "running"
             self._event(session, "approval.resolved", {
                 "text": "Approval resolved",
                 "requestId": request_id,
@@ -1445,16 +1861,19 @@ class CodexBridge:
             raise BridgeError("request ID is invalid")
         with session.operation_lock:
             with session.lock:
-                budget_stopping = (
-                    session.state == "stopping"
-                    and session.turn_id in session.budget_interrupt_turns
-                )
-                if session.state != "awaiting_approval" and not budget_stopping:
-                    raise BridgeError("team is not awaiting a native response")
                 approval = session.approvals.get(request_id)
                 if not approval:
                     raise BridgeError("native request is unknown or already resolved")
-                if approval.thread_id != session.thread_id or approval.turn_id != session.turn_id:
+                root_request = approval.thread_id == session.thread_id
+                budget_stopping = (
+                    root_request
+                    and
+                    session.state == "stopping"
+                    and session.turn_id in session.budget_interrupt_turns
+                )
+                if root_request and session.state != "awaiting_approval" and not budget_stopping:
+                    raise BridgeError("team is not awaiting a native response")
+                if not self._approval_is_current(session, approval):
                     raise BridgeError("native request does not belong to the active team turn")
             if approval.method == "item/tool/requestUserInput":
                 result = _question_response(response, approval.payload)
@@ -1476,8 +1895,12 @@ class CodexBridge:
             session.connection.send({"id": approval.wire_id, "result": result})
             with session.lock:
                 session.approvals.pop(request_id, None)
-                if not budget_stopping:
-                    session.state = "awaiting_approval" if session.approvals else "running"
+                if root_request and not budget_stopping:
+                    root_pending = any(
+                        item.thread_id == session.thread_id
+                        for item in session.approvals.values()
+                    )
+                    session.state = "awaiting_approval" if root_pending else "running"
             # Values may contain passwords or other elicited private data. Keep
             # the durable event deliberately limited to routing metadata.
             self._event(session, "request.resolved", {
@@ -1493,6 +1916,18 @@ class CodexBridge:
             "kind": approval.data["kind"],
             "action": action,
         }
+
+    @staticmethod
+    def _approval_is_current(session: _TeamSession, approval: _Approval) -> bool:
+        if approval.thread_id == session.thread_id:
+            return approval.turn_id == session.turn_id
+        child = session.children.get(approval.thread_id)
+        return bool(
+            child
+            and child.get("stale") is not True
+            and child.get("activeTurnId") == approval.turn_id
+            and child.get("status") in {"active", "running", "pendingInit"}
+        )
 
     @staticmethod
     def _approval_response(method: str, decision: str) -> dict[str, Any]:
@@ -1512,6 +1947,7 @@ class CodexBridge:
         if not session:
             binding = self._read_binding(team)
             budget = self._budget.status(team)
+            restored = self._event_store.load(team)
             return {
                 "team": team,
                 "state": "offline",
@@ -1525,6 +1961,7 @@ class CodexBridge:
                 "turnId": None,
                 "lastEventSeq": 0,
                 "pendingApprovals": [],
+                "unrecoverableRequests": _unresolved_replay_requests(restored),
                 "children": [],
                 "usageSummary": None,
                 "budget": budget,
@@ -1534,6 +1971,7 @@ class CodexBridge:
             budget = self._budget.status(team)
             result = {
                 "team": team,
+                "historyWarning": "Earlier-message storage is retrying. Accepted messages are retained in the recent event log." if session.archive_error else None,
                 "state": session.state,
                 "connected": bool(session.connection.running()),
                 "project": str(session.project),
@@ -1545,7 +1983,15 @@ class CodexBridge:
                 "turnId": session.turn_id,
                 "lastEventSeq": session.next_event_seq - 1,
                 "pendingApprovals": [dict(item.data) for item in session.approvals.values()],
-                "children": [dict(value) for value in session.children.values()],
+                "unrecoverableRequests": [dict(item) for item in session.unrecoverable_requests],
+                "children": [
+                    {
+                        "threadId": value["threadId"],
+                        "state": value.get("state") or value.get("status"),
+                        "source": value.get("source", "native-metadata"),
+                    }
+                    for value in session.children.values()
+                ],
                 "usageSummary": dict(session.usage_summary) if session.usage_summary else None,
                 "budget": budget,
                 "limits": {"blockedReason": budget["reason"]} if budget["blocked"] else {},
@@ -1622,6 +2068,19 @@ class CodexBridge:
             snapshot = list(session.replay_events)
             if event_type != "message.delta":
                 self._event_store.save(session.team, snapshot)
+            if event_type in {"message.user","message.completed"}:
+                session.archive_pending.append(event)
+            if session.archive_pending:
+                try:
+                    for pending_event in session.archive_pending:
+                        self._transcripts.record(session.team,pending_event)
+                    session.archive_pending.clear()
+                    session.archive_error=False
+                except (OSError,ValueError,sqlite3.Error):
+                    # Native input may already be accepted. Keep the accepted
+                    # event in the durable ring; retry archive on the next event.
+                    session.archive_error=True
+                    session.archive_pending=session.archive_pending[-500:]
 
     def _on_message(self, session: _TeamSession, message: dict[str, Any]) -> None:
         if "id" in message and ("result" in message or "error" in message):
@@ -1676,18 +2135,51 @@ class CodexBridge:
                 current_thread, current_turn, current_state = (
                     session.thread_id, session.turn_id, session.state,
                 )
+                children = dict(session.children)
             thread_id = params.get("threadId")
             raw_turn_id = params.get("turnId")
-            turn_id = current_turn if nullable_turn and raw_turn_id is None else raw_turn_id
+            if not isinstance(thread_id, str):
+                return None
+            if thread_id == current_thread:
+                turn_id = current_turn if nullable_turn and raw_turn_id is None else raw_turn_id
+                if (
+                    not isinstance(turn_id, str)
+                    or turn_id != current_turn
+                    or current_state not in {"running", "awaiting_approval"}
+                ):
+                    return None
+                return thread_id, turn_id
+            child = children.get(thread_id)
+            turn_id = child.get("activeTurnId") if nullable_turn and raw_turn_id is None and child else raw_turn_id
             if (
-                not isinstance(thread_id, str)
+                not child
+                or child.get("stale") is True
+                or child.get("status") not in {"active", "running", "pendingInit"}
                 or not isinstance(turn_id, str)
-                or thread_id != current_thread
-                or turn_id != current_turn
-                or current_state not in {"running", "awaiting_approval"}
+                or turn_id != child.get("activeTurnId")
             ):
                 return None
             return thread_id, turn_id
+
+        if method == "item/tool/call" and str(params.get("tool", "")).startswith("hq_"):
+            bound = active_turn()
+            if not bound or bound[0] != session.thread_id:
+                deny({"success":False,"contentItems":[{"type":"inputText","text":"HQ client tools require the active supervisor turn."}]}, "Unbound HQ tool call rejected")
+                return
+            def run_hq_tool():
+                try:
+                    with session.operation_lock:
+                        if active_turn() != bound: raise BridgeError("The native turn ended before this action started")
+                        from hq_tools import execute
+                        value = execute(self,session,params["tool"],params.get("arguments"))
+                    result = {"success":True,"contentItems":[{"type":"inputText","text":json.dumps(value,default=str)}]}
+                except Exception as exc:
+                    result = {"success":False,"contentItems":[{"type":"inputText","text":_safe_text(exc,2000)}]}
+                try: session.connection.send({"id":wire_id,"result":result})
+                except Exception: pass
+            # Native command RPC needs the reader thread to remain available.
+            threading.Thread(target=run_hq_tool,daemon=True,name="hq-client-tool").start()
+            return
 
         approval_methods = {
             "item/commandExecution/requestApproval",
@@ -1709,16 +2201,32 @@ class CodexBridge:
                     "mode": "plan",
                 })
                 return
-            thread_id = params.get("threadId") or params.get("conversationId")
-            turn_id = params.get("turnId") or session.turn_id
-            if thread_id != session.thread_id or turn_id != session.turn_id:
+            if method in {
+                "item/commandExecution/requestApproval",
+                "item/fileChange/requestApproval",
+            }:
+                bound = active_turn()
+            else:
+                legacy_thread = params.get("conversationId") or params.get("threadId")
+                legacy_turn = params.get("turnId") or session.turn_id
+                bound = (
+                    (legacy_thread, legacy_turn)
+                    if legacy_thread == session.thread_id and legacy_turn == session.turn_id
+                    else None
+                )
+            if not bound:
                 session.connection.send({
                     "id": wire_id,
                     "result": self._approval_response(method, "reject"),
                 })
                 return
+            thread_id, turn_id = bound
             public_id = uuid.uuid4().hex
-            kind = "command" if "Command" in method or method == "execCommandApproval" else "fileChange"
+            kind = (
+                "command"
+                if "commandExecution" in method or method == "execCommandApproval"
+                else "fileChange"
+            )
             data = {
                 "requestId": public_id,
                 "kind": kind,
@@ -1730,7 +2238,8 @@ class CodexBridge:
             approval = _Approval(public_id, wire_id, method, thread_id, turn_id, data)
             with session.lock:
                 session.approvals[public_id] = approval
-                session.state = "awaiting_approval"
+                if thread_id == session.thread_id:
+                    session.state = "awaiting_approval"
             self._event(
                 session,
                 "approval.requested",
@@ -1848,7 +2357,8 @@ class CodexBridge:
 
         with session.lock:
             session.approvals[approval.public_id] = approval
-            session.state = "awaiting_approval"
+            if approval.thread_id == session.thread_id:
+                session.state = "awaiting_approval"
         self._event(
             session,
             "request.pending",
@@ -1966,7 +2476,13 @@ class CodexBridge:
     ) -> None:
         thread_id, turn_id = params.get("threadId"), params.get("turnId")
         if isinstance(thread_id, str) and session.thread_id and thread_id != session.thread_id:
-            return
+            with session.lock:
+                bound_worker = thread_id in session.children
+            if not bound_worker:
+                return
+            if method != "serverRequest/resolved":
+                self._process_worker_notification(session, method, params)
+                return
         if method == "serverRequest/resolved":
             native_request_id = params.get("requestId")
             with session.lock:
@@ -1979,7 +2495,12 @@ class CodexBridge:
                 )
                 if resolved is not None:
                     approval = session.approvals.pop(resolved)
-                    session.state = "awaiting_approval" if session.approvals else "running"
+                    if approval.thread_id == session.thread_id:
+                        root_pending = any(
+                            item.thread_id == session.thread_id
+                            for item in session.approvals.values()
+                        )
+                        session.state = "awaiting_approval" if root_pending else "running"
                 else:
                     approval = None
             if approval is not None:
@@ -2004,7 +2525,11 @@ class CodexBridge:
             status = turn.get("status", "completed") if isinstance(turn, dict) else "completed"
             native_id = turn.get("id") if isinstance(turn, dict) else turn_id
             with session.lock:
-                session.approvals.clear()
+                session.approvals = {
+                    request_id: approval
+                    for request_id, approval in session.approvals.items()
+                    if approval.thread_id != session.thread_id
+                }
                 session.last_turn_status = str(status)
                 session.plan_ready = (
                     session.mode == "plan" and status == "completed"
@@ -2081,6 +2606,90 @@ class CodexBridge:
             raw = error.get("message", error) if isinstance(error, dict) else error
             self._event(session, "error", {"text": _safe_text(raw, 2000)})
 
+    def _process_worker_notification(
+        self,
+        session: _TeamSession,
+        method: str,
+        params: dict[str, Any],
+    ) -> None:
+        thread_id = params.get("threadId")
+        turn_id = params.get("turnId")
+        if not isinstance(thread_id, str):
+            return
+        if method == "turn/started":
+            turn = params.get("turn")
+            native_id = turn.get("id") if isinstance(turn, dict) else turn_id
+            if not isinstance(native_id, str):
+                return
+            with session.lock:
+                worker = session.children.get(thread_id)
+                if worker is None:
+                    return
+                worker.update({
+                    "status": "active",
+                    "activeTurnId": native_id,
+                    "stale": False,
+                })
+            self._event(session, "worker.updated", {
+                "text": "Native worker turn started",
+                "workerThreadId": thread_id,
+                "status": "active",
+            }, thread_id=thread_id, turn_id=native_id)
+            return
+        if method == "turn/completed":
+            turn = params.get("turn")
+            native_id = turn.get("id") if isinstance(turn, dict) else turn_id
+            turn_status = turn.get("status") if isinstance(turn, dict) else None
+            with session.lock:
+                worker = session.children.get(thread_id)
+                if worker is None:
+                    return
+                worker.update({
+                    "status": "systemError" if turn_status == "failed" else "idle",
+                    "activeTurnId": None,
+                    "stale": False,
+                    "lastTurnStatus": turn_status or "completed",
+                })
+                session.approvals = {
+                    request_id: approval
+                    for request_id, approval in session.approvals.items()
+                    if approval.thread_id != thread_id
+                }
+            self._event(session, "worker.updated", {
+                "text": "Native worker turn completed",
+                "workerThreadId": thread_id,
+                "status": worker["status"],
+                "turnStatus": turn_status or "completed",
+            }, thread_id=thread_id, turn_id=native_id)
+            return
+        if method in {"item/started", "item/completed"}:
+            self._handle_item(session, method, params)
+            return
+        if method == "thread/tokenUsage/updated":
+            raw_counts = _numeric_tree(params.get("tokenUsage")) or {}
+            counts = raw_counts if isinstance(raw_counts, dict) else {"value": raw_counts}
+            summary = _usage_summary(counts)
+            summary["budgetIncluded"] = False
+            summary["budgetNote"] = "Child usage is reported separately and is not included in the root action gate."
+            with session.lock:
+                worker = session.children.get(thread_id)
+                if worker is None:
+                    return
+                worker["usageSummary"] = summary
+            self._event(session, "worker.usage", {
+                "text": "Native worker token usage updated",
+                "workerThreadId": thread_id,
+                "summary": summary,
+            }, thread_id=thread_id, turn_id=turn_id)
+            return
+        if method == "error":
+            error = params.get("error")
+            raw = error.get("message", error) if isinstance(error, dict) else error
+            self._event(session, "worker.error", {
+                "text": _safe_text(raw, 1000),
+                "workerThreadId": thread_id,
+            }, thread_id=thread_id, turn_id=turn_id)
+
     def _handle_item(
         self,
         session: _TeamSession,
@@ -2119,6 +2728,7 @@ class CodexBridge:
             return
         if item_type == "collabAgentToolCall":
             receivers, states = item.get("receiverThreadIds"), item.get("agentsStates")
+            parent_thread_id = item.get("senderThreadId") or params.get("threadId") or session.thread_id
             if isinstance(receivers, list):
                 for child_id in receivers:
                     if not isinstance(child_id, str):
@@ -2131,8 +2741,12 @@ class CodexBridge:
                     )
                     child = {
                         "threadId": child_id,
+                        "sessionId": session.root_session_id,
+                        "parentThreadId": parent_thread_id,
                         "state": child_state,
+                        "status": child_state,
                         "source": "collabAgentToolCall",
+                        "stale": False,
                     }
                     with session.lock:
                         session.children[child_id] = child
@@ -2145,9 +2759,12 @@ class CodexBridge:
             if isinstance(child_id, str):
                 child = {
                     "threadId": child_id,
+                    "sessionId": session.root_session_id,
+                    "parentThreadId": params.get("threadId") or session.thread_id,
                     "state": item.get("kind") or phase,
-                    "path": _safe_text(item.get("agentPath", ""), 500),
+                    "status": item.get("kind") or phase,
                     "source": "subAgentActivity",
+                    "stale": False,
                 }
                 with session.lock:
                     session.children[child_id] = child

@@ -2,7 +2,7 @@
 
 A local AI engineering workspace for taking an idea through planning, implementation, review and launch. Company HQ is the control plane; provider runtimes, task/memory/code-intelligence systems and specialist skills sit behind explicit adapters rather than competing for authority.
 
-This repository preserves the shared toolkit source built on 13–14 September 2026. **It is a working prototype and development handoff.** The portability work keeps runtime state outside the checkout and does not deploy or modify the original live installation merely by cloning or starting this source.
+Company HQ is a local development application for macOS Apple Silicon. Open **Company HQ.app**, start chatting, and attach a project only when you want to work with its files. The application keeps private state outside the checkout and uses the provider accounts you connect. See the [release acceptance record](docs/RELEASE-ACCEPTANCE.md) for tested behavior and remaining account/platform limits.
 
 ## Start here
 
@@ -17,7 +17,7 @@ This repository preserves the shared toolkit source built on 13–14 September 2
 - [Portable setup and isolation](docs/PORTABILITY.md)
 - [Packaging provenance](docs/PACKAGING.md)
 
-Portable setup and chat-first onboarding are merged. Remaining bounded milestones include Beads task migration, provider-neutral worker communication, usage controls/context routing, desktop packaging, and the Rust runtime boundary. Keep these reviewable independently.
+The desktop includes a conversation, live team view, Beads task board, project editor, native command runner, provider connections and allowance controls. Codex is the fully exercised execution path. Claude Code has an adapter and sign-in flow; authenticated execution must be verified after the user signs in. Other detected providers are not represented as executable integrations.
 
 The user talks primarily to the overall supervisor. Useful functional leads and specialists should be allocated according to the actual goal, available account access, complexity and cost. A visible roster is not proof that those agents are running.
 
@@ -36,9 +36,15 @@ The user talks primarily to the overall supervisor. Useful functional leads and 
 | `catalog.json` | Previously reviewed integration pins and dispositions |
 | `docs/repository-candidates.json` | All 40 supplied candidates with observed public metadata; not an activation list |
 
+## Run the app
+
+Open **Company HQ.app** from Applications. Choose **New chat**, describe the result, and send. **Work automatically** is the default; attach a folder with **Add project → Choose folder** when needed. Open **Team** for workers, **Tasks** for the plan, **Files** for the editor/commands, and **Settings** for providers and account allowance.
+
+To build the macOS app from this checkout, run `python3 scripts/build_desktop.py --dmg`; see [desktop packaging](docs/DESKTOP.md). The standalone core includes its Python runtime. Source development commands below require Python and Node.
+
 ## Build and checks
 
-Node 24+ and Python 3.10+ are the starting prerequisites. Setup installs Ruflo's pinned dependency tree with lifecycle scripts disabled and downloads the pinned codebase-memory executable after checksum verification so the reviewed memory/code-intelligence adapters are reproducible. Native Codex execution and the Ruflo OS sandbox have been verified only on macOS; unavailable capabilities are shown honestly in **System status**.
+Node 24+ and Python 3.10+ are the starting prerequisites. Setup installs Ruflo's pinned dependency tree with lifecycle scripts disabled and downloads the pinned codebase-memory executable after checksum verification so the reviewed memory/code-intelligence adapters are reproducible. Setup also installs checksum-verified Beads and RTK engines. Native Codex execution and the Ruflo OS sandbox have been verified on macOS; unavailable capabilities are shown in **Settings**. Optional provider packages are described in the provider runtime guide.
 
 For a clean model-free first run:
 

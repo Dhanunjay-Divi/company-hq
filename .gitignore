@@ -46,3 +46,7 @@ codebase-memory-mcp-0.10.8/bin/codebase-memory-mcp.exe
 # Rust/Tauri generated files
 company-hq/src-tauri/target/
 company-hq/src-tauri/gen/
+
+# Desktop package build environment and sidecar staging
+.desktop-build-venv/
+company-hq/src-tauri/resources/backend/company-hq-backend-*

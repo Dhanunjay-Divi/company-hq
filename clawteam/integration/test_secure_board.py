@@ -70,7 +70,7 @@ class SecureBoardIntegrationTest(unittest.TestCase):
         if body is not None:
             request_headers.setdefault("Content-Type", "application/json")
         req = urllib.request.Request(self.base + path, data=body, method=method, headers=request_headers)
-        return urllib.request.urlopen(req, timeout=3)
+        return urllib.request.urlopen(req, timeout=30)  # First Beads migration initializes its isolated database.
 
     def test_real_task_inbox_receive_and_ack_flow(self):
         with self.request("/") as response:

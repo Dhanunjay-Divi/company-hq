@@ -11,3 +11,21 @@
 - npm and Python dependencies remain separately licensed; lockfiles are not a relicensing of those dependencies.
 
 Company HQ and original integration code use the root AGPL-3.0-only license. A private repository does not itself change upstream license obligations. A candidate's catalog entry does not authorize copying all of its files. Resolve mixed, custom, unknown and file-level licenses before adopting new code.
+
+## Beads and RTK native helpers
+
+Company HQ launches separately installed, checksum-verified Beads v1.3.0
+(`gastownhall/beads`, MIT; `licenses/BEADS-MIT.txt`) and RTK v0.49.0
+(`rtk-ai/rtk`, Apache-2.0; `licenses/RTK-APACHE-2.0.txt`). Exact release assets
+and SHA-256 digests are recorded in `scripts/engines.lock.json`. Their binaries
+are not committed to this repository. They retain their own licenses.
+
+## Anthropic native runtime
+
+The local personal build may include the official Claude Code 2.1.278 and Claude
+Agent SDK 0.3.278 packages in ignored build resources. These are Anthropic
+software subject to the legal agreements referenced by their LICENSE.md and
+README.md, retained alongside the installed packages. They are not relicensed
+as Company HQ source. Authentication, billing and native permissions remain
+with Anthropic's runtime. A public redistribution is not authorized by the
+Company HQ source license alone.

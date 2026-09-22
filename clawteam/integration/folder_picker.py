@@ -9,10 +9,14 @@ import threading
 from typing import TypedDict
 
 
-_PICKER_TIMEOUT_SECONDS = 30
+_PICKER_TIMEOUT_SECONDS = 120
 _CANCELLED_SENTINEL = "__COMPANY_HQ_FOLDER_PICKER_CANCELLED__"
 _CHOOSE_FOLDER_SCRIPT = f'''try
-    return POSIX path of (choose folder)
+    tell application "Finder"
+        activate
+        set chosenFolder to choose folder with prompt "Choose a Company HQ project folder"
+        return POSIX path of chosenFolder
+    end tell
 on error number -128
     return "{_CANCELLED_SENTINEL}"
 end try'''

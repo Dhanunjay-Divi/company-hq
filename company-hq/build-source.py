@@ -54,6 +54,10 @@ INTEGRATION_FILES = (
     "test_runtime_config.py",
     "test_secure_board.py",
 )
+INTEGRATION_FILES = tuple(sorted(set(INTEGRATION_FILES) | {
+    path.name for path in INTEGRATION_DIR.iterdir()
+    if path.is_file() and not path.is_symlink() and path.suffix in {".py", ".mjs"}
+}))
 SCHEMA_DIR = "codex-app-server-schema-0.154.0-alpha.6.2"
 
 FORBIDDEN_PARTS = {
@@ -111,6 +115,13 @@ def _archive_entries() -> list[tuple[Path, PurePosixPath]]:
         entries.append((TOOLKIT_DIR / name, PurePosixPath(name)))
     for path in _safe_files(TOOLKIT_DIR / "agency-agents", ("USE.md", "INSTALLATION.json", "REFERENCE-MANIFEST.json"), ("upstream",)):
         entries.append((path, PurePosixPath("agency-agents") / path.relative_to(TOOLKIT_DIR / "agency-agents")))
+
+    for path in _safe_files(APP_DIR / "src-tauri", ("Cargo.toml","Cargo.lock","build.rs","tauri.conf.json"), ("src","capabilities","icons")):
+        entries.append((path,PurePosixPath("company-hq/src-tauri")/path.relative_to(APP_DIR/"src-tauri")))
+    for name in ("hq.py","build_desktop.py","install_engines.py","engines.lock.json","hq_context.py","resolve_state_path.py"):
+        entries.append((TOOLKIT_DIR/"scripts"/name,PurePosixPath("scripts")/name))
+    for path in _safe_files(TOOLKIT_DIR/"licenses", (), (".",)):
+        entries.append((path,PurePosixPath("licenses")/path.relative_to(TOOLKIT_DIR/"licenses")))
 
     entries.sort(key=lambda item: item[1].as_posix())
     archive_names: set[str] = set()

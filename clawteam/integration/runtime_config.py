@@ -152,7 +152,14 @@ def capabilities_path() -> Path:
 
 def ruflo_launcher() -> Path:
     raw = os.environ.get("COMPANY_HQ_RUFLO_LAUNCHER")
-    return _expand(raw) if raw else REPO_ROOT / "ruflo-integration" / "ruflo-mcp"
+    if raw: return _expand(raw)
+    bundled=REPO_ROOT / "ruflo-integration" / "ruflo-mcp"
+    if not bundled.is_file() and getattr(sys,"frozen",False):
+        # Optional, already-reviewed shared tool installation; never a product
+        # checkout or provider account directory. No install/auth mutation.
+        shared=Path(os.environ.get("XDG_DATA_HOME",str(Path.home()/".local/share"))) / "agent-toolkit/ruflo-integration/ruflo-mcp"
+        if shared.is_file(): return shared
+    return bundled
 
 
 def graft_install_root() -> Path:
@@ -203,7 +210,10 @@ def node_executable() -> Path | None:
     if raw:
         return _expand(raw)
     found = shutil.which("node")
-    return Path(found).resolve() if found else None
+    if found: return Path(found).resolve()
+    for path in (Path('/opt/homebrew/bin/node'),Path('/usr/local/bin/node')):
+        if path.is_file() and os.access(path,os.X_OK): return path.resolve()
+    return None
 
 
 def sandbox_executable() -> Path:
