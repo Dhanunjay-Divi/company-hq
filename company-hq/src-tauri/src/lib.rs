@@ -10,6 +10,12 @@ use tauri::{Manager, RunEvent, State};
 
 struct Backend(Mutex<Option<Child>>);
 
+impl Drop for Backend {
+    fn drop(&mut self) {
+        if let Ok(mut child) = self.0.lock() { if let Some(mut process) = child.take() { stop_child(&mut process); } }
+    }
+}
+
 fn safe_resource(app: &tauri::AppHandle, relative: &str) -> Result<PathBuf, String> {
     let root = app.path().resource_dir().map_err(|e| format!("No bundle resources: {e}"))?.canonicalize().map_err(|e| format!("No bundle resources: {e}"))?;
     let candidate = root.join(relative).canonicalize().map_err(|e| format!("Missing bundled resource: {e}"))?;
@@ -85,5 +91,5 @@ pub fn run() {
         })
         .build(tauri::generate_context!())
         .expect("error while building Company HQ desktop app")
-        .run(|app, event| if matches!(event, RunEvent::ExitRequested { .. }) { if let Ok(mut child) = app.state::<Backend>().0.lock() { if let Some(mut process) = child.take() { stop_child(&mut process); } } });
+        .run(|app, event| if matches!(event, RunEvent::ExitRequested { .. } | RunEvent::Exit) { if let Ok(mut child) = app.state::<Backend>().0.lock() { if let Some(mut process) = child.take() { stop_child(&mut process); } } });
 }

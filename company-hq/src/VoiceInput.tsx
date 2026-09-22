@@ -63,6 +63,17 @@ export default function VoiceInput({ onTranscript, disabled = false, onError }: 
     };
   }, []);
 
+  useEffect(() => {
+    if (!disabled) return;
+    const instance = recognition.current;
+    if (instance) {
+      instance.onresult = null; instance.onerror = null; instance.onend = null;
+      instance.stop();
+      recognition.current = null;
+    }
+    setListening(false);
+  }, [disabled]);
+
   function stop() { recognition.current?.stop(); }
   async function start() {
     const Constructor = localConstructor();
