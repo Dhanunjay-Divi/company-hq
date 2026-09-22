@@ -410,6 +410,12 @@ def bridge(state):
             _provider_hubs[directory]=ProviderHub(directory,codex=get_codex_bridge(directory))
         return _provider_hubs[directory]
 
+def shutdown_runtime(state):
+    # Shutdown must not create a new runtime directory or provider connection.
+    with _provider_hubs_lock:
+        hub=_provider_hubs.pop((state / "runtime").resolve(),None)
+    if hub is not None: hub.shutdown_all()
+
 def native_client(client,team):
     from provider_hub import ProviderHub
     if isinstance(client,ProviderHub):

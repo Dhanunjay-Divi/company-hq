@@ -200,7 +200,7 @@ function leadRuntimePresentation(runtime: NativeRuntimeStatus | undefined): Pick
 > | null {
   if (!runtime?.state) return null;
   const labels: Record<string, string> = {
-    offline: 'Native runtime not started',
+    offline: runtime.threadId ? 'Disconnected · history retained' : 'Ready for your first message',
     starting: 'Native runtime starting',
     idle: 'Native runtime ready',
     running: 'Native runtime working',

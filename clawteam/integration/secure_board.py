@@ -265,8 +265,8 @@ def main() -> int:
     except KeyboardInterrupt:
         pass
     finally:
-        from hq_api import bridge
-        bridge(DATA_DIR).shutdown_all()
+        from hq_api import shutdown_runtime
+        shutdown_runtime(DATA_DIR)
         server.server_close()
         instance_lock.close()
     return 0

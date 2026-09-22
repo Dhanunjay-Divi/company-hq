@@ -12,6 +12,17 @@ class Handler:
     def _json_error(self,status,message):self.error=(status,message)
 
 class ProviderHubAPITest(unittest.TestCase):
+    def test_shutdown_does_not_create_state_or_reopen_runtime(self):
+        from unittest.mock import Mock
+        with tempfile.TemporaryDirectory() as temp,patch.dict(hq_api._provider_hubs,{},clear=True):
+            state=Path(temp)/'unused'
+            hq_api.shutdown_runtime(state)
+            self.assertFalse(state.exists())
+            hub=Mock();hq_api._provider_hubs[(state/'runtime').resolve()]=hub
+            hq_api.shutdown_runtime(state);hq_api.shutdown_runtime(state)
+            hub.shutdown_all.assert_called_once()
+            self.assertFalse(state.exists())
+
     def test_claude_selected_via_route_then_restart_keeps_provider_and_history(self):
         with tempfile.TemporaryDirectory() as temp:
             state=Path(temp)/'state';project=Path(temp)/'project';project.mkdir()

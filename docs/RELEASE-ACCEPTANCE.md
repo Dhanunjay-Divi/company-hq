@@ -31,6 +31,10 @@ The earlier task-library run reported 329,132 native tokens against a 200,000 lo
 - Actual Beads-backed UI rejected starting a blocked task, then moved it to ready after its prerequisite was completed. These manual fixture transitions are not presented as agent work.
 - Official Claude SDK metadata browsing completed without a prompt and reported zero local sessions on this machine.
 
+The first pushed integration commit passed model-free CI but its second CI job exposed a shutdown race: the launcher returned after signaling, and shutdown could instantiate a new runtime while fixture cleanup ran. The fix waits for process exit and only closes existing runtime objects. The lifecycle test and a no-state-creation shutdown regression cover the correction. The failure remains recorded in run 35673658220.
+
+A real screenshot also revealed overlapping team-map/worker controls at a narrow desktop size. Both now use normal page flow; the corrected screenshot has separate header, graph and worker panel. An old cached lazy chunk after a local update previously produced a blank window; a recovery boundary now offers a reload.
+
 Desktop artifact and GitHub check results are recorded with the release commit. Historical baseline counts in older reports describe their own commits.
 
 ## User setup that cannot be inferred

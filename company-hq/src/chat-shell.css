@@ -34,3 +34,11 @@
 .provider-model-tabs{display:flex;flex-wrap:wrap;gap:8px;margin:20px 0}.provider-model-tabs .chosen{background:var(--accent,#d4c1e9);color:#211a29}
 
 .recovery-screen{max-width:42rem;margin:15vh auto;padding:2rem;color:var(--text-primary,#eee)}
+/* The map and worker controls share normal document flow at every window size. */
+.chat-app .stage.map-stage{display:block;overflow:auto}
+.chat-app .map-stage>.stage-heading{position:relative;inset:auto;display:block;padding:24px;pointer-events:auto;background:transparent}
+.chat-app .map-stage>.stage-heading h2{margin:0;font-size:24px;letter-spacing:-.7px}
+.chat-app .map-stage>.stage-heading p{max-width:70ch;font-size:13px;line-height:1.6;color:#a89eaf;margin-top:8px}
+.chat-app .map-stage>.graph-host{position:relative;inset:auto;height:clamp(360px,53vh,620px);margin:0 24px;border:1px solid #ffffff15;border-radius:18px;overflow:hidden}
+.chat-app .map-stage>.workers-panel{position:relative;margin:24px}
+@media(max-width:650px){.chat-app .map-stage>.stage-heading{padding:18px}.chat-app .map-stage>.graph-host{margin:0 14px;height:380px}.chat-app .map-stage>.workers-panel{margin:14px}}

@@ -137,6 +137,17 @@ def stop() -> int:
         print("ClawTeam metadata board is not running")
         return 0
     os.kill(current[0], signal.SIGTERM)
+    deadline=time.monotonic()+15
+    while _pid_exists(current[0]):
+        # Orphaned Linux children can briefly remain as reaped-by-init zombies.
+        stat=Path(f"/proc/{current[0]}/stat")
+        try:
+            if stat.is_file() and stat.read_text().split(') ',1)[1].startswith('Z '): break
+        except (OSError,IndexError): pass
+        if time.monotonic()>=deadline:
+            print("Shutdown is still in progress; no forced termination was performed.",file=sys.stderr)
+            return 1
+        time.sleep(0.05)
     print(f"Stopped ClawTeam metadata board (pid {current[0]})")
     return 0
 
