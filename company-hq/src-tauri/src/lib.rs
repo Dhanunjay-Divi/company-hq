@@ -6,6 +6,7 @@ use std::{
     time::Duration,
 };
 use tauri::{Manager, RunEvent, State};
+#[cfg(unix)] use std::os::unix::process::CommandExt;
 
 struct Backend(Mutex<Option<Child>>);
 
@@ -36,11 +37,25 @@ fn pick_project_folder() -> Result<Option<String>, String> {
     { Ok(None) }
 }
 
+
+fn stop_child(child: &mut Child) {
+    #[cfg(unix)]
+    { let _ = Command::new("/bin/kill").args(["-TERM", &child.id().to_string()]).status(); }
+    for _ in 0..300 {
+        if child.try_wait().ok().flatten().is_some() { return; }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    #[cfg(unix)] { let _ = Command::new("/bin/kill").args(["-KILL", "--", &format!("-{}", child.id())]).status(); }
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
 fn start_backend(app: &tauri::AppHandle, state: &State<'_, Backend>) -> Result<String, String> {
     let sidecar = safe_resource(app, "resources/backend/company-hq-backend-aarch64-apple-darwin")?;
-    let mut child = Command::new(sidecar).arg("--port").arg("0")
-        .stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn()
-        .map_err(|e| format!("Could not start bundled Company HQ backend: {e}"))?;
+    let mut command = Command::new(sidecar);
+    command.arg("--port").arg("0").stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    #[cfg(unix)] { command.process_group(0); }
+    let mut child = command.spawn().map_err(|e| format!("Could not start bundled Company HQ backend: {e}"))?;
     let stdout = child.stdout.take().ok_or("Bundled backend has no stdout")?;
     let (send, receive) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
@@ -50,9 +65,9 @@ fn start_backend(app: &tauri::AppHandle, state: &State<'_, Backend>) -> Result<S
     });
     // Always drain stderr: a full pipe must not stall the bundled server.
     if let Some(stderr) = child.stderr.take() { std::thread::spawn(move || { for _ in BufReader::new(stderr).lines() {} }); }
-    let url = match receive.recv_timeout(Duration::from_secs(45)) { Ok(url) => url, Err(_) => { let _ = child.kill(); let _ = child.wait(); return Err("Bundled backend did not report a loopback URL within 45 seconds".into()); } };
-    let parsed: url::Url = match url.parse() { Ok(value) => value, Err(_) => { let _ = child.kill(); let _ = child.wait(); return Err("Bundled backend reported an invalid URL".into()); } };
-    if parsed.scheme() != "http" || parsed.host_str() != Some("127.0.0.1") || parsed.port().is_none() { let _ = child.kill(); let _ = child.wait(); return Err("Bundled backend did not report a verified loopback URL".into()); }
+    let url = match receive.recv_timeout(Duration::from_secs(45)) { Ok(url) => url, Err(_) => { stop_child(&mut child); return Err("Bundled backend did not report a loopback URL within 45 seconds".into()); } };
+    let parsed: url::Url = match url.parse() { Ok(value) => value, Err(_) => { stop_child(&mut child); return Err("Bundled backend reported an invalid URL".into()); } };
+    if parsed.scheme() != "http" || parsed.host_str() != Some("127.0.0.1") || parsed.port().is_none() { stop_child(&mut child); return Err("Bundled backend did not report a verified loopback URL".into()); }
     *state.0.lock().map_err(|_| "Backend state is unavailable")? = Some(child);
     Ok(url)
 }
@@ -70,5 +85,5 @@ pub fn run() {
         })
         .build(tauri::generate_context!())
         .expect("error while building Company HQ desktop app")
-        .run(|app, event| if matches!(event, RunEvent::ExitRequested { .. }) { if let Ok(mut child) = app.state::<Backend>().0.lock() { if let Some(mut process) = child.take() { let _ = process.kill(); let _ = process.wait(); } } });
+        .run(|app, event| if matches!(event, RunEvent::ExitRequested { .. }) { if let Ok(mut child) = app.state::<Backend>().0.lock() { if let Some(mut process) = child.take() { stop_child(&mut process); } } });
 }

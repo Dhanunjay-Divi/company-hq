@@ -60,6 +60,8 @@ jobs:
           clawteam/venv/bin/python -m playwright install --with-deps chromium
       - name: Test real UI with synthetic provider transport
         timeout-minutes: 4
+        env:
+          DEBUG: pw:api,pw:browser
         run: clawteam/venv/bin/python tests/acceptance/browser_flow.py
       - name: Preserve verification evidence
         if: always()

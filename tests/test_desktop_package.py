@@ -22,6 +22,12 @@ class DesktopPackageTest(unittest.TestCase):
         self.assertIn('child.wait()', source)
         self.assertIn('child.stderr.take()', source)
         self.assertIn('Duration::from_secs(45)', source)
+        self.assertIn('Command::new("/bin/kill")', source)
+        self.assertIn('try_wait()', source)
+        self.assertIn('process_group(0)', source)
+        self.assertIn('["-KILL", "--", &format!("-{}", child.id())]', source)
+        self.assertIn('for _ in 0..300', source)
+        self.assertIn('stop_child(&mut process)', source)
         self.assertIn('pick_project_folder', source)
         self.assertNotIn('scripts/hq.py', source)
 

@@ -10,6 +10,12 @@ Open **Company HQ.app** from Applications. You do not need a terminal for the in
 
 The supervisor owns the outcome and review. A lead coordinates a useful discipline. A worker completes a bounded assignment. HQ does not create a hundred idle agents or load every specialist prompt. Relevant guidance from the installed role library is used on demand.
 
+## How agents share context and stay on track
+
+Agents share the project's task board, saved Ruflo decisions and explicit messages. They do not automatically share every conversation or an unlimited common memory. The supervisor passes each worker a focused brief, file ownership, acceptance checks and relevant decisions; workers report evidence back. Other projects and provider credentials stay separate. A queued inbox note is not proof that an agent read it.
+
+Use **Team** to inspect observed workers, send direction or stop one. The supervisor reviews the result against the requested goal and tests before calling it complete. Cached or missing runtime status is shown as stale or unknown. **Work automatically** uses the native workspace policy; **Full access** deliberately gives that chat wider access. No orchestration tool can guarantee that an agent never makes a mistake, and delayed token reports can overshoot a local allowance. Narrow assignments, native permissions, reviewable changes and stop controls are the practical protections.
+
 ## Connections and models
 
 Open **Settings**. Codex uses its existing authorized sign-in. For Claude, select **Claude → Begin sign-in**, finish the official login, then **Check status**. **Choose model → Claude → Check connection & models** lists what the native runtime reports. Model selection stays fixed for a bound chat; start a new chat to change providers.
