@@ -82,22 +82,28 @@ The guard enforces external state and prevents repository artifact writes.
 Refresh stale indexes; source remains authoritative. Do not index a blank
 project or use a graph where one quick file search answers the question.
 
-Use Company HQ for visible team workflows. It reuses the actual Agent Teams AI
-graph package with ClawTeam tasks and real inboxes, Ruflo shared decision memory,
-and native Codex supervisor execution. Read
-`clawteam/integration/README.md` in this repository.
-Use its guarded `clawteam-meta` CLI to register the actual project/run team,
-assign owners and update tasks. Pass each agent the same team ID, their inbox
-identity, project path and reporting supervisor. Record the actual reporting
-hierarchy and human-readable role/model labels using the company profile format
-in that README; otherwise the map must show unknown relationships, not guess. Agents check their inbox before
-work, between bounded tasks and before handoff; reply through its real inbox.
-Company HQ can start, continue and stop a native Codex supervisor and presents
-native approval requests for explicit user review. Native collaboration delivers
-immediate steering and proves actual execution. UI inbox delivery does not wake
-idle agents or start tasks automatically.
-Keep one canonical task list (ClawTeam for board workflows, Ruflo otherwise);
-use Ruflo for linked decisions and handoffs. Keep projects separate.
+Use Company HQ for visible team workflows. It reuses Agent Teams AI's licensed
+graph, Beads as the canonical task authority, ClawTeam team/inbox metadata,
+project-scoped Ruflo decisions, and native provider execution.
+Use the installed desktop app or this repository’s source launcher. Read
+`docs/STATUS.md` and `docs/USAGE.md` for the current verified capabilities.
+
+Pass each agent its bounded objective, project path, team identity, reporting
+supervisor, owned files and acceptance checks. Use native collaboration to
+actually spawn, steer and stop agents. Registered roles and queued inbox messages
+do not prove execution or receipt. The map must distinguish observed workers,
+recorded assignments and stale state. Codex worker hierarchy/control is verified;
+Claude Code execution exists but its hierarchy synchronization is not verified.
+
+Within an HQ chat, use the HQ plan/task tools and Beads board as the single task
+list. Ruflo stores linked decisions and handoffs, not a competing task authority.
+Share relevant context explicitly; agents do not inherit every conversation.
+Keep projects and provider account state separate. Consult specialist guidance
+on demand instead of loading the entire roster. Simple tasks can stay with one
+agent. New work uses native workspace permissions; Full access is an explicit
+per-chat choice and does not grant OS computer-use permissions. Review concrete
+changes and test evidence. Token gates and interrupt requests are best effort;
+never promise a hard billing cap or error-free agents.
 
 The original native Team Board is an optional summary audit, documented in
 [Team Board workflow](references/team-board.md). Do not duplicate all task state
