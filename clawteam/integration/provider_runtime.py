@@ -285,6 +285,10 @@ def executable_available(name: str, paths: tuple[Path, ...] = ()) -> str | None:
 
 def create_runtime(provider: str, **kwargs: Any) -> ProviderRuntime:
     """Construct a real adapter only for a reviewed provider transport."""
+    if provider == "openai-compatible":
+        from openai_compatible_connection import connection
+        from openai_compatible_runtime import OpenAICompatibleRuntime
+        return OpenAICompatibleRuntime.from_connection(connection(), **kwargs)
     if provider == "ollama":
         return OllamaRuntime(**kwargs)
     if provider == "deepseek":

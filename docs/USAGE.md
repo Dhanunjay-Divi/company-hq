@@ -8,6 +8,15 @@ Open **Company HQ.app** from Applications. You do not need a terminal for the in
 4. Use **Add project → Choose folder** for existing files. Upload, paste or drop PNG/JPEG/WebP images into the composer. Each message supports four images up to 6 MiB each. Attachment drafts must be selected again after reload.
 5. Follow the conversation. **Office** shows recorded assignments and observed native workers; **Tasks** shows dependencies/progress; **Files** opens the project explorer/editor and command runner; **Activity** shows native events and the local allowance.
 
+For a project with independent work, open **Office → Start a teammate**. Give the
+lead or specialist a focused assignment and choose a connected model. HQ creates
+a separate project chat under the current chat, starts that provider session,
+and shows its own conversation and live status. Use the sidebar to move between
+the coordinator and teammate chats. The parent link and assignment are durable;
+they do not by themselves make different providers exchange messages or review
+each other's code. Ask the overall supervisor to read the teammate's result and
+coordinate integration before treating the project as complete.
+
 The supervisor owns the outcome and review. A lead coordinates a useful discipline. A worker completes a bounded assignment. HQ does not create a hundred idle agents or load every specialist prompt. Relevant guidance from the installed role library is used on demand.
 
 ## How agents share context and stay on track
@@ -21,6 +30,15 @@ Use **Office** to inspect observed workers, send direction or stop one. The supe
 Open **Settings**. Codex uses its existing authorized sign-in. For Claude, select **Claude → Begin sign-in**, finish the official login, then **Check status**. **Choose model → Claude → Check connection & models** lists what the native runtime reports. Model selection stays fixed for a bound chat; start a new chat to change providers.
 
 The Claude adapter exists, but this machine is signed out and a real Claude model turn has not passed acceptance. Kimi and Z.ai/GLM have native adapters; GLM real replies, tools and shared MCP were observed, while Kimi's current account is blocked by a server coding-entitlement 403. DeepSeek has a fixture-tested HQ API-key adapter but no live key. Grok, Cursor and Ollama remain detection-only. HQ does not inject provider models into Codex's own picker or silently change the billing route.
+
+**Custom API** connects an explicitly entered OpenAI-compatible base URL and
+model. Enter the endpoint in Settings, verify its model catalog, and use **Test
+one response** when listing is unavailable or you want a generation check.
+Its key is kept only for this app process and must be entered again after a
+restart. This route handles text only; it has no project editing, browser
+control, images, native worker tools, or chat resume after restart. HQ will not
+automatically hand off a coding session to it. For an SSH-tunneled local model,
+start your tunnel first, then use its loopback HTTP URL.
 
 **Provider tasks** loads read-only Codex or Claude Code metadata. Selecting a summary does not resume or import the task. Claude filters search results on the currently loaded page; it does not expose an archive filter here. Other providers are not yet browsable.
 

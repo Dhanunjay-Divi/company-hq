@@ -213,7 +213,7 @@ def checks() -> int:
         [sys.executable, "-m", "unittest", "-v", "test_check_updates", "test_discover", "test_provider_registry"],
         [sys.executable, "-m", "unittest", "discover", "-s", "tests", "-p", "test_*.py", "-v"],
         [str(VENV_PYTHON), "-m", "unittest", "discover", "-s", "clawteam/integration", "-p", "test_*.py", "-v"],
-        ["node", "--test", "tests/test_draft_storage.mjs", "tests/test_native_team_view.mjs", "tests/test_office_state.mjs"],
+        ["node", "--test", "tests/test_draft_storage.mjs", "tests/test_native_team_view.mjs", "tests/test_office_state.mjs", "tests/test_chat_hierarchy.mjs"],
         [sys.executable, "scripts/check_source_bundle.py"],
         [sys.executable, "scripts/check_portability.py"],
     ]

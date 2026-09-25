@@ -28,7 +28,7 @@ from provider_runtime import ProviderRuntime, ProviderRuntimeError, create_runti
 from transcript_archive import TranscriptArchive
 
 
-SUPPORTED_PROVIDERS = {"codex", "claude", "kimi", "zai", "deepseek"}
+SUPPORTED_PROVIDERS = {"codex", "claude", "kimi", "zai", "deepseek", "openai-compatible"}
 DEFAULT_EXECUTION_PROMPT = (
     "The user approved the current plan. Begin bounded execution now. "
     "Do not repeat planning or ask for plan approval again. Verify the work and "
@@ -177,7 +177,7 @@ class ProviderHub:
             **({"shared_tools":True} if provider in {"kimi","zai"} else {}),
         )
         runtime.context_team = team
-        runtime.shared_tools = True
+        runtime.shared_tools = provider != 'openai-compatible'
         restored = self._event_store.load(team)
         next_seq = self._event_store.next_sequence(team, restored[-1]["seq"] + 1 if restored else 1)
         session = _ProviderSession(
@@ -266,6 +266,10 @@ class ProviderHub:
         provider = provider.strip().lower() if isinstance(provider, str) else ""
         if work_mode not in {"plan", "auto", "full"}:
             raise BridgeError("choose plan, auto or full work mode")
+        if provider == "openai-compatible" and work_mode == "full":
+            raise BridgeError("Custom API is text-only; full filesystem and tool access is unavailable")
+        if provider == "openai-compatible" and attachments:
+            raise BridgeError("Custom API is text-only; choose an image-capable model for attachments")
         project_path = self._project(project)
         binding = self._ensure_choice(team, provider, project_path)
         self.codex._budget.authorize(team)
@@ -500,10 +504,17 @@ class ProviderHub:
                 usage = data.get("usage")
                 if isinstance(usage, dict):
                     session.usage_reported = True
-                    turn_tokens = sum(
-                        int(usage.get(key, 0)) for key in ("input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens")
-                        if isinstance(usage.get(key, 0), (int, float)) and not isinstance(usage.get(key, 0), bool)
-                    )
+                    openai_total = usage.get('total_tokens')
+                    if isinstance(openai_total,int) and not isinstance(openai_total,bool) and openai_total >= 0:
+                        turn_tokens = openai_total
+                    elif any(key in usage for key in ('prompt_tokens','completion_tokens')):
+                        turn_tokens = sum(usage.get(key,0) for key in ('prompt_tokens','completion_tokens')
+                            if isinstance(usage.get(key),int) and not isinstance(usage.get(key),bool) and usage[key]>=0)
+                    else:
+                        turn_tokens = sum(
+                            int(usage.get(key, 0)) for key in ("input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens")
+                            if isinstance(usage.get(key, 0), (int, float)) and not isinstance(usage.get(key, 0), bool)
+                        )
                     session.reported_tokens += max(0, turn_tokens)
                 native_usage = data.get("nativeUsage")
                 if isinstance(native_usage, dict):
@@ -593,6 +604,8 @@ class ProviderHub:
         prompt = _validate_prompt(prompt)
         if self._provider(team) == "codex":
             return self.codex.send(team, prompt, attachments=attachments)
+        if self._provider(team) == "openai-compatible" and attachments:
+            raise BridgeError("Custom API is text-only; choose an image-capable model for attachments")
         self.codex._budget.authorize(team)
         session = self._session(team, resume=True)
         with session.operation_lock:
@@ -797,7 +810,7 @@ class ProviderHub:
                 "pendingApprovals": [], "unrecoverableRequests": _unresolved_replay_requests(restored),
                 "children": [], "usageSummary": {**(binding.get('usageDetails') or {}), "reportedTokens": binding.get("reportedTokens") if binding.get("usageReported") or binding.get("reportedTokens",0) else None},
                 "budget": budget, "limits": {"blockedReason": budget["reason"]} if budget["blocked"] else {},
-                "capabilities": {"images": True, "workers": False, "toolsInventory": False, "nativePermissions": True},
+                "capabilities": {"images": binding['provider'] != 'openai-compatible', "workers": False, "toolsInventory": False, "nativePermissions": binding['provider'] != 'openai-compatible'},
             }
         self._drain(session)
         runtime_status = session.runtime.status()
@@ -821,7 +834,7 @@ class ProviderHub:
                         {"complete": (runtime_status.get("nativeStatus") or {}).get("childrenVerified") is True}},
                 "quotaFailure": session.quota_failure or runtime_status.get('quotaFailure'),
                 "budget": budget, "limits": {"blockedReason": budget["reason"]} if budget["blocked"] else {},
-                "capabilities": {"images": True, "workers": session.provider == "zai", "workerControl": False, "toolsInventory": session.provider == "zai", "nativePermissions": True},
+                "capabilities": {"images": session.provider != 'openai-compatible', "workers": session.provider == "zai", "workerControl": False, "toolsInventory": session.provider == "zai", "nativePermissions": session.provider != 'openai-compatible'},
                 "historyWarning": session.history_warning,
                 "persistenceWarning": session.persistence_warning,
                 **({"error": session.error} if session.error else {}),
@@ -871,6 +884,8 @@ class ProviderHub:
         team = _validate_team(team)
         if target_provider not in SUPPORTED_PROVIDERS or not isinstance(target_model, str) or not target_model:
             raise BridgeError('Choose a supported provider and model')
+        if target_provider == 'openai-compatible':
+            raise BridgeError('Text-only custom endpoints cannot inherit an automatic coding handoff')
         if not isinstance(handoff_id, str) or len(handoff_id) != 32 or any(c not in '0123456789abcdef' for c in handoff_id):
             raise BridgeError('Invalid handoff identity')
         status = self.status(team)

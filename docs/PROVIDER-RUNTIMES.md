@@ -1,9 +1,30 @@
 # Provider runtimes
 
-Company HQ is the control plane, not an account gateway. Every adapter uses the
-provider's official local client and inherits `HOME`, provider configuration,
-and sign-in state. It does not copy credentials, substitute API keys, read chat
-history, or claim that application detection is a live connection.
+Company HQ is the control plane, not an account gateway. Native adapters use
+the provider's official local client and inherit `HOME`, provider configuration,
+and sign-in state. The separate Custom API adapter uses an explicitly entered
+key for a user-configured OpenAI-compatible endpoint. HQ does not read provider
+chat history or claim that application detection is a live connection.
+
+## Custom OpenAI-compatible endpoint
+
+Settings → Custom API accepts a base URL, exact model ID, optional API key,
+context hint, and temperature. HQ requires HTTPS or a loopback HTTP address,
+rejects credentials in the URL and redirects, and first verifies the chosen
+model through the endpoint's `/models` response. A separate **Test one response**
+action sends a short, explicit generation request if the server does not list
+models or the user wants stronger evidence. An unlisted model remains unverified
+until that request succeeds. The key stays in the running process; it is not
+written to public settings, chat profiles, or status events. Reenter it after
+restarting HQ.
+
+This adapter supports text turns and provider-reported token counts. It does
+not advertise image input, file or browser tools, native workers, native
+permissions, or conversation resume after an app restart. HQ never silently
+selects it as a replacement for a tool-capable coding session. Its context
+hint is a local bound, not proof of the remote model's actual context window.
+The user's Qwen-compatible URL is not embedded in the source tree; connection
+requires that the user can reach that server or has started their SSH tunnel.
 
 ## Runtime contract
 

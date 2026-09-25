@@ -12,6 +12,41 @@ import hq_api
 
 
 class HQAPIDemoTest(unittest.TestCase):
+    def test_teammate_chat_requires_existing_same_project_lead(self):
+        class Handler:
+            response = None
+            error = None
+            def _serve_json(self, value): self.response = value
+            def _json_error(self, status, message): self.error = (status, message)
+
+        with tempfile.TemporaryDirectory(prefix='hq-team-link-') as temporary:
+            state = Path(temporary) / 'state'
+            project = Path(temporary) / 'project'
+            other = Path(temporary) / 'other'
+            project.mkdir(); other.mkdir()
+            parent = SimpleNamespace(members=[SimpleNamespace(name='overall-head')])
+            profile = {'projectLabel':'Main','projectRoot':str(project.resolve()),'goal':'Coordinate','members':{}}
+            hq_api.save_profile(state, 'main', profile, set())
+            body = {'label':'Review API','project':str(project),'goal':'Review adapter','executionRole':'worker','supervisedBy':'main'}
+            with patch.object(hq_api.TeamManager, 'get_team', return_value=None), patch.object(hq_api.TeamManager, 'create_team') as create:
+                handler = Handler()
+                self.assertTrue(hq_api.handle_post(handler,state,'/api/workspaces',body))
+                self.assertEqual(handler.error[0],400)
+                create.assert_not_called()
+            with patch.object(hq_api.TeamManager, 'get_team', return_value=parent), patch.object(hq_api.TeamManager, 'create_team') as create:
+                handler = Handler()
+                hq_api.handle_post(handler,state,'/api/workspaces',{**body,'project':str(other)})
+                self.assertEqual(handler.error[0],400)
+                create.assert_not_called()
+            with patch.object(hq_api.TeamManager, 'get_team', return_value=parent), patch.object(hq_api.TeamManager, 'create_team') as create, patch('hq_api.bridge') as bridge:
+                handler = Handler()
+                hq_api.handle_post(handler,state,'/api/workspaces',body)
+                self.assertIsNone(handler.error)
+                self.assertEqual(handler.response['company']['supervisedBy'],'main')
+                self.assertEqual(handler.response['company']['executionRole'],'worker')
+                create.assert_called_once()
+                bridge.return_value.set_budget.assert_called_once()
+
     def test_demo_memory_never_launches_ruflo(self):
         with patch("hq_api.demo_mode", return_value=True), patch(
             "hq_api.memory_call",
@@ -105,6 +140,27 @@ class HQAPIDemoTest(unittest.TestCase):
             hq_api.handle_post(handler, Path('/tmp'), '/api/providers/codex/check', {})
         service.action.assert_called_once_with('codex', 'check')
         self.assertEqual(handler.response, {'authentication': 'signed_in'})
+
+    def test_custom_endpoint_parameters_are_scoped_to_its_connect_action(self):
+        class Handler:
+            response = None
+            error = None
+            def _serve_json(self, value): self.response = value
+            def _json_error(self, status, message): self.error = (status, message)
+        from unittest.mock import Mock
+        service = Mock()
+        service.action.return_value = {'authentication':'signed_in'}
+        details = {'baseUrl':'http://127.0.0.1:8099/v1','model':'fixture-model','apiKey':'fixture-key','contextHint':32768,'temperature':0.2}
+        handler = Handler()
+        with patch('provider_connections.connections', return_value=service):
+            hq_api.handle_post(handler,Path('/tmp'),'/api/providers/openai-compatible/connect',details)
+        self.assertIsNone(handler.error)
+        service.action.assert_called_once_with('openai-compatible','connect',api_key='fixture-key',base_url=details['baseUrl'],model='fixture-model',temperature=0.2,context_hint=32768)
+        for url, body in (('/api/providers/openai-compatible/check',{'apiKey':'fixture-key'}),('/api/providers/codex/connect',details)):
+            handler=Handler()
+            with patch('provider_connections.connections', return_value=service):
+                hq_api.handle_post(handler,Path('/tmp'),url,body)
+            self.assertEqual(handler.error[0],400)
 
     def test_schema_two_default_supervisor_uses_standard_when_no_explicit_tier_exists(self):
         self.assertEqual(hq_api._default_supervisor_model({

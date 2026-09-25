@@ -2,3 +2,4 @@
 #office-worker-controls{margin:20px 26px}#office-worker-controls .workers-panel{margin:0}@media(max-width:650px){#office-worker-controls{margin:16px 14px}}
 
 .office-inspector p,.office-inspector dd{font-size:12px}.office-roster small{font-size:11px}.office-view button:focus-visible,.office-scene-scroll:focus-visible{outline:2px solid #d4bbe8;outline-offset:3px}.office-desk:focus-visible .office-person,.office-desk:focus-visible .desk-monitor i{animation-play-state:paused}.office-task-link{min-height:24px}.office-view button{cursor:pointer}.office-switcher button:disabled{cursor:default;opacity:.4}
+.office-assignment{display:block;max-height:7.5em;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.5}

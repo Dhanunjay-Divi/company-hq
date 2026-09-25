@@ -5,3 +5,4 @@
 .allowance-explanation{font-size:12px;line-height:1.65;color:#b9aabf;margin:12px 0 0}.connected-provider-usage{display:grid;gap:12px;margin:12px 0}.account-window-grid:has(>.account-window:only-child){grid-template-columns:1fr}
 
 .deepseek-connect{display:grid;gap:12px;margin:18px 0;padding:18px;border:1px solid #ffffff16;border-radius:16px;background:#15131a}.deepseek-connect p{margin:0;line-height:1.6}.deepseek-connect label{display:grid;gap:8px}.deepseek-connect input{width:100%;padding:12px;border:1px solid #ffffff25;border-radius:10px;background:#1b181f;color:#eee}.deepseek-connect small{color:#b8aabd;line-height:1.5}.deepseek-connect .primary-button{justify-self:start}
+.custom-endpoint-numbers{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.custom-endpoint-actions{display:flex;gap:10px;flex-wrap:wrap}.custom-endpoint-actions button{min-height:42px}@media(max-width:520px){.custom-endpoint-numbers{grid-template-columns:1fr}}

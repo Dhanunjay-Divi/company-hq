@@ -1,10 +1,12 @@
 # Verified features and release boundaries
 
-Updated 2026-09-22. This is a local development release for macOS Apple Silicon. The [release acceptance record](RELEASE-ACCEPTANCE.md) distinguishes automated checks, actual native runtime observations, and work that still requires a user's account or operating-system permission.
+Updated 2026-09-25. This is a local development release for macOS Apple Silicon. The [release acceptance record](RELEASE-ACCEPTANCE.md) distinguishes automated checks, actual native runtime observations, and work that still requires a user's account or operating-system permission.
 
 ## Available in this release
 
 - A Rust/Tauri desktop application with a frozen Python backend and React interface. The core app runs without launching a terminal or keeping the source checkout available. State stays outside the application bundle.
+- Separate linked teammate conversations under a project coordinator, each with its own provider session, assignment and observed status; cross-provider automatic delegation and reporting are not yet claimed.
+- A text-only custom OpenAI-compatible endpoint adapter with explicit model verification and no automatic coding handoff. The supplied Qwen endpoint did not respond during local acceptance, so no live Qwen turn is claimed.
 - Chat first, optional project attachment with a native folder chooser, Markdown replies, image attachments, persistent text drafts, and paged durable user/final-message history. Private state survives a changed loopback port. Attachment drafts must be selected again after reload.
 - Codex's native app-server for actual model work, permissions, questions, account windows, skills/MCP inventory, and native collaboration. The reviewed flagship is the default supervisor; specialist work can use smaller models.
 - A Claude Code adapter using the official stream/control protocol, native sign-in, provider-reported models, images, approvals and questions. The local CLI is installed; this machine is signed out. A real authenticated Claude turn is an outstanding account acceptance check.
@@ -32,7 +34,7 @@ Pending provider approval handles cannot be fabricated after a process restart; 
 
 The stable Astra supervisor uses an explicitly enrolled GLM fallback when policy permits. Automatic quota continuation now requires a safe stopped checkpoint, verified child inventory, no approvals/tools in flight and durable transition records; fixture checks pass, but no forced live-quota handoff has been observed. Local token ceilings are disabled by default. The token gate sees usage after the provider reports it and cannot guarantee a billing limit. **Cost-efficiency acceptance has not passed.** Creating more agents is not the default for a small task.
 
-The macOS artifact is a local, unsigned/not-notarized development build. Public distribution needs Apple signing credentials. Packaging and push have not happened. Windows/Linux desktop artifacts have not been built or tested. The Rust shell owns the window/backend lifecycle; the core Python services have not been rewritten in Rust without a measured reason.
+The macOS artifact is a local, unsigned/not-notarized development build. Public distribution needs Apple signing credentials. The source has been pushed to GitHub; the latest local development build is unsigned and not notarized. Windows/Linux desktop artifacts have not been built or tested. The Rust shell owns the window/backend lifecycle; the core Python services have not been rewritten in Rust without a measured reason.
 
 ## Reuse decisions
 

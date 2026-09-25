@@ -29,6 +29,7 @@ def _inventory():
 
 
 HELP_URLS = {
+    'openai-compatible': None,
     'deepseek': 'https://platform.deepseek.com/api_keys',
     'codex': 'https://chatgpt.com/',
     'claude': 'https://claude.ai/login',
@@ -333,6 +334,10 @@ class ProviderConnections:
         snapshot = deepcopy(_inventory())
         from deepseek_connection import connection as deepseek_connection
         snapshot['providers'].append({'id':'deepseek','label':'DeepSeek','installed':True, 'desktopInstalled':False,'cliInstalled':False, **deepseek_connection().snapshot()})
+        from openai_compatible_connection import connection as custom_connection
+        snapshot['providers'].append({'id':'openai-compatible','label':'Custom API','installed':True,
+            'desktopInstalled':False,'cliInstalled':False,'reason':'User-configured OpenAI-compatible text endpoint.',
+            **custom_connection().snapshot()})
         with self.lock:
             activity = list(self.activity)
         for row in snapshot['providers']:
@@ -373,12 +378,20 @@ class ProviderConnections:
             raise ValueError('Provider task browsing is disabled in demo mode.')
         return self.auth.read_task(thread_id)
 
-    def action(self, provider, action, *, api_key=None):
+    def action(self, provider, action, *, api_key=None, base_url=None, model=None, temperature=None, context_hint=None):
         if demo_mode():
             raise ValueError('Provider connections are disabled in demo mode.')
-        if provider not in HELP_URLS or action not in ('connect', 'check', 'open', 'cancel'):
+        if provider not in HELP_URLS or action not in ('connect', 'check', 'open', 'cancel', 'test-generation') or (action == 'test-generation' and provider != 'openai-compatible'):
             raise ValueError('Unknown provider connection action.')
         try:
+            if provider == 'openai-compatible':
+                from openai_compatible_connection import connection
+                if action == 'open': raise ValueError('Enter the endpoint address in Company HQ settings.')
+                result = (connection().connect(base_url=base_url, model=model, api_key=api_key,
+                    temperature=temperature, context_hint=context_hint) if action == 'connect'
+                    else getattr(connection(), {'test-generation':'test_generation'}.get(action,action))())
+                self._record(provider, result.get('message','Connection checked'), result.get('authentication','completed'))
+                return result
             if provider == 'deepseek':
                 from deepseek_connection import connection
                 if action == 'open': raise ValueError('Open the DeepSeek API platform to create a key.')

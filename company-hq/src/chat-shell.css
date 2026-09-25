@@ -42,3 +42,12 @@
 .chat-app .map-stage>.graph-host{position:relative;inset:auto;height:clamp(360px,53vh,620px);margin:0 24px;border:1px solid #ffffff15;border-radius:18px;overflow:hidden}
 .chat-app .map-stage>.workers-panel{position:relative;margin:24px}
 @media(max-width:650px){.chat-app .map-stage>.stage-heading{padding:18px}.chat-app .map-stage>.graph-host{margin:0 14px;height:380px}.chat-app .map-stage>.workers-panel{margin:14px}}
+
+/* A project's supervisor chat owns the visible conversation tree. */
+.chat-app .chat-row.is-child{border-left:1px solid #bda7d044;margin-left:13px;min-width:0}
+.chat-app .chat-row.is-child>button:first-child{color:#b5a9bc}
+.chat-app .chat-row.is-child>button:first-child:hover,.chat-app .chat-row.is-child>button.selected{color:#f2eafb}
+.chat-app .chat-parent-link{border:0;background:none;color:#a998b5;font:inherit;font-size:11px;padding:4px 0;white-space:nowrap;cursor:pointer}
+.chat-app .chat-parent-link:hover{color:#ebd9f7}
+.chat-app .chat-title{gap:6px}
+@media(max-width:850px){.chat-app .chat-parent-link{max-width:95px;overflow:hidden;text-overflow:ellipsis}}

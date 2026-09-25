@@ -102,6 +102,10 @@ class RoutingService:
     def snapshot(self):
         with self.lock:
             catalog = self.catalog()
+            # A text-only endpoint cannot safely inherit a coding session's
+            # pending file/tool work, even when its model is explicitly enrolled.
+            catalog = [row for row in catalog if row.get('provider') != 'openai-compatible'
+                       or row.get('provider') == status.get('provider')]
             self._initialize(catalog)
             self._usage()
             catalog, selection = self._refresh_due_enrolled_accounts(catalog, role='supervisor')

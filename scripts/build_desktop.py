@@ -78,6 +78,7 @@ runpy.run_path(str(integration / 'secure_board.py'), run_name='__main__')
         '--paths', str(ROOT), '--paths', str(ROOT / 'clawteam' / 'integration'),
         '--collect-submodules', 'clawteam',
         '--hidden-import', 'deepseek_connection', '--hidden-import', 'deepseek_runtime',
+        '--hidden-import', 'openai_compatible_connection', '--hidden-import', 'openai_compatible_runtime',
         '--hidden-import', 'project_context', '--hidden-import', 'project_context_mcp',
         '--hidden-import', 'hq_api', '--hidden-import', 'company_profile', '--hidden-import', 'runtime_config',
         '--hidden-import', 'provider_connections', '--hidden-import', 'native_tasks', '--hidden-import', 'folder_picker',

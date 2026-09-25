@@ -9,6 +9,7 @@ import uuid
 from codex_bridge import BridgeError
 from provider_hub import ProviderHub
 from provider_runtime import ProviderRuntime, ProviderRuntimeError
+from openai_compatible_runtime import OpenAICompatibleRuntime
 
 
 class FakeBudget:
@@ -204,6 +205,30 @@ class ProviderHubTest(unittest.TestCase):
         self.assertEqual(self.hub.send("codex-team", "again")["forwarded"], "send")
         self.hub.events("codex-team", 4)
         self.assertEqual(self.codex.calls[-1][0], "events")
+
+    def test_custom_text_endpoint_reports_usage_and_no_tool_capabilities(self):
+        def factory(provider, **kwargs):
+            self.assertEqual(provider, 'openai-compatible')
+            kwargs.update(model='fixture-model',model_catalog=['fixture-model'],base_url='https://fixture.example/v1',
+                post=lambda *_: {'choices':[{'message':{'content':'ready'}}],
+                                 'usage':{'prompt_tokens':3,'completion_tokens':2,'total_tokens':5}})
+            return OpenAICompatibleRuntime(**kwargs)
+        hub=ProviderHub(self.root/'custom-runtime',codex=FakeCodex(),runtime_factory=factory,max_events=20,poll_interval=.01)
+        try:
+            with self.assertRaisesRegex(BridgeError,'text-only'):
+                hub.start('custom-full',self.project,'hello','fixture-model',provider='openai-compatible',work_mode='full')
+            with self.assertRaisesRegex(BridgeError,'text-only'):
+                hub.start('custom-image',self.project,'hello','fixture-model',provider='openai-compatible',work_mode='auto',attachments=[{'id':'image'}])
+            status=hub.start('custom-chat',self.project,'hello','fixture-model',provider='openai-compatible',work_mode='auto')
+            self.assertEqual(status['provider'],'openai-compatible')
+            done=wait_for(lambda: hub.status('custom-chat') if hub.status('custom-chat')['state']=='idle' else None)
+            self.assertEqual(done['usageSummary']['reportedTokens'],5)
+            self.assertEqual(done['capabilities']['images'],False)
+            self.assertEqual(done['capabilities']['workers'],False)
+            self.assertEqual(done['capabilities']['nativePermissions'],False)
+            self.assertEqual(next(row for row in hub.events('custom-chat')['events'] if row['type']=='message.completed')['data']['text'],'ready')
+        finally:
+            hub.shutdown_all()
 
     def test_claude_start_captures_events_without_ui_poll_and_persists_restart(self):
         status = self.hub.start("claude-team", self.project, "hello", "sonnet", provider="claude")

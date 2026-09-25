@@ -676,10 +676,17 @@ def handle_post(handler,state,path,body):
         try:
             parts=path.strip('/').split('/')
             is_deepseek_key = parts == ['api','providers','deepseek','connect']
-            if not isinstance(body,dict) or (set(body)-{'apiKey'} if is_deepseek_key else body): raise ValueError('Unsupported provider connection parameters.')
+            is_custom_connect = parts == ['api','providers','openai-compatible','connect']
+            allowed = {'apiKey','baseUrl','model','temperature','contextHint'} if is_custom_connect else {'apiKey'} if is_deepseek_key else set()
+            if not isinstance(body,dict) or set(body)-allowed: raise ValueError('Unsupported provider connection parameters.')
             if len(parts)!=4: raise ValueError('Unknown provider action')
             from provider_connections import connections
-            handler._serve_json(connections().action(parts[2],parts[3],api_key=body.get('apiKey')) if is_deepseek_key else connections().action(parts[2],parts[3]))
+            if is_custom_connect:
+                result=connections().action(parts[2],parts[3],api_key=body.get('apiKey'),base_url=body.get('baseUrl'),
+                    model=body.get('model'),temperature=body.get('temperature'),context_hint=body.get('contextHint'))
+            elif is_deepseek_key: result=connections().action(parts[2],parts[3],api_key=body.get('apiKey'))
+            else: result=connections().action(parts[2],parts[3])
+            handler._serve_json(result)
         except Exception as exc:handler._json_error(400,str(exc))
         return True
     if not path.startswith(('/api/runtime/','/api/knowledge/','/api/workspaces','/api/task/','/api/budget/')): return False
@@ -696,6 +703,12 @@ def handle_post(handler,state,path,body):
             kind='project' if project else 'managed'
             folder=_project_folder(project) if project else _managed_workspace_folder(state,name)
             assignment=validate_profile({'executionRole':body.get('executionRole','supervisor'),'supervisedBy':body.get('supervisedBy','')},set())
+            if assignment['supervisedBy']:
+                parent=TeamManager.get_team(assignment['supervisedBy'])
+                if parent is None: raise ValueError('Choose an existing reviewing conversation')
+                parent_profile=load_profile(state,assignment['supervisedBy'],{member.name for member in parent.members})
+                if parent_profile.get('projectRoot')!=str(folder) or parent_profile.get('executionRole')=='worker':
+                    raise ValueError('A teammate must belong to the same project and report to a supervisor or lead')
             TeamManager.create_team(name,'overall-head','not-started',description=goal,user='local',leader_agent_type='overall-head')
             profile=save_profile(state,name,{'projectLabel':label,'projectRoot':str(folder),'workspaceKind':kind,'goal':goal,'executionRole':assignment['executionRole'],'supervisedBy':assignment['supervisedBy'],'members':{'overall-head':{'displayName':'Overall head' if assignment['executionRole']=='supervisor' else 'Delegated '+assignment['executionRole'],'department':'Direction & delivery','model':'','reportsTo':None}}},{'overall-head'})
             bridge(state).set_budget(name, 0, False)
@@ -758,7 +771,7 @@ def handle_post(handler,state,path,body):
                 if provider=='codex':
                     if model=='auto':model=_default_supervisor_model(routing)
                     if model not in routing['reviewed_codex_models']: raise ValueError('Choose a reviewed available Codex model')
-                elif provider in ('claude','kimi','zai','deepseek'):
+                elif provider in ('claude','kimi','zai','deepseek','openai-compatible'):
                     if not isinstance(model,str) or not model or len(model)>200 or model=='auto':
                         raise ValueError(f'Check the {provider} connection and choose a reported model.')
                     # ProviderHub verifies this exact selection against the

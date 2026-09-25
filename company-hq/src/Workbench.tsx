@@ -20,6 +20,7 @@ const WorkersPanel=React.lazy(()=>import('./WorkersPanel'));
 import ImageAttachments, {readImageFiles, type ImageDraft} from './ImageAttachments';
 import {nativeTeamView} from './native-team-view.mjs';
 import {mergeRuntimeEvents} from './event-feed.mjs';
+import {chatHierarchy,chatDescendants} from './chat-hierarchy.mjs';
 import './chat-shell.css';
 import ChatMenu from './ChatMenu';
 
@@ -40,6 +41,10 @@ export default function Workbench() {
   const [teamView,setTeamView]=useState('office');
   const [officeExample,setOfficeExample]=useState(false);
   const [chatLabels, setChatLabels] = useState<Record<string,string>>({});
+  const [chatProfiles, setChatProfiles] = useState<Record<string,RecordData>>({});
+  const [teammateStatuses, setTeammateStatuses] = useState<Record<string,RecordData>>({});
+  const [teamModels, setTeamModels] = useState<{provider:string;model:string;label:string}[]>([]);
+  const [teamChoice, setTeamChoice] = useState('');
   const composerInput = useRef<HTMLTextAreaElement>(null);
   const [teams, setTeams] = useState<RecordData[]>([]);
   const [deletedChats, setDeletedChats] = useState<string[]>([]);
@@ -96,7 +101,17 @@ export default function Workbench() {
     try {const result=await readImageFiles(files, images.length);setImageDrafts(old=>({...old,[target]:[...(old[target]||[]),...result.items].slice(0,4)}));if(result.errors.length)setError(result.errors.join(' '))}catch(e:any){setError(e.message||'Could not read image')}
   }
   const graphData=nativeTeamView(snapshot,profile,nativeRoster);
-  const officeData=officeExample?exampleOffice():officeState(snapshot,profile,nativeRoster,runtime,events);
+  const childChats=chatDescendants(teams,chatProfiles,team,deletedChats).filter(t=>chatProfiles[t.name]?.projectRoot===profile.projectRoot);
+  const childChatIds=childChats.map(child=>child.name).join('|');
+  const baseOfficeData=officeExample?exampleOffice():officeState(snapshot,profile,nativeRoster,runtime,events);
+  const officeData=officeExample?baseOfficeData:{...baseOfficeData,agents:[...baseOfficeData.agents,...childChats.map(child=>{
+    const childProfile=chatProfiles[child.name]||{}, observed=!!teammateStatuses[child.name]?.sessionId||!!teammateStatuses[child.name]?.threadId;
+    const state=teammateStatuses[child.name]?.state;
+    const status=state==='running'?'working':state==='awaiting_approval'?'waiting':state==='idle'?'idle':state==='error'?'error':observed?'offline':'recorded';
+    const labels:Record<string,string>={working:'Working',waiting:'Needs your input',idle:'Ready',error:'Needs attention',offline:'Needs refresh',recorded:'Not started'};
+    return {id:`chat:${child.name}`,name:childProfile.projectLabel||child.name,role:childProfile.executionRole==='lead'?'Team lead':'Specialist',model:teammateStatuses[child.name]?.model||'',isSupervisor:false,delegated:false,conversation:true,observed,stale:status==='offline',status,statusLabel:labels[status],reportsTo:childProfile.supervisedBy===team?snapshot?.team?.leaderName:`chat:${childProfile.supervisedBy}`,assignment:childProfile.goal||''};
+  })]};
+  const orderedChats=chatHierarchy(teams,chatProfiles,deletedChats);
   const tasks = phases.flatMap(status => (snapshot?.tasks?.[status] || []).map((t: RecordData) => ({...t, status})));
   const members = snapshot?.members || [];
   const planReady = !demo && runtime.connected && runtime.state === 'idle' && runtime.mode === 'plan' && runtime.planReady;
@@ -149,6 +164,17 @@ export default function Workbench() {
     poll(); const timer = setInterval(poll, 900);
     return () => { cancelled = true; clearInterval(timer); };
   }, [team]);
+  useEffect(()=>{
+    if(view!=='map'||!childChatIds)return;
+    let cancelled=false;
+    const ids=childChatIds.split('|');
+    const poll=async()=>{
+      const rows=await Promise.allSettled(ids.map(async id=>[id,await request(`/api/runtime/${encodeURIComponent(id)}/status`)]));
+      if(!cancelled)setTeammateStatuses(old=>({...old,...Object.fromEntries(rows.flatMap(row=>row.status==='fulfilled'?[row.value]:[]))}));
+    };
+    void poll();const timer=setInterval(poll,2000);
+    return()=>{cancelled=true;clearInterval(timer)};
+  },[view,childChatIds]);
   useEffect(() => {
     if (view !== 'memory' || !team) return;
     let cancelled = false; setNotes([]); setMemoryError('');
@@ -175,6 +201,7 @@ export default function Workbench() {
   const chooseView = (next: string) => { setView(next); setMobileNav(false); };
   function contactAgent(id:string){
     if(officeExample||id===snapshot?.team?.leaderName){setOfficeExample(false);chooseView('run');requestAnimationFrame(()=>composerInput.current?.focus());return;}
+    if(id.startsWith('chat:')){const target=id.slice(5);navigation.current++;selected.current=target;setTeam(target);chooseView('run');return;}
     const worker=(nativeRoster.workers||[]).find((w:RecordData)=>`native-${w.threadId}`===id||snapshot?.members?.some((m:RecordData)=>m.name===id&&m.agentId===w.threadId));
     if(worker){setGraphWorker('');requestAnimationFrame(()=>{setGraphWorker(worker.threadId);document.getElementById('office-worker-controls')?.scrollIntoView({block:'center',behavior:'instant'});});}
     else{setMember(id);setDialog('message');}
@@ -191,13 +218,26 @@ export default function Workbench() {
     finally { setBusy(false); }
   }
   async function loadLabels(list: RecordData[]) {
-    const profiles = await Promise.allSettled(list.map(async t => [t.name, (await request(`/api/company/${encodeURIComponent(t.name)}`)).projectLabel]));
-    setChatLabels(old => ({...old, ...Object.fromEntries(profiles.flatMap(p => p.status === 'fulfilled' ? [p.value] : []))}));
+    const profiles = await Promise.allSettled(list.map(async t => [t.name, await request(`/api/company/${encodeURIComponent(t.name)}`)]));
+    const loaded=Object.fromEntries(profiles.flatMap(p=>p.status==='fulfilled'?[p.value]:[]));
+    setChatProfiles(old=>({...old,...loaded}));
+    setChatLabels(old=>({...old,...Object.fromEntries(Object.entries(loaded).map(([name,value]:any)=>[name,value.projectLabel]))}));
   }
   function newChat() {
     navigation.current++; selected.current = ''; setTeam(''); chooseView('run'); setModel('auto'); setProvider('codex'); setError(''); setNotice('');
     const generation=navigation.current;request('/api/routing').then(r=>{if(navigation.current===generation&&!selected.current&&r.settings?.preferredSupervisor){setProvider(r.settings.preferredSupervisor.provider);setModel(r.settings.preferredSupervisor.model)}}).catch(()=>{});
     requestAnimationFrame(() => composerInput.current?.focus());
+  }
+  async function openTeammate(){
+    if(!team||!profile.projectRoot)return;
+    setError('');setTeamModels([]);setTeamChoice('');setDialog('teammate');
+    try{
+      const result=await request('/api/providers');
+      const choices=(result.providers||[]).filter((row:RecordData)=>row.id!=='openai-compatible'&&row.runtimeReady&&row.authentication==='signed_in').flatMap((row:RecordData)=>(row.models||[]).map((id:string)=>({provider:row.id,model:id,label:`${row.label||row.id} · ${id.replace(/^account:[^/]+\//,'')}`})));
+      setTeamModels(choices);
+      const preferred=choices.find((item:{provider:string;model:string})=>item.provider==='codex'&&item.model==='gpt-5.6-terra')||choices[0];
+      setTeamChoice(preferred?`${preferred.provider}\x1f${preferred.model}`:'');
+    }catch(e:any){setError(e.message||'Could not load connected models.');}
   }
   async function chatAction(target: string, action: string) {
     try {
@@ -225,6 +265,7 @@ export default function Workbench() {
   async function send() {
     if (busy || (!draft.trim() && !images.length)) return;
     if (demo || missingCodex) { setError('Connect Codex in Settings to send messages. Your draft is kept.'); return; }
+    if (selectedProvider === 'openai-compatible' && images.length) { setError('Custom API chats currently support text only. Remove the image attachments or choose a model with image support.'); return; }
     const sentDraft = draft; const sentImages = images; const prompt = draft.trim() || 'Please review the attached images.'; const sourceTeam = team;
     const sourceNavigation = navigation.current; const requestedModel = model;
     let target = team;
@@ -248,7 +289,7 @@ export default function Workbench() {
       }
       // Select the action from this chat’s fresh status, never a previous chat’s render.
       const status = await request(`/api/runtime/${encodeURIComponent(target)}/status`);
-      await request(`/api/runtime/${encodeURIComponent(target)}/${status.connected ? 'send' : 'start'}`, {prompt, provider:(status.providerBound||status.threadId)?status.provider||provider:provider, model: status.model || requestedModel, workMode, attachmentIds});
+      await request(`/api/runtime/${encodeURIComponent(target)}/${status.connected ? 'send' : 'start'}`, {prompt, provider:(status.providerBound||status.threadId)?status.provider||provider:provider, model: status.model || requestedModel, workMode: provider === 'openai-compatible' && workMode === 'full' ? 'auto' : workMode, attachmentIds});
       setDrafts(old => ({...old,[target]: old[target] === sentDraft ? '' : old[target]}));
       setImageDrafts(old=>({...old,[target]:(old[target]||[]).filter(i=>!sentImages.some(s=>s.id===i.id))}));
       if (selected.current === target) chooseView('run');
@@ -259,7 +300,21 @@ export default function Workbench() {
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault(); const data = Object.fromEntries(new FormData(event.currentTarget).entries());
     let result;
-    if (dialog === 'workspace' || dialog === 'attach') {
+    if (dialog === 'teammate') {
+      const [chosenProvider,chosenModel]=teamChoice.split('\x1f');
+      if(!chosenProvider||!chosenModel){setError('Choose a connected model for this teammate.');return;}
+      const parent=team, assignment=String(data.goal||'').trim();
+      result=await action('/api/workspaces',{label:String(data.label||'').trim()||'New teammate',project:profile.projectRoot,goal:assignment,executionRole:data.executionRole,supervisedBy:parent});
+      if(result){
+        const child=result.team;
+        setChatProfiles(old=>({...old,[child]:result.company}));
+        setChatLabels(old=>({...old,[child]:result.company.projectLabel}));
+        await refreshList();
+        const started=await action(`/api/runtime/${encodeURIComponent(child)}/start`,{prompt:assignment,provider:chosenProvider,model:chosenModel,workMode:'auto'});
+        navigation.current++;selected.current=child;setTeam(child);chooseView('run');
+        setNotice(started?'Teammate started. Its own conversation and status are linked to this project.':'Teammate chat was created, but its model did not start. Your assignment is retained.');
+      }
+    } else if (dialog === 'workspace' || dialog === 'attach') {
       result = await action(dialog === 'attach' ? `/api/workspaces/${encoded}/attach` : '/api/workspaces', data);
       if (result) {
         await refreshList();
@@ -292,22 +347,22 @@ export default function Workbench() {
     try {const choice=await request('/api/folders/pick',{});if(stillHere()&&!choice.cancelled&&choice.path)setFolderPath(choice.path)}
     catch(e:any){if(stillHere())setError(e.message || 'Folder picker is unavailable. You can paste a path.')}finally{setPickingFolder(false)}
   }
-  const composer = <div className="chat-composer-wrap"><div className="chat-composer" onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();if(!busy&&!demo)addImages(e.dataTransfer.files)}}>
-    <ImageAttachments images={images} onChange={items=>setImageDrafts(old=>({...old,[team]:items}))} disabled={busy||demo} onError={setError}/>
+  const composer = <div className="chat-composer-wrap"><div className="chat-composer" onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();if(!busy&&!demo&&selectedProvider!=='openai-compatible')addImages(e.dataTransfer.files)}}>
+    <ImageAttachments images={images} onChange={items=>setImageDrafts(old=>({...old,[team]:items}))} disabled={busy||demo||selectedProvider==='openai-compatible'} onError={setError}/>
     <textarea ref={composerInput} aria-label="Direction for the team" value={draft} maxLength={24000} onChange={e => setDrafts(old => ({...old,[team]:e.target.value}))}
-      onPaste={e=>{if(e.clipboardData.files.length){e.preventDefault();if(!busy&&!demo)addImages(e.clipboardData.files)}}}
+      onPaste={e=>{if(e.clipboardData.files.length){e.preventDefault();if(!busy&&!demo&&selectedProvider!=='openai-compatible')addImages(e.clipboardData.files)}}}
       onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send(); } }}
       placeholder="Ask anything, or describe what you want to build…" rows={3}/>
     <div className="chat-composer-tools">
       <button className="attach-button" title="Optional: work with an existing folder" onClick={openProject}><FolderPlus size={17}/><span>{profile.workspaceKind === 'project' ? 'Project attached' : 'Add project'}</span></button>
-      <label className="work-mode-picker"><span className="sr-only">Work mode</span><select aria-label="Work mode" value={runtime.threadId ? (runtime.accessMode==='full'?'full':runtime.mode === 'execute' ? 'auto' : 'plan') : workMode} disabled={busy || demo || (!!runtime.threadId && (!runtime.connected || running || runtime.mode==='plan'))} onChange={async e => {const next=e.target.value;if(runtime.threadId){const r=await action(`/api/runtime/${encoded}/access`,{accessMode:next==='full'?'full':'workspace'});if(r)setRuntime(r)}else{setWorkMode(next);try {localStorage.setItem('hq.workMode',next)} catch {}}}}><option value="auto">Work automatically</option><option value="full">Full access</option><option value="plan" disabled={!!runtime.threadId}>Plan first</option></select></label>
+      <label className="work-mode-picker"><span className="sr-only">Work mode</span><select aria-label="Work mode" value={runtime.threadId ? (runtime.accessMode==='full'?'full':runtime.mode === 'execute' ? 'auto' : 'plan') : selectedProvider==='openai-compatible'&&workMode==='full'?'auto':workMode} disabled={busy || demo || (!!runtime.threadId && (!runtime.connected || running || runtime.mode==='plan'))} onChange={async e => {const next=e.target.value;if(runtime.threadId){const r=await action(`/api/runtime/${encoded}/access`,{accessMode:next==='full'?'full':'workspace'});if(r)setRuntime(r)}else{setWorkMode(next);try {localStorage.setItem('hq.workMode',next)} catch {}}}}><option value="auto">Work automatically</option><option value="full" disabled={selectedProvider==='openai-compatible'}>Full access</option><option value="plan" disabled={!!runtime.threadId}>Plan first</option></select></label>
       <VoiceInput key={team} onUseSystemDictation={()=>{chooseView('run');requestAnimationFrame(()=>composerInput.current?.focus())}} disabled={busy||demo} onError={setError} onTranscript={text=>setDrafts(old=>({...old,[team]:((old[team]||'')+' '+text).trim().slice(0,24000)}))}/>
       <div className="composer-spacer"/>
       <button className="model-trigger" aria-label="Choose model" onClick={() => setDialog('models')}><Sparkles size={13}/>{(runtime.model || model) === 'auto' ? 'Auto · Supervisor' : (runtime.model || model).replace('gpt-','GPT ').replaceAll('-',' ')}<ChevronDown size={12}/></button>
       {running && <button className="stop-button" onClick={() => action(`/api/runtime/${encoded}/stop`)}>Stop</button>}
       <button className="chat-send" aria-label={busy ? 'Sending message' : 'Send message'} disabled={busy || (!draft.trim() && !images.length) || demo || missingCodex || runtime.budget?.blocked} onClick={send}><ArrowUp size={19}/></button>
     </div>
-  </div><p className="composer-hint">{demo ? 'Demo preview · sending is disabled' : runtime.budget?.blocked ? 'Budget reached. Adjust it in Activity to continue.' : missingCodex ? 'Codex is unavailable. Open Settings to check your connection.' : runtime.accessMode==='full' || (!runtime.threadId&&workMode==='full') ? 'Full machine and network access for this chat · native account policies still apply' : ['claude','kimi','zai'].includes(selectedProvider) ? `${selectedProvider === 'zai' ? 'Z.ai' : selectedProvider === 'kimi' ? 'Kimi' : 'Claude'} uses its native permission controls · Enter to send` : runtime.mode === 'execute' || (!runtime.threadId && workMode === 'auto') ? 'Plans, builds and checks in this workspace · Enter to send' : 'Plan first · review the plan before file changes.'}</p></div>;
+  </div><p className="composer-hint">{demo ? 'Demo preview · sending is disabled' : runtime.budget?.blocked ? 'Budget reached. Adjust it in Activity to continue.' : missingCodex ? 'Codex is unavailable. Open Settings to check your connection.' : selectedProvider==='openai-compatible' ? 'Text-only conversation · no file, image, browser or worker tools · Enter to send' : runtime.accessMode==='full' || (!runtime.threadId&&workMode==='full') ? 'Full machine and network access for this chat · native account policies still apply' : ['claude','kimi','zai'].includes(selectedProvider) ? `${selectedProvider === 'zai' ? 'Z.ai' : selectedProvider === 'kimi' ? 'Kimi' : 'Claude'} uses its native permission controls · Enter to send` : runtime.mode === 'execute' || (!runtime.threadId && workMode === 'auto') ? 'Plans, builds and checks in this workspace · Enter to send' : 'Plan first · review the plan before file changes.'}</p></div>;
   return <div className="desktop-frame chat-app">
     <div className="app-shell workbench">
     {mobileNav && <button className="nav-scrim" aria-label="Dismiss navigation" onClick={() => setMobileNav(false)}/>}
@@ -318,11 +373,11 @@ export default function Workbench() {
         {([['run',MessageCircle,'Chat'],['map',Network,'Office'],['board',LayoutGrid,'Tasks'],['activity',Activity,'Activity'],['files',Files,'Files'],['provider-tasks',Layers3,'Provider tasks']] as const).map(([id,Icon,label]) => <button key={id} className={view === id ? 'active' : ''} disabled={!team && !['run','map','provider-tasks'].includes(id)} onClick={() => chooseView(id)}><Icon size={17}/>{label}{id==='board' && tasks.length>0 && <small>{tasks.length}</small>}</button>)}
       </nav>
       <div className="recent-label">Your chats</div>
-      <div className="chat-history" aria-label="Recent chats">{teams.filter(t=>!deletedChats.includes(t.name)).length ? teams.filter(t=>!deletedChats.includes(t.name)).map(t => <div className="chat-row" key={t.name}><button title={chatLabels[t.name] || t.name} className={team===t.name ? 'selected' : ''} onClick={() => {navigation.current++;selected.current=t.name;setTeam(t.name);chooseView('run');setError('');setNotice('')}}><MessageCircle size={14}/><span>{chatLabels[t.name] || t.name.replace(/-[a-f0-9]{6}$/, '').replaceAll('-',' ')}</span></button><ChatMenu name={chatLabels[t.name] || t.name} onExport={kind=>chatAction(t.name,kind==='json'?'export-json':'export-markdown')} onReveal={()=>chatAction(t.name,'reveal-folder')} onDelete={()=>chatAction(t.name,'delete')} onRestore={()=>chatAction(t.name,'restore')}/></div>) : <p>Your conversations will appear here.<br/>Start anywhere.</p>}{teams.filter(t=>deletedChats.includes(t.name)).length>0&&<><div className="recent-label">Trash</div>{teams.filter(t=>deletedChats.includes(t.name)).map(t=><div className="chat-row" key={t.name}><button className="trashed-chat" title={chatLabels[t.name] || t.name} onClick={()=>chatAction(t.name,'restore')}><MessageCircle size={14}/><span>{chatLabels[t.name] || t.name.replace(/-[a-f0-9]{6}$/, '').replaceAll('-',' ')}</span></button><ChatMenu name={chatLabels[t.name] || t.name} trashed onExport={()=>{}} onReveal={()=>{}} onDelete={()=>{}} onRestore={()=>chatAction(t.name,'restore')}/></div>)}</>}</div>
+      <div className="chat-history" aria-label="Recent chats">{orderedChats.length ? orderedChats.map(({team:t,depth}) => <div className={`chat-row ${depth?'is-child':''}`} style={{paddingLeft:depth*12}} key={t.name}><button title={chatLabels[t.name] || t.name} className={team===t.name ? 'selected' : ''} onClick={() => {navigation.current++;selected.current=t.name;setTeam(t.name);chooseView('run');setError('');setNotice('')}}>{depth?<MessageCircle size={14}/>:<Layers3 size={14}/>}<span>{chatLabels[t.name] || t.name.replace(/-[a-f0-9]{6}$/, '').replaceAll('-',' ')}</span></button><ChatMenu name={chatLabels[t.name] || t.name} onExport={kind=>chatAction(t.name,kind==='json'?'export-json':'export-markdown')} onReveal={()=>chatAction(t.name,'reveal-folder')} onDelete={()=>chatAction(t.name,'delete')} onRestore={()=>chatAction(t.name,'restore')}/></div>) : <p>Your conversations will appear here.<br/>Start anywhere.</p>}{teams.filter(t=>deletedChats.includes(t.name)).length>0&&<><div className="recent-label">Trash</div>{teams.filter(t=>deletedChats.includes(t.name)).map(t=><div className="chat-row" key={t.name}><button className="trashed-chat" title={chatLabels[t.name] || t.name} onClick={()=>chatAction(t.name,'restore')}><MessageCircle size={14}/><span>{chatLabels[t.name] || t.name.replace(/-[a-f0-9]{6}$/, '').replaceAll('-',' ')}</span></button><ChatMenu name={chatLabels[t.name] || t.name} trashed onExport={()=>{}} onReveal={()=>{}} onDelete={()=>{}} onRestore={()=>chatAction(t.name,'restore')}/></div>)}</>}</div>
       <div className="sidebar-bottom"><details><summary><Layers3 size={16}/>More tools<ChevronDown size={14}/></summary><nav>{[['memory',Brain,'Shared memory'],['decisions',Scale,'Why this stack']].map(([id,Icon,label]:any) => <button key={id} onClick={() => chooseView(id)}><Icon size={16}/>{label}</button>)}</nav></details><button onClick={() => chooseView('guide')}><CircleHelp size={17}/>How to use</button><button onClick={() => chooseView('system')}><Settings2 size={17}/>Settings<span className={`connection-dot ${health.capabilities?.codex?.available ? 'available' : ''}`}/></button></div>
     </aside>
     <main className="main-shell">
-      <header className="topbar"><button className="icon-btn mobile-menu" aria-label="Open navigation" onClick={() => setMobileNav(true)}><Menu/></button><div className="chat-title"><b>{view === 'provider-tasks' ? 'Provider tasks' : view === 'system' ? 'Settings' : team ? chatLabels[team] || profile.projectLabel || 'Chat' : 'New chat'}</b>{team && view === 'run' && <span>{profile.workspaceKind === 'managed' ? 'Just a conversation' : 'Project chat'}</span>}</div><div className="top-controls">{demo && <span className="demo-badge">Demo</span>}{team && <><button className="subtle-button" onClick={() => chooseView('map')}><Network size={16}/><span>Office</span></button><button className={`icon-btn ${evidenceOpen ? 'is-selected' : ''}`} aria-label="Toggle activity panel" onClick={() => setConsoleOpen(!consoleOpen)}><PanelRightOpen size={18}/></button></>}</div></header>
+      <header className="topbar"><button className="icon-btn mobile-menu" aria-label="Open navigation" onClick={() => setMobileNav(true)}><Menu/></button><div className="chat-title">{team&&chatProfiles[team]?.supervisedBy&&chatProfiles[chatProfiles[team].supervisedBy]&&<button className="chat-parent-link" onClick={()=>{const parent=chatProfiles[team].supervisedBy;navigation.current++;selected.current=parent;setTeam(parent);chooseView('run')}}>{chatLabels[chatProfiles[team].supervisedBy]||'Project'} /</button>}<b>{view === 'provider-tasks' ? 'Provider tasks' : view === 'system' ? 'Settings' : team ? chatLabels[team] || profile.projectLabel || 'Chat' : 'New chat'}</b>{team && view === 'run' && <span>{profile.executionRole==='lead'?'Team lead':profile.executionRole==='worker'?'Specialist':profile.workspaceKind === 'managed' ? 'Just a conversation' : 'Project supervisor'}</span>}</div><div className="top-controls">{demo && <span className="demo-badge">Demo</span>}{team && <>{profile.executionRole!=='worker'&&<button className="subtle-button" onClick={openTeammate}><SquarePen size={16}/><span>New teammate</span></button>}<button className="subtle-button" onClick={() => chooseView('map')}><Network size={16}/><span>Office</span></button><button className={`icon-btn ${evidenceOpen ? 'is-selected' : ''}`} aria-label="Toggle activity panel" onClick={() => setConsoleOpen(!consoleOpen)}><PanelRightOpen size={18}/></button></>}</div></header>
       {error && <div className="error-banner" role="alert"><span>{error}</span><button aria-label="Dismiss error" onClick={() => setError('')}><X/></button></div>}
       {(notice||draftError) && <div className="notice-banner" role="status">{draftError||notice}</div>}
       {runtime.routingStatus?.message&&<div className="notice-banner" role="status">{runtime.routingStatus.message}</div>}
@@ -330,7 +385,7 @@ export default function Workbench() {
       {planReady && <div className="approval-bar"><div><b>Your plan is ready</b><p>Happy with the plan? Let the team start working.</p></div><button className="primary-button" disabled={busy || runtime.budget?.blocked} onClick={() => { action(`/api/runtime/${encoded}/execute`); chooseView('run'); }}>Approve plan & start execution</button></div>}
       <div className={`work-area ${evidenceOpen ? 'with-inspector' : ''}`}>
         <section className={`stage ${view === 'map' ? 'map-stage' : ''}`}><React.Suspense fallback={<div className="view-loading" role="status">Opening {view==='map'?'team':view}…</div>}>
-          {view === 'run' && <ChatView assignment={profile} onFullAccess={runtime.provider==='zai' && runtime.accessMode!=='full' && runtime.mode!=='plan' ? async(id)=>{const access=await action(`/api/runtime/${encoded}/access`,{accessMode:'full'});if(access){setRuntime(access);await action(`/api/runtime/${encoded}/approve`,{requestId:id,decision:'approve'})}} : undefined} historyControl={historyCursor!==null?<button className="small-button" disabled={historyBusy} onClick={loadHistory}>{historyBusy?'Loading…':'Load earlier messages'}</button>:null} key={team || 'new'} events={events} runtime={runtime} empty={emptyChat} composer={composer} onDraft={text => {setDrafts(old => ({...old,[team]:text}));composerInput.current?.focus()}} busy={busy} demo={demo}
+          {view === 'run' && <ChatView assignment={{...profile,supervisedBy:chatLabels[profile.supervisedBy]||profile.supervisedBy}} onFullAccess={runtime.provider==='zai' && runtime.accessMode!=='full' && runtime.mode!=='plan' ? async(id)=>{const access=await action(`/api/runtime/${encoded}/access`,{accessMode:'full'});if(access){setRuntime(access);await action(`/api/runtime/${encoded}/approve`,{requestId:id,decision:'approve'})}} : undefined} historyControl={historyCursor!==null?<button className="small-button" disabled={historyBusy} onClick={loadHistory}>{historyBusy?'Loading…':'Load earlier messages'}</button>:null} key={team || 'new'} events={events} runtime={runtime} empty={emptyChat} composer={composer} onDraft={text => {setDrafts(old => ({...old,[team]:text}));composerInput.current?.focus()}} busy={busy} demo={demo}
             onApproval={(requestId,decision) => action(`/api/runtime/${encoded}/approve`,{requestId,decision})} onRespond={(requestId,response) => action(`/api/runtime/${encoded}/respond`,{requestId,response})}/>}
           {view === 'provider-tasks' && <NativeTasks demo={demo}/>}
           {view === 'files' && team && <ProjectFiles key={team} team={team} runtime={runtime} demo={demo}/>}
@@ -347,7 +402,7 @@ export default function Workbench() {
       {view !== 'run' && team && <div className="back-to-chat"><button onClick={() => chooseView('run')}><MessageCircle size={16}/>Back to conversation</button></div>}
     </main>
     <dialog ref={modal} className="modal" onCancel={()=>setDialog('')}><p className="dialog-error" role={error?'alert':undefined}>{error}</p><button className="modal-close icon-btn" aria-label="Close dialog" onClick={()=>setDialog('')}><X/></button>
-      {dialog==='models'?<ModelPicker models={models} model={model} provider={provider} runtime={runtime} demo={demo} onChoose={(engine,id)=>{setProvider(engine);setModel(id);setDialog('')}} onSettings={()=>{setDialog('');chooseView('system')}}/>:dialog==='help'?<><h2>One workspace for the whole team</h2><p>Start chatting → optionally attach a project or images → choose Work automatically, Full access, or Plan first → follow the work → review the result.</p><p>Ruflo memory and code indexes are optional capabilities. Registered roles are not proof that workers are running. No model, billing plan or quota is invented.</p><p>The licensed Munder Difflin procedural characters, Agent Teams AI graph, Beads task engine, scoped Ruflo memory and native Codex or Claude Code adapters are reused. Each provider exposes its own capabilities.</p><a href="/api/source">Application source and retained upstream licenses</a></>:dialog==='task-detail'?<><h2>{task?.subject}</h2><p>{task?.description}</p><label>Task status<select aria-label="Task status" value={task?.status||'pending'} onChange={async e=>{const next=e.target.value;const r=await action(`/api/task/${encoded}/${encodeURIComponent(task?.id)}`,{status:next});if(r)setTask(t=>({...t,status:next}))}}>{phases.map(p=><option value={p} key={p}>{phaseNames[p]}</option>)}</select></label><p>Manual status changes do not claim that tests passed.</p></>:<form key={dialog} onSubmit={submit}><h2>{dialog==='workspace'?'Chat with a project':dialog==='attach'?'Add project':dialog==='message'?`Message ${name(member)}`:dialog==='budget'?'Set usage budget':'Add a task'}</h2>{(dialog==='workspace'||dialog==='attach')?<><label>Chat name (optional)<input name="label" maxLength={120} placeholder="A name for this project"/></label><label>Project folder<div className="folder-input-row"><input name="project" required value={folderPath} onChange={e=>setFolderPath(e.target.value)} placeholder="Choose a folder, or paste its path"/><button type="button" className="small-button" onClick={chooseFolder} disabled={pickingFolder || demo}>{pickingFolder ? 'Choosing…' : 'Choose folder…'}</button></div></label><label>First message (optional)<textarea name="goal" maxLength={2000} defaultValue={draft} placeholder="What would you like to work on?"/></label><p>{team && runtime.threadId ? 'This opens a separate project chat. Your current conversation stays here.' : 'A project is optional. This connects its files for your next message.'}</p></>:dialog==='message'?<><label>Direction<textarea name="content" required maxLength={12000}/></label><p>This stores an inbox message; it does not promise wake-up or acknowledgement.</p></>:dialog==='budget'?<><UsagePanel runtime={runtime}/><label>Chat allowance (tokens)<input name="limitTokens" type="number" min="0" max="20000000" required defaultValue={runtime.budget?.limitTokens ?? 0}/></label><label>Action gate<select name="enforced" defaultValue={String(runtime.budget?.enforced ?? false)}><option value="true">Block next runtime action at the ceiling</option><option value="false">Track only</option></select></label><p>This optional chat allowance counts reported tokens, including reused context. Your 5-hour and weekly account limits are shown in Settings and cannot be changed here. Use 0 for no local ceiling.</p></>:<><label>Task<input name="subject" required maxLength={2000}/></label><label>Owner<select name="owner" defaultValue={snapshot?.team?.leaderName||''}><option value="">Unassigned</option>{members.map((m:RecordData)=><option key={m.name} value={m.name}>{name(m.name)}</option>)}</select></label><label>Expected result<textarea name="description" maxLength={12000}/></label></>}<footer><button type="button" className="small-button" onClick={()=>setDialog('')}>Cancel</button><button className="primary-button" disabled={busy}>{(dialog==='workspace'||dialog==='attach')?'Connect project':dialog==='message'?'Queue message':dialog==='budget'?'Save budget':'Create task'}</button></footer></form>}
+      {dialog==='models'?<ModelPicker models={models} model={model} provider={provider} runtime={runtime} demo={demo} onChoose={(engine,id)=>{setProvider(engine);setModel(id);if(engine==='openai-compatible'&&workMode==='full')setWorkMode('auto');setDialog('')}} onSettings={()=>{setDialog('');chooseView('system')}}/>:dialog==='help'?<><h2>One workspace for the whole team</h2><p>Start chatting → optionally attach a project or images → choose Work automatically, Full access, or Plan first → follow the work → review the result.</p><p>Ruflo memory and code indexes are optional capabilities. Registered roles are not proof that workers are running. No model, billing plan or quota is invented.</p><p>The licensed Munder Difflin procedural characters, Agent Teams AI graph, Beads task engine, scoped Ruflo memory and native Codex or Claude Code adapters are reused. Each provider exposes its own capabilities.</p><a href="/api/source">Application source and retained upstream licenses</a></>:dialog==='task-detail'?<><h2>{task?.subject}</h2><p>{task?.description}</p><label>Task status<select aria-label="Task status" value={task?.status||'pending'} onChange={async e=>{const next=e.target.value;const r=await action(`/api/task/${encoded}/${encodeURIComponent(task?.id)}`,{status:next});if(r)setTask(t=>({...t,status:next}))}}>{phases.map(p=><option value={p} key={p}>{phaseNames[p]}</option>)}</select></label><p>Manual status changes do not claim that tests passed.</p></>:<form key={dialog} onSubmit={submit}><h2>{dialog==='workspace'?'Chat with a project':dialog==='attach'?'Add project':dialog==='teammate'?'Start a teammate':dialog==='message'?`Message ${name(member)}`:dialog==='budget'?'Set usage budget':'Add a task'}</h2>{dialog==='teammate'?<><p>Give this teammate a focused assignment. Their work appears as a separate conversation under this project.</p><label>Teammate or task name<input name="label" required maxLength={120} placeholder="For example, review the provider adapter"/></label><label>Role<select name="executionRole" defaultValue="lead"><option value="lead">Team lead</option><option value="worker">Specialist</option></select></label><label>Available model<select name="engine" required value={teamChoice} onChange={event=>setTeamChoice(event.target.value)}>{teamModels.length?teamModels.map(item=><option key={`${item.provider}:${item.model}`} value={`${item.provider}\x1f${item.model}`}>{item.label}</option>):<option value="">No connected models found</option>}</select></label><label>Assignment<textarea name="goal" required maxLength={2000} placeholder="What should they deliver and how will you know it is done?"/></label><p>HQ starts this model after you create the teammate. Its native tools and permissions still apply. A listed model can still be unavailable on your account; HQ reports that when it starts. Open Office to follow real status.</p></>:(dialog==='workspace'||dialog==='attach')?<><label>Chat name (optional)<input name="label" maxLength={120} placeholder="A name for this project"/></label><label>Project folder<div className="folder-input-row"><input name="project" required value={folderPath} onChange={e=>setFolderPath(e.target.value)} placeholder="Choose a folder, or paste its path"/><button type="button" className="small-button" onClick={chooseFolder} disabled={pickingFolder || demo}>{pickingFolder ? 'Choosing…' : 'Choose folder…'}</button></div></label><label>First message (optional)<textarea name="goal" maxLength={2000} defaultValue={draft} placeholder="What would you like to work on?"/></label><p>{team && runtime.threadId ? 'This opens a separate project chat. Your current conversation stays here.' : 'A project is optional. This connects its files for your next message.'}</p></>:dialog==='message'?<><label>Direction<textarea name="content" required maxLength={12000}/></label><p>This stores an inbox message; it does not promise wake-up or acknowledgement.</p></>:dialog==='budget'?<><UsagePanel runtime={runtime}/><label>Chat allowance (tokens)<input name="limitTokens" type="number" min="0" max="20000000" required defaultValue={runtime.budget?.limitTokens ?? 0}/></label><label>Action gate<select name="enforced" defaultValue={String(runtime.budget?.enforced ?? false)}><option value="true">Block next runtime action at the ceiling</option><option value="false">Track only</option></select></label><p>This optional chat allowance counts reported tokens, including reused context. Your 5-hour and weekly account limits are shown in Settings and cannot be changed here. Use 0 for no local ceiling.</p></>:<><label>Task<input name="subject" required maxLength={2000}/></label><label>Owner<select name="owner" defaultValue={snapshot?.team?.leaderName||''}><option value="">Unassigned</option>{members.map((m:RecordData)=><option key={m.name} value={m.name}>{name(m.name)}</option>)}</select></label><label>Expected result<textarea name="description" maxLength={12000}/></label></>}<footer><button type="button" className="small-button" onClick={()=>setDialog('')}>Cancel</button><button className="primary-button" disabled={busy}>{dialog==='teammate'?'Create & assign':(dialog==='workspace'||dialog==='attach')?'Connect project':dialog==='message'?'Queue message':dialog==='budget'?'Save budget':'Create task'}</button></footer></form>}
     </dialog>
     </div>
   </div>;
