@@ -72,6 +72,26 @@ class SecureBoardIntegrationTest(unittest.TestCase):
         req = urllib.request.Request(self.base + path, data=body, method=method, headers=request_headers)
         return urllib.request.urlopen(req, timeout=30)  # First Beads migration initializes its isolated database.
 
+    def test_recent_chats_follow_durable_activity(self):
+        import hashlib
+        from transcript_archive import TranscriptArchive
+
+        self.run_cli("team", "create", "newer-team", "head", "--leader-id", "fixture-newer")
+        with self.request("/api/overview") as response:
+            initial = json.load(response)
+        self.assertEqual(initial[0]["name"], "newer-team")
+        self.assertIsInstance(initial[0]["lastActivityAt"], int)
+
+        archive = TranscriptArchive(self.state / "runtime")
+        archive.record("verification-team", {"seq": 1, "type": "message.user", "data": {"text": "Private test message"}})
+        with self.request("/api/overview") as response:
+            recent = json.load(response)
+        self.assertEqual(recent[0]["name"], "verification-team")
+        transcript = self.state / "runtime" / "transcripts" / (hashlib.sha256(b"verification-team").hexdigest() + ".sqlite")
+        self.assertEqual(recent[0]["lastActivityAt"], transcript.stat().st_mtime_ns // 1_000_000)
+        self.assertGreaterEqual(recent[0]["lastActivityAt"], initial[0]["lastActivityAt"])
+        self.assertNotIn("Private test message", json.dumps(recent))
+
     def test_routing_settings_round_trip_and_origin_guard(self):
         with self.request('/api/routing') as response:
             saved = json.load(response)['settings']

@@ -40,6 +40,14 @@ The user talks primarily to the overall supervisor. Useful functional leads and 
 
 Open **Company HQ.app** from Applications. Choose **New chat**, describe the result, and send. **Work automatically** is the default; attach a folder with **Add project → Choose folder** when needed. Open **Office** for workers, **Tasks** for the plan, **Files** for the editor/commands, and **Settings** for providers and account allowance.
 
+For an Apple Silicon Mac, install the pinned public preview into `~/Applications` with:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/Dhanunjay-Divi/company-hq/v0.1.0/scripts/install-macos.sh | bash
+```
+
+The installer checks the release SHA-256 before replacing an existing app. It does not change provider sign-ins or private chat data. This preview is unsigned and not notarized, so macOS may require manual approval under **System Settings → Privacy & Security** on first open. See [desktop packaging](docs/DESKTOP.md) for the release and manual download path.
+
 To build the macOS app from this checkout, run `python3 scripts/build_desktop.py --dmg`; see [desktop packaging](docs/DESKTOP.md). The standalone core includes its Python runtime. Source development commands below require Python and Node.
 
 ## Build and checks

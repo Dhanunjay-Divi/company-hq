@@ -4,10 +4,13 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import mimetypes
 import os
+import re
 import signal
+import stat
 import sys
 from pathlib import Path
 from urllib.parse import unquote, urlparse
@@ -28,6 +31,27 @@ def _configure_environment() -> Path:
 
 
 DATA_DIR = _configure_environment()
+
+
+def chat_activity_at(name: str) -> int:
+    """Last durable chat activity in milliseconds, without opening a transcript."""
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,120}", name):
+        return 0
+    digest = hashlib.sha256(name.encode()).hexdigest()
+    paths = (
+        DATA_DIR / "teams" / name / "config.json",
+        DATA_DIR / "company-profiles" / f"{digest}.json",
+        DATA_DIR / "runtime" / "transcripts" / f"{digest}.sqlite",
+    )
+    latest = 0
+    for path in paths:
+        try:
+            info = path.lstat()
+            if stat.S_ISREG(info.st_mode) and info.st_nlink == 1:
+                latest = max(latest, info.st_mtime_ns // 1_000_000)
+        except OSError:
+            pass
+    return latest
 
 from task_authority import install_task_authority  # noqa: E402
 install_task_authority()
@@ -99,6 +123,13 @@ class SecureBoardHandler(BoardHandler):
         path = urlparse(self.path).path
         if path == "/api/proxy" or path.startswith("/api/proxy/"):
             self.send_error(404)
+            return
+        if path == "/api/overview":
+            rows = self.collector.collect_overview()
+            for row in rows:
+                row["lastActivityAt"] = chat_activity_at(row["name"])
+            rows.sort(key=lambda row: row["lastActivityAt"], reverse=True)
+            self._serve_json(rows)
             return
         if path.startswith("/api/company/"):
             team_name = unquote(path[len("/api/company/"):])

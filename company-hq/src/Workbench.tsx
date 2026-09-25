@@ -137,6 +137,12 @@ export default function Workbench() {
     return () => { cancelled = true; };
   }, []);
   useEffect(() => {
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void refreshList().catch(() => {});
+    }, 30000);
+    return () => window.clearInterval(timer);
+  }, []);
+  useEffect(() => {
     if (dialog) modal.current?.showModal(); else modal.current?.close();
   }, [dialog]);
   useEffect(() => {
@@ -292,6 +298,8 @@ export default function Workbench() {
       await request(`/api/runtime/${encodeURIComponent(target)}/${status.connected ? 'send' : 'start'}`, {prompt, provider:(status.providerBound||status.threadId)?status.provider||provider:provider, model: status.model || requestedModel, workMode: provider === 'openai-compatible' && workMode === 'full' ? 'auto' : workMode, attachmentIds});
       setDrafts(old => ({...old,[target]: old[target] === sentDraft ? '' : old[target]}));
       setImageDrafts(old=>({...old,[target]:(old[target]||[]).filter(i=>!sentImages.some(s=>s.id===i.id))}));
+      setTeams(old=>old.map(chat=>chat.name===target?{...chat,lastActivityAt:Date.now()}:chat));
+      void refreshList().catch(() => {});
       if (selected.current === target) chooseView('run');
     } catch (e: any) {
       if (selected.current === target) setError(e.message);

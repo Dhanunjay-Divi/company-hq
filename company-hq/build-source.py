@@ -118,7 +118,7 @@ def _archive_entries() -> list[tuple[Path, PurePosixPath]]:
 
     for path in _safe_files(APP_DIR / "src-tauri", ("Cargo.toml","Cargo.lock","build.rs","tauri.conf.json"), ("src","capabilities","icons")):
         entries.append((path,PurePosixPath("company-hq/src-tauri")/path.relative_to(APP_DIR/"src-tauri")))
-    for name in ("hq.py","build_desktop.py","install_engines.py","engines.lock.json","hq_context.py","resolve_state_path.py"):
+    for name in ("hq.py","build_desktop.py","install-macos.sh","install_engines.py","engines.lock.json","hq_context.py","resolve_state_path.py"):
         entries.append((TOOLKIT_DIR/"scripts"/name,PurePosixPath("scripts")/name))
     for path in _safe_files(TOOLKIT_DIR/"licenses", (), (".",)):
         entries.append((path,PurePosixPath("licenses")/path.relative_to(TOOLKIT_DIR/"licenses")))

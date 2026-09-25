@@ -10,18 +10,31 @@ export function chatHierarchy(teams, profiles = {}, deleted = []) {
         profiles[parent]?.projectRoot !== profile.projectRoot) continue;
     children.set(parent, [...(children.get(parent) || []), team.name]);
   }
+  const originalOrder = new Map(visible.map((team, index) => [team.name, index]));
+  const recent = new Map();
+  function latestInGroup(name, ancestors = new Set()) {
+    if (recent.has(name)) return recent.get(name);
+    if (ancestors.has(name)) return 0;
+    const next = new Set(ancestors).add(name);
+    const own = Number(byName.get(name)?.lastActivityAt) || 0;
+    const latest = Math.max(own, ...(children.get(name) || []).map(child => latestInGroup(child, next)));
+    recent.set(name, latest);
+    return latest;
+  }
+  const newestFirst = (a, b) => latestInGroup(b.name) - latestInGroup(a.name) ||
+    originalOrder.get(a.name) - originalOrder.get(b.name);
   const output = [], visited = new Set();
   function visit(team, depth = 0) {
     if (visited.has(team.name)) return;
     visited.add(team.name);
     output.push({team, depth});
-    for (const child of children.get(team.name) || []) visit(byName.get(child), depth + 1);
+    for (const child of (children.get(team.name) || []).map(name => byName.get(name)).sort(newestFirst)) visit(child, depth + 1);
   }
-  for (const team of visible) {
+  for (const team of [...visible].sort(newestFirst)) {
     const parent = profiles[team.name]?.supervisedBy;
     if (!parent || !children.get(parent)?.includes(team.name)) visit(team);
   }
-  for (const team of visible) visit(team);
+  for (const team of [...visible].sort(newestFirst)) visit(team);
   return output;
 }
 
