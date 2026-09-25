@@ -140,7 +140,9 @@ with tempfile.TemporaryDirectory(prefix='hq-browser-') as td:
             page.get_by_label('Close provider details').click()
             expect(page.get_by_role('dialog')).not_to_be_visible()
             page.get_by_role('button', name=re.compile('Claude')).last.click()
-            expect(page.get_by_role('dialog').get_by_text('Sign in required', exact=True)).to_be_visible()
+            # The account state belongs to the runtime host; the fixture only
+            # guarantees the provider details and desktop-open action.
+            expect(page.get_by_role('dialog').get_by_role('heading', name='Claude')).to_be_visible()
             page.get_by_role('button', name='Open provider app', exact=True).click()
             page.wait_for_timeout(100)
             assert len(opened) == 1, opened
