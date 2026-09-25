@@ -63,6 +63,15 @@ class TranscriptArchive:
             conn.execute('INSERT INTO messages(seq,identity,value) VALUES(?,?,?) ON CONFLICT(identity) DO UPDATE SET value=excluded.value',
                          (safe['seq'],identity,json.dumps(safe)))
 
+    def contains_attachments(self, team):
+        # Check the complete accepted history, not just the compact handoff page.
+        with self._connect(team) as conn:
+            for (value,) in conn.execute('SELECT value FROM messages WHERE value LIKE ?', ('%"attachments":%',)):
+                event = json.loads(value)
+                if event.get('type') == 'message.user' and event.get('data', {}).get('attachments'):
+                    return True
+        return False
+
     def page(self,team,before=None,limit=60):
         if before is not None and (not isinstance(before,int) or isinstance(before,bool) or before<1): raise ValueError('Invalid history cursor.')
         limit=max(1,min(int(limit),100))

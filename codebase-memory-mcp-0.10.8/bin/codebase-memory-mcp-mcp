@@ -14,6 +14,7 @@ if [ -z "$PYTHON" ] || [ ! -x "$PYTHON" ]; then
   exit 1
 fi
 STATE_ROOT=$("$PYTHON" "$REPO_ROOT/scripts/resolve_state_path.py" codebase-memory) || exit $?
+CONTEXT_PROJECT=${COMPANY_HQ_CONTEXT_PROJECT:-}
 if [ ! -f "$GUARD" ] || [ ! -x "$BINARY" ]; then
   echo "codebase-memory-mcp: pinned binary/guard is not installed in this checkout; see INSTALLATION.md" >&2
   exit 1
@@ -31,6 +32,7 @@ exec /usr/bin/env -i \
   CBM_CACHE_DIR="$STATE_ROOT/cache" \
   CBM_RUNTIME_DIR="$STATE_ROOT/runtime" \
   CBM_LOG_LEVEL=warn \
+  COMPANY_HQ_CONTEXT_PROJECT="$CONTEXT_PROJECT" \
   "$PYTHON" \
   "$GUARD" \
   "$BINARY" \

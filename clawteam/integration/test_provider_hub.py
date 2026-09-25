@@ -166,6 +166,7 @@ class Factory:
     def __call__(self, provider, **kwargs):
         self.assert_provider = provider
         runtime = FakeClaude(recover_pending=self.recover_pending, **kwargs)
+        runtime.provider = provider
         self.runtimes.append(runtime)
         return runtime
 
@@ -227,6 +228,18 @@ class ProviderHubTest(unittest.TestCase):
         finally:
             restarted.shutdown_all()
 
+    def test_kimi_and_zai_keep_provider_model_and_event_identity(self):
+        for provider in ("kimi", "zai"):
+            team = f"{provider}-team"
+            status = self.hub.start(team, self.project, "hello", "sonnet", provider=provider)
+            self.assertEqual(status["provider"], provider)
+            self.assertEqual(self.factory.assert_provider, provider)
+            event = wait_for(lambda: next((row for row in self.hub.events(team)["events"] if row["type"] == "message.completed"), None))
+            self.assertEqual(event["threadId"], "claude-session")
+            self.assertEqual(event["turnId"], "turn-1")
+            self.assertEqual(self.hub._read_binding(team)["provider"], provider)
+            self.assertEqual(self.factory.runtimes[-1].model, "sonnet")
+
     def test_provider_and_project_bindings_cannot_switch(self):
         self.hub.start("fixed-team", self.project, "hello", "sonnet", provider="claude")
         with self.assertRaisesRegex(BridgeError, "already bound to claude"):
@@ -255,6 +268,15 @@ class ProviderHubTest(unittest.TestCase):
         self.assertEqual(pending[0]["questions"][0]["question"], "Choose?")
         self.hub.respond("plan-team", pending[0]["requestId"], {"answers":{"question-0":{"answers":["A"]}}})
         wait_for(lambda: not self.hub.status("plan-team")["pendingApprovals"])
+
+    def test_explicit_zcode_full_access_keeps_pending_tool_separate(self):
+        self.hub.start("full-zai", self.project, "approval", "sonnet", provider="zai", work_mode="auto")
+        pending=wait_for(lambda: self.hub.status("full-zai")["pendingApprovals"])
+        self.hub.set_access("full-zai", "full")
+        self.assertEqual(self.hub._read_binding("full-zai")["accessMode"], "full")
+        self.assertTrue(self.hub.status("full-zai")["pendingApprovals"])
+        self.hub.approve("full-zai", pending[0]["requestId"], "approve")
+        wait_for(lambda: not self.hub.status("full-zai")["pendingApprovals"])
 
     def test_concurrent_drains_map_one_native_event_once(self):
         self.hub.start("race-team", self.project, "hello", "sonnet", provider="claude")
@@ -303,6 +325,14 @@ class ProviderHubTest(unittest.TestCase):
         users = [row for row in self.hub.events("durable-team")["events"] if row["type"] == "message.user"]
         self.assertEqual(len(users), 1)
         self.assertIsNone(self.hub.status("durable-team")["historyWarning"])
+
+    def test_cumulative_native_usage_is_not_added_twice(self):
+        self.hub.start("native-usage",self.project,"hello","sonnet",provider="claude")
+        session=self.hub._sessions["native-usage"]
+        for total in (120,120,150):
+            self.hub._record_runtime_event(session,{"type":"message.completed","data":{"nativeUsage":{"totalTokens":total,"cacheReadTokens":100},"turnId":"native-turn"}})
+        self.assertEqual(session.reported_tokens,150)
+        self.assertEqual(self.hub.status("native-usage")["usageSummary"]["reportedTokens"],150)
 
     def test_usage_failure_is_nonfatal_and_retried(self):
         original = self.codex._budget.record_usage
@@ -360,17 +390,17 @@ class ProviderHubTest(unittest.TestCase):
         finally:
             recovered.shutdown_all()
 
-    def test_model_must_come_from_initialize_and_acp_is_not_routed(self):
-        with self.assertRaisesRegex(BridgeError, "initialized model catalog"):
+    def test_model_must_come_from_initialize_and_unverified_provider_is_not_routed(self):
+        with self.assertRaisesRegex(BridgeError, "initialized provider model catalog"):
             self.hub.start("bad-model", self.project, "hello", "invented", provider="claude")
         with self.assertRaisesRegex(BridgeError, "verified Company HQ runtime"):
-            self.hub.start("acp-team", self.project, "hello", "model", provider="kimi")
+            self.hub.start("acp-team", self.project, "hello", "model", provider="cursor")
 
     def test_claude_unsupported_worker_and_tool_capabilities_are_explicit(self):
         self.hub.start("cap-team", self.project, "hello", "sonnet", provider="claude")
         self.assertFalse(self.hub.tools("cap-team")["available"])
         self.assertFalse(self.hub.workers("cap-team")["authoritative"])
-        with self.assertRaisesRegex(BridgeError, "hierarchy synchronization"):
+        with self.assertRaisesRegex(BridgeError, "not supported"):
             self.hub.send_worker("cap-team", str(uuid.uuid4()), "hello")
 
 

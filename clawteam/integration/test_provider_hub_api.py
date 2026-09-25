@@ -2,6 +2,7 @@ from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
+from types import SimpleNamespace
 import hq_api
 from provider_hub import ProviderHub
 from test_provider_hub import FakeCodex,FakeClaude
@@ -12,6 +13,34 @@ class Handler:
     def _json_error(self,status,message):self.error=(status,message)
 
 class ProviderHubAPITest(unittest.TestCase):
+    def test_user_start_claim_uses_existing_task_owner(self):
+        with tempfile.TemporaryDirectory() as temp, patch('hq_api.project_for', return_value=Path(temp)), \
+             patch('hq_api.TaskStore') as store_class:
+            store = store_class.return_value
+            store.get.return_value = SimpleNamespace(owner='overall-head')
+            store.update.return_value = SimpleNamespace(id='task-1')
+            handler = Handler()
+            hq_api.handle_post(handler, Path(temp), '/api/task/fixture/task-1', {'status': 'in_progress'})
+            self.assertIsNone(handler.error)
+            store.update.assert_called_once_with('task-1', status=hq_api.TaskStatus.in_progress, caller='overall-head')
+
+    def test_worker_conversation_and_report_routes_use_explicit_worker_fields(self):
+        from unittest.mock import Mock
+        with tempfile.TemporaryDirectory() as temp, patch('hq_api.bridge') as bridge, \
+             patch('hq_api.project_for', return_value=Path(temp)), patch('hq_api.demo_mode', return_value=False):
+            client = Mock()
+            bridge.return_value = client
+            client.worker_conversation.return_value = {'readOnly': True, 'conversationAvailable': True, 'messages': []}
+            handler = Handler('/api/runtime/fixture/worker-conversation?threadId=child-1')
+            hq_api.handle_get(handler, Path(temp))
+            self.assertIsNone(handler.error)
+            client.worker_conversation.assert_called_once_with('fixture', 'child-1')
+            client.report_worker.return_value = {'accepted': True, 'summarySent': True}
+            handler = Handler()
+            hq_api.handle_post(handler, Path(temp), '/api/runtime/fixture/worker-report', {'threadId': 'child-1', 'summary': 'User-approved summary.'})
+            self.assertIsNone(handler.error)
+            client.report_worker.assert_called_once_with('fixture', 'child-1', 'User-approved summary.')
+
     def test_shutdown_does_not_create_state_or_reopen_runtime(self):
         from unittest.mock import Mock
         with tempfile.TemporaryDirectory() as temp,patch.dict(hq_api._provider_hubs,{},clear=True):
@@ -64,3 +93,15 @@ class ProviderHubAPITest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp,patch('hq_api.bridge') as bridge,patch('hq_api.project_for',return_value=Path(temp)),patch('hq_api.demo_mode',return_value=False):
             handler=Handler();hq_api.handle_post(handler,Path(temp),'/api/runtime/fixture/start',{'provider':'grok','model':'invented','prompt':'fixture'})
             self.assertEqual(handler.error[0],400);bridge.return_value.start.assert_not_called()
+
+    def test_kimi_and_zai_routes_require_runtime_reported_models(self):
+        with tempfile.TemporaryDirectory() as temp:
+            state=Path(temp)/'state';project=Path(temp)/'project';project.mkdir()
+            for provider in ('kimi','zai'):
+                hub=ProviderHub(state/provider,codex=FakeCodex(),runtime_factory=lambda selected,**kwargs:FakeClaude(**kwargs))
+                self.addCleanup(hub.shutdown_all)
+                with patch('hq_api.bridge',return_value=hub),patch('hq_api.project_for',return_value=project),patch('hq_api.demo_mode',return_value=False):
+                    handler=Handler();hq_api.handle_post(handler,state,f'/api/runtime/{provider}/start',{'provider':provider,'model':'sonnet','prompt':'fixture','workMode':'auto'})
+                    self.assertIsNone(handler.error);self.assertEqual(handler.response['provider'],provider)
+                    bad=Handler();hq_api.handle_post(bad,state,f'/api/runtime/{provider}-bad/start',{'provider':provider,'model':'made-up','prompt':'fixture'})
+                    self.assertEqual(bad.error[0],400)

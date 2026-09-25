@@ -7,10 +7,14 @@ from access_settings import open_settings
 
 class AccessSettingsTest(unittest.TestCase):
     def test_only_fixed_links_open_and_never_claim_permission(self):
-        for pane, suffix in [('accessibility', 'Privacy_Accessibility'), ('screen-recording', 'Privacy_ScreenCapture')]:
+        for pane, url in [
+            ('accessibility', 'x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility'),
+            ('screen-recording', 'x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture'),
+            ('dictation', 'x-apple.systempreferences:com.apple.Keyboard-Settings.extension'),
+        ]:
             with patch('access_settings.sys.platform', 'darwin'), patch('access_settings.subprocess.run') as run:
                 result = open_settings({'pane': pane})
-            self.assertEqual(run.call_args.args[0], ['/usr/bin/open', 'x-apple.systempreferences:com.apple.preference.security?' + suffix])
+            self.assertEqual(run.call_args.args[0], ['/usr/bin/open', url])
             self.assertNotIn('shell', run.call_args.kwargs)
             self.assertTrue(result['opened'])
             self.assertFalse(result['permissionGranted'])

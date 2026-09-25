@@ -66,22 +66,30 @@ def normalize_thread(value: object) -> dict[str, Any] | None:
 
 
 def descendant_workers(root: object, rows: object) -> list[dict[str, Any]]:
-    """Build only the parent-linked tree in the root thread's native session."""
+    """Build only the native parent-linked tree rooted at ``root``.
+
+    Codex assigns a distinct session identifier to a spawned child thread.  The
+    explicit parent thread identifier is therefore the hierarchy authority;
+    requiring a child's session to equal its parent drops real descendants.
+    """
     normalized_root = normalize_thread(root)
     if normalized_root is None:
         raise WorkerDataError("native root thread metadata is invalid")
     if not isinstance(rows, list):
         raise WorkerDataError("native thread listing is invalid")
     candidates: dict[str, dict[str, Any]] = {}
-    for raw in rows[:MAX_WORKERS]:
+    for raw in rows:
         item = normalize_thread(raw)
         if (
             item is not None
             and item["threadId"] != normalized_root["threadId"]
-            and item["sessionId"] == normalized_root["sessionId"]
             and item.get("parentThreadId")
         ):
-            candidates[item["threadId"]] = item
+            # Input is newest-first and exact known-ID reads are placed first.
+            # Preserve that authoritative row if a later page repeats the ID.
+            candidates.setdefault(item["threadId"], item)
+            if len(candidates) >= MAX_WORKERS:
+                break
     descendants: list[dict[str, Any]] = []
     accepted = {normalized_root["threadId"]}
     remaining = dict(candidates)

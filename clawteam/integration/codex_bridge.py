@@ -43,7 +43,7 @@ SUPPORTED_MODELS = frozenset({
 TEAM_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 MAX_PROMPT = 40_000
 MAX_TEXT = 24_000
-DEFAULT_TOKEN_BUDGET = 200_000
+DEFAULT_TOKEN_BUDGET = 0
 MAX_TOKEN_BUDGET = 20_000_000
 MAX_EVENT_SNAPSHOT_BYTES = 4 * 1024 * 1024
 
@@ -518,6 +518,8 @@ def _usage_summary(counts: dict[str, Any]) -> dict[str, Any]:
 
 
 def _supervisor_instructions(team: str, project: Path) -> str:
+    bundled_rg = CODEX_PATH.parent / "rg"
+    search_hint = f"If rg is not on PATH, the installed native search binary is {str(bundled_rg)!r}." if bundled_rg.is_file() else "If rg is unavailable, use a bounded Python or grep search instead of retrying it."
     return f"""You are the native Codex supervisor for Company HQ team {team!r}.
 The approved project root is {str(project)!r}. Keep project writes inside that root.
 Read the repository operating resources under {str(REPO_ROOT)!r} when useful.
@@ -542,6 +544,7 @@ overall supervisor model (currently gpt-6-astra). When nested delegation is usef
 prefer gpt-5.6-terra or gpt-5.6-sol for department leads and reserve gpt-5.6-luna for
 small bounded leaf tasks. Do not promote Luna to a department lead without verified
 nested-delegation capability. Report actual child thread IDs and observed states.
+{search_hint}
 Keep task packets compact and use fork_turns="none" for delegated work. Do not
 re-read all operating documents in every worker or spawn a scout for a trivial
 lookup. During read-only planning, normally plan alone and create implementation
@@ -677,7 +680,6 @@ class _TeamSession:
     pending_calls: dict[object, _PendingCall] = field(default_factory=dict)
     approvals: dict[str, _Approval] = field(default_factory=dict)
     children: dict[str, dict[str, Any]] = field(default_factory=dict)
-    root_session_id: str | None = None
     workers_reconciled_at_ms: int | None = None
     workers_authoritative: bool = False
     workers_complete: bool = False
@@ -695,6 +697,7 @@ class _TeamSession:
     archive_pending: list[dict[str, Any]] = field(default_factory=list)
     archive_error: bool = False
     closing: bool = False
+    quota_failure: dict[str, Any] | None = None
 
 
 class _BudgetStore:
@@ -713,7 +716,7 @@ class _BudgetStore:
             "version": 1,
             "team": team,
             "limitTokens": DEFAULT_TOKEN_BUDGET,
-            "enforced": True,
+            "enforced": False,
             "usedTokens": 0,
             "threadId": None,
             "lastNativeTotalTokens": 0,
@@ -748,7 +751,10 @@ class _BudgetStore:
         if not isinstance(value, dict) or value.get("team") != team:
             raise BridgeError("budget state does not match the requested team")
         default = self._default(team)
-        limit, enforced = self._clean_policy(value.get("limitTokens", default["limitTokens"]), value.get("enforced", True))
+        limit, enforced = self._clean_policy(
+            value.get("limitTokens", default["limitTokens"]),
+            value.get("enforced", default["enforced"]),
+        )
         used = value.get("usedTokens", 0)
         last = value.get("lastNativeTotalTokens", 0)
         if isinstance(used, bool) or not isinstance(used, (int, float)) or used < 0:
@@ -823,7 +829,7 @@ class _BudgetStore:
     def _public(self, value: dict[str, Any]) -> dict[str, Any]:
         limit = int(value.get("limitTokens") or 0)
         used = int(value.get("usedTokens") or 0)
-        enforced = bool(value.get("enforced", True))
+        enforced = bool(value.get("enforced", False))
         remaining = None if limit <= 0 else max(0, limit - used)
         blocked = bool(enforced and limit > 0 and used >= limit)
         return {
@@ -1064,7 +1070,7 @@ class CodexBridge:
         os.chmod(temporary, 0o600)
         os.replace(temporary, path)
 
-    def set_budget(self, team: str, limit_tokens: object, enforced: object = True) -> dict[str, Any]:
+    def set_budget(self, team: str, limit_tokens: object, enforced: object = False) -> dict[str, Any]:
         team = _validate_team(team)
         value = self._budget.set_policy(team, limit_tokens, enforced)
         with self._sessions_lock:
@@ -1234,7 +1240,37 @@ class CodexBridge:
                 if not isinstance(next_cursor, str) or not next_cursor or next_cursor == cursor:
                     raise BridgeProtocolError("native worker metadata cursor is invalid")
                 cursor = next_cursor
-            workers = descendant_workers(root_thread, rows)
+            with session.lock:
+                previous_children = {
+                    thread_id: dict(value)
+                    for thread_id, value in session.children.items()
+                }
+            listed_ids = {
+                item["threadId"]
+                for raw in rows
+                if (item := normalize_thread(raw)) is not None
+            }
+            omitted_known = [
+                thread_id for thread_id in previous_children
+                if thread_id != session.thread_id and thread_id not in listed_ids
+            ]
+            # Native thread listings can omit a child that was already observed
+            # in the root event stream. Re-read those exact IDs and let the
+            # native parent chain prove whether they still belong to this root.
+            reread_rows: list[dict[str, Any]] = []
+            for thread_id in omitted_known[:MAX_WORKERS]:
+                try:
+                    result = self._rpc(session, "thread/read", {
+                        "threadId": thread_id,
+                        "includeTurns": False,
+                    })
+                except BridgeError:
+                    continue
+                thread = result.get("thread")
+                normalized = normalize_thread(thread)
+                if normalized is not None and normalized["threadId"] == thread_id:
+                    reread_rows.append(thread)
+            workers = descendant_workers(root_thread, [*reread_rows, *rows])
             for worker in workers:
                 worker["stale"] = False
                 if worker["status"] == "active":
@@ -1251,22 +1287,46 @@ class CodexBridge:
             ]
             self._worker_store.save(session.team, session.thread_id, persisted)
             with session.lock:
-                previous_children = session.children
+                # A child event can arrive while exact re-reads or turn lookups
+                # are in flight. Include the latest map before replacing it so
+                # reconciliation never erases a concurrently observed child.
+                current_children = {
+                    thread_id: dict(value)
+                    for thread_id, value in session.children.items()
+                }
+                verified_ids = {worker["threadId"] for worker in workers}
+                unresolved = {
+                    thread_id: {
+                        **previous,
+                        "activeTurnId": None,
+                        "stale": True,
+                    }
+                    for thread_id, previous in current_children.items()
+                    if thread_id not in verified_ids
+                }
                 for worker in workers:
-                    previous = previous_children.get(worker["threadId"])
+                    previous = current_children.get(worker["threadId"])
                     if previous and previous.get("usageSummary"):
                         worker["usageSummary"] = previous["usageSummary"]
-                session.root_session_id = root["sessionId"]
-                session.children = {item["threadId"]: item for item in workers}
+                session.children = {
+                    **{item["threadId"]: item for item in workers},
+                    **unresolved,
+                }
                 session.workers_reconciled_at_ms = _now_ms()
-                session.workers_authoritative = True
-                session.workers_complete = complete
-                session.worker_reconcile_error = None
+                session.workers_authoritative = not unresolved
+                # Once a supposedly complete listing omitted an observed child,
+                # exact re-reads verify known IDs but cannot prove there are no
+                # other omissions.
+                session.workers_complete = complete and not omitted_known and not unresolved
+                session.worker_reconcile_error = (
+                    "Some observed native workers could not be verified"
+                    if unresolved else None
+                )
             if emit_event:
                 self._event(session, "workers.reconciled", {
                     "text": "Native worker hierarchy reconciled",
-                    "workerCount": len(workers),
-                    "complete": complete,
+                    "workerCount": len(session.children),
+                    "complete": session.workers_complete,
                 })
             return workers
         except (BridgeError, WorkerDataError) as exc:
@@ -1337,6 +1397,86 @@ class CodexBridge:
             self._reconcile_workers(session)
             return self._public_workers(session)
 
+    @staticmethod
+    def _worker_messages(thread: dict[str, Any]) -> tuple[list[dict[str, str]], bool]:
+        turns = thread.get("turns")
+        if not isinstance(turns, list) or len(turns) > 1000:
+            raise BridgeProtocolError("native worker conversation is invalid")
+        messages: deque[dict[str, str]] = deque(maxlen=100)
+        total = 0
+        for turn_index, turn in enumerate(turns):
+            if not isinstance(turn, dict):
+                raise BridgeProtocolError("native worker conversation is invalid")
+            items = turn.get("items", [])
+            if not isinstance(items, list) or len(items) > 1000:
+                raise BridgeProtocolError("native worker conversation is invalid")
+            turn_id = turn.get("id")
+            for item_index, item in enumerate(items):
+                if not isinstance(item, dict):
+                    continue
+                kind = item.get("type")
+                role = "user" if kind in {"userMessage", "user"} else "assistant" if kind in {"agentMessage", "assistant"} else None
+                if role is None:
+                    continue
+                text = item.get("text")
+                if not isinstance(text, str):
+                    content = item.get("content")
+                    if isinstance(content, list):
+                        parts = [part.get("text") for part in content if isinstance(part, dict) and part.get("type") == "text" and isinstance(part.get("text"), str)]
+                        text = "".join(parts) if parts else None
+                if not isinstance(text, str) or not text.strip():
+                    continue
+                raw_id = item.get("id")
+                message_id = raw_id if isinstance(raw_id, str) and raw_id else f"{turn_id if isinstance(turn_id, str) and turn_id else turn_index}:{item_index}"
+                messages.append({"messageId": _safe_text(message_id, 600), "role": role, "text": _safe_text(text, 12_000)})
+                total += 1
+        return list(messages), total > len(messages)
+
+    def worker_conversation(self, team: str, thread_id: str) -> dict[str, Any]:
+        team = _validate_team(team)
+        if not isinstance(thread_id, str) or not thread_id:
+            raise BridgeError("worker thread ID is invalid")
+        with self._sessions_lock:
+            session = self._sessions.get(team)
+        if not session or not session.connection.running():
+            return {"team": team, "threadId": thread_id, "worker": None, "messages": [],
+                    "truncated": False, "readOnly": True, "conversationAvailable": False,
+                    "error": "Connect this chat to verify and read a worker conversation"}
+        with session.operation_lock:
+            workers = self._reconcile_workers(session)
+            known = {item["threadId"]: item for item in workers}.get(thread_id)
+            if known is None:
+                raise BridgeError("worker is not a verified descendant of this team")
+            result = self._rpc(session, "thread/read", {"threadId": thread_id, "includeTurns": True})
+            thread = result.get("thread")
+            current = normalize_thread(thread)
+            if (current is None or current["threadId"] != thread_id or
+                    current["sessionId"] != known.get("sessionId") or
+                    current.get("parentThreadId") != known.get("parentThreadId")):
+                raise BridgeProtocolError("native worker identity changed during conversation read")
+            worker = {key: known.get(key) for key in ("threadId", "parentThreadId", "status", "model", "role", "nickname", "updatedAt", "source") if known.get(key) is not None}
+            messages, truncated = self._worker_messages(thread)
+            return {"team": team, "threadId": thread_id, "worker": worker,
+                    "messages": messages, "truncated": truncated, "readOnly": True,
+                    "conversationAvailable": True, "error": None}
+
+    def report_worker(self, team: str, thread_id: str, summary: str) -> dict[str, Any]:
+        team = _validate_team(team)
+        summary = _validate_prompt(summary)
+        if not isinstance(thread_id, str) or not thread_id:
+            raise BridgeError("worker thread ID is invalid")
+        with self._sessions_lock:
+            session = self._sessions.get(team)
+        if not session or not session.connection.running():
+            raise BridgeError("Connect this chat to verify the worker before reporting")
+        with session.operation_lock:
+            workers = self._reconcile_workers(session)
+            if thread_id not in {item["threadId"] for item in workers}:
+                raise BridgeError("worker is not a verified descendant of this team")
+        result = self.send(team, summary)
+        return {"accepted": True, "workerThreadId": thread_id, "summarySent": True,
+                "supervisor": result}
+
     def send_worker(self, team: str, thread_id: str, prompt: str) -> dict[str, Any]:
         session = self._require_session(_validate_team(team))
         prompt = _validate_prompt(prompt)
@@ -1356,7 +1496,7 @@ class CodexBridge:
                 if (
                     current is None
                     or current["threadId"] != thread_id
-                    or current["sessionId"] != session.root_session_id
+                    or current["sessionId"] != known.get("sessionId")
                     or current.get("parentThreadId") != known.get("parentThreadId")
                 ):
                     raise BridgeProtocolError("native worker identity changed during resume")
@@ -1982,6 +2122,11 @@ class CodexBridge:
                 "threadId": session.thread_id,
                 "turnId": session.turn_id,
                 "lastEventSeq": session.next_event_seq - 1,
+                "quotaFailure": session.quota_failure,
+                "nativeStatus": ({"currentTurnId": None, "activeToolCalls": [],
+                    "childInventory":{"complete":bool(session.workers_authoritative and session.workers_complete and session.workers_reconciled_at_ms and _now_ms()-session.workers_reconciled_at_ms < 30000)}}
+                    if session.last_turn_status in {'completed', 'failed', 'interrupted'} and session.state in {'idle', 'error'}
+                    else {"currentTurnId": session.turn_id or 'unverified'}),
                 "pendingApprovals": [dict(item.data) for item in session.approvals.values()],
                 "unrecoverableRequests": [dict(item) for item in session.unrecoverable_requests],
                 "children": [
@@ -1989,6 +2134,8 @@ class CodexBridge:
                         "threadId": value["threadId"],
                         "state": value.get("state") or value.get("status"),
                         "source": value.get("source", "native-metadata"),
+                        "verified": bool(session.workers_complete and not value.get("stale")),
+                        "stale": bool(value.get("stale")),
                     }
                     for value in session.children.values()
                 ],
@@ -2083,6 +2230,8 @@ class CodexBridge:
                     session.archive_pending=session.archive_pending[-500:]
 
     def _on_message(self, session: _TeamSession, message: dict[str, Any]) -> None:
+        if session.closing:
+            return
         if "id" in message and ("result" in message or "error" in message):
             with session.lock:
                 pending = session.pending_calls.pop(message["id"], None)
@@ -2518,6 +2667,7 @@ class CodexBridge:
                 with session.lock:
                     session.turn_id = native_id
                     session.state = "running"
+                    session.quota_failure = None
                 self._event(session, "turn.started", {"text": "Supervisor turn started"})
             return
         if method == "turn/completed":
@@ -2539,6 +2689,9 @@ class CodexBridge:
                     if status == "completed":
                         session.completed_turns.add(native_id)
                 session.state = "error" if status == "failed" else "idle"
+                if isinstance(turn, dict) and turn.get('error'):
+                    from quota_errors import quota_failure
+                    session.quota_failure = quota_failure(turn['error'])
                 persist_plan_ready = session.plan_ready
                 persist_mode = session.mode
                 persist_project = session.project
@@ -2603,6 +2756,8 @@ class CodexBridge:
             return
         if method == "error":
             error = params.get("error")
+            from quota_errors import quota_failure
+            session.quota_failure = quota_failure(error)
             raw = error.get("message", error) if isinstance(error, dict) else error
             self._event(session, "error", {"text": _safe_text(raw, 2000)})
 
@@ -2741,7 +2896,6 @@ class CodexBridge:
                     )
                     child = {
                         "threadId": child_id,
-                        "sessionId": session.root_session_id,
                         "parentThreadId": parent_thread_id,
                         "state": child_state,
                         "status": child_state,
@@ -2759,7 +2913,6 @@ class CodexBridge:
             if isinstance(child_id, str):
                 child = {
                     "threadId": child_id,
-                    "sessionId": session.root_session_id,
                     "parentThreadId": params.get("threadId") or session.thread_id,
                     "state": item.get("kind") or phase,
                     "status": item.get("kind") or phase,

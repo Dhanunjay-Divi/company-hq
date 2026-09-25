@@ -28,13 +28,12 @@ class NativeWorkersTest(unittest.TestCase):
     def tearDown(self):
         self.temporary.cleanup()
 
-    def test_descendants_require_parent_chain_and_same_native_session(self):
+    def test_descendants_require_parent_chain_across_distinct_native_sessions(self):
         root = thread("root", None)
         rows = [
-            thread("lead", "root", status="active", model="gpt-5.6-terra"),
-            thread("worker", "lead", model="gpt-5.6-luna"),
+            thread("lead", "root", session="lead-session", status="active", model="gpt-5.6-terra"),
+            thread("worker", "lead", session="worker-session", model="gpt-5.6-luna"),
             thread("unrelated", None),
-            thread("forged-cross-session", "root", session="other"),
             thread("orphan", "missing"),
         ]
         workers = descendant_workers(root, rows)
@@ -47,6 +46,12 @@ class NativeWorkersTest(unittest.TestCase):
     def test_invalid_root_metadata_fails_closed(self):
         with self.assertRaisesRegex(WorkerDataError, "root"):
             descendant_workers({"id": "root"}, [])
+
+    def test_exact_child_after_full_irrelevant_listing_is_still_considered(self):
+        rows = [thread(f"unrelated-{index}", None) for index in range(200)]
+        rows.append(thread("known-child", "root", session="child-session"))
+        workers = descendant_workers(thread("root", None), rows)
+        self.assertEqual([item["threadId"] for item in workers], ["known-child"])
 
     def test_latest_active_turn_uses_only_in_progress_identifier(self):
         self.assertEqual(latest_active_turn({"data": [

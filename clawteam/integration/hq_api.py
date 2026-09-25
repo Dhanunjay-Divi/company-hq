@@ -419,7 +419,21 @@ def shutdown_runtime(state):
         directory=(state / "runtime").resolve()
         _closing_provider_states.add(directory)
         hub=_provider_hubs.pop(directory,None)
-    if hub is not None: hub.shutdown_all()
+    if hub is not None:
+        service=getattr(hub,'routing_service',None)
+        if service: service.close()
+        hub.shutdown_all()
+
+def routing_service(state):
+    from routing_service import RoutingService
+    from provider_connections import connections
+    hub=bridge(state)
+    with _provider_hubs_lock:
+        if not hasattr(hub,'routing_service'):
+            default=_default_supervisor_model(json.loads(routing_path().read_text()))
+            hub.routing_service=RoutingService(hub,lambda:connections().snapshot(),default,
+                operation_lock=workspace_operation_lock,provider_refresh=lambda provider:connections().action(provider,'check'),watch=not demo_mode())
+        return hub.routing_service
 
 def native_client(client,team):
     from provider_hub import ProviderHub
@@ -432,6 +446,17 @@ def native_client(client,team):
 
 def handle_get(handler, state):
     path = urlparse(handler.path).path
+    if path == '/api/routing':
+        try: handler._serve_json(routing_service(state).snapshot())
+        except Exception as exc: handler._json_error(400,str(exc))
+        return True
+    if path == '/api/workspaces/chat-management':
+        try:
+            from chat_management import ChatManagement
+            handler._serve_json({'deleted': sorted(ChatManagement(state).deleted())})
+        except (ValueError, OSError) as exc:
+            handler._json_error(400, str(exc))
+        return True
     if path.startswith(('/api/files/', '/api/drafts/')):
         try:
             from workspace_files import listing, read, draft
@@ -514,13 +539,21 @@ def handle_get(handler, state):
         parts=path.strip('/').split('/')
         if len(parts)!=4: raise ValueError('Unknown runtime route')
         name=unquote(parts[2]); project_for(state,name)
-        if parts[3]=='status': result=bridge(state).status(name)
+        if parts[3]=='status':
+            client=bridge(state);result=client.status(name)
+            service=getattr(client,'routing_service',None)
+            if service and name in service.notes:result={**result,'routingStatus':service.notes[name]}
         elif parts[3]=='history':
             from transcript_archive import TranscriptArchive
             query=parse_qs(urlparse(handler.path).query)
             before=int(query['before'][0]) if query.get('before') else None
             result=TranscriptArchive(state/'runtime').page(name,before)
         elif parts[3]=='workers': result=bridge(state).workers(name)
+        elif parts[3]=='worker-conversation':
+            query=parse_qs(urlparse(handler.path).query)
+            thread_id=query.get('threadId',[None])[0]
+            if not isinstance(thread_id,str) or not thread_id: raise ValueError('Choose a worker.')
+            result=bridge(state).worker_conversation(name,thread_id)
         elif parts[3]=='evidence':
             from runtime_actions import evidence
             query=parse_qs(urlparse(handler.path).query)
@@ -536,6 +569,43 @@ def handle_get(handler, state):
 
 
 def handle_post(handler,state,path,body):
+    if path == '/api/routing':
+        try:
+            if demo_mode(): raise ValueError('Routing changes are disabled in demo mode.')
+            if not isinstance(body,dict): raise ValueError('Routing settings must be an object.')
+            handler._serve_json(routing_service(state).update(body))
+        except Exception as exc: handler._json_error(400,str(exc))
+        return True
+    if path.startswith('/api/workspaces/'):
+        parts=path.strip('/').split('/')
+        if len(parts) == 5 and parts[:2] == ['api', 'workspaces'] and parts[3] == 'chat':
+            try:
+                if not isinstance(body, dict) or body:
+                    raise ValueError('Chat actions do not accept extra fields.')
+                name=unquote(parts[2]); action=parts[4]
+                team=TeamManager.get_team(name)
+                if team is None: raise ValueError('Workspace not found')
+                from chat_management import ChatManagement, reveal_bound_folder
+                manager=ChatManagement(state)
+                if action == 'delete':
+                    with workspace_operation_lock(name):
+                        status=bridge(state).status(name)
+                        active=status.get('state') in {'starting','running','awaiting_approval','stopping'}
+                        if active or status.get('pendingApprovals'):
+                            raise ValueError('Stop runtime work and resolve pending approvals before deleting this chat.')
+                        manager.delete(name); result={'deleted':True}
+                elif action == 'restore':
+                    manager.restore(name); result={'restored':True}
+                elif action in {'export-json','export-markdown'}:
+                    result=manager.save_export(name, 'json' if action == 'export-json' else 'markdown')
+                elif action == 'reveal-folder':
+                    profile=load_profile(state,name,{member.name for member in team.members})
+                    result={'opened':reveal_bound_folder(state,name,profile)}
+                else: raise ValueError('Unknown chat action.')
+                handler._serve_json(result)
+            except (ValueError, OSError) as exc:
+                handler._json_error(400, str(exc))
+            return True
     if path.startswith('/api/plans/'):
         try:
             from workflow_plan import WorkflowPlans
@@ -604,11 +674,12 @@ def handle_post(handler,state,path,body):
         return True
     if path.startswith('/api/providers/'):
         try:
-            if not isinstance(body,dict) or body: raise ValueError('Provider actions do not accept credentials or file paths.')
             parts=path.strip('/').split('/')
+            is_deepseek_key = parts == ['api','providers','deepseek','connect']
+            if not isinstance(body,dict) or (set(body)-{'apiKey'} if is_deepseek_key else body): raise ValueError('Unsupported provider connection parameters.')
             if len(parts)!=4: raise ValueError('Unknown provider action')
             from provider_connections import connections
-            handler._serve_json(connections().action(parts[2],parts[3]))
+            handler._serve_json(connections().action(parts[2],parts[3],api_key=body.get('apiKey')) if is_deepseek_key else connections().action(parts[2],parts[3]))
         except Exception as exc:handler._json_error(400,str(exc))
         return True
     if not path.startswith(('/api/runtime/','/api/knowledge/','/api/workspaces','/api/task/','/api/budget/')): return False
@@ -624,9 +695,10 @@ def handle_post(handler,state,path,body):
             name=(re.sub('[^a-z0-9-]','-',label.lower()).strip('-')[:40] or 'project')+'-'+uuid.uuid4().hex[:6]
             kind='project' if project else 'managed'
             folder=_project_folder(project) if project else _managed_workspace_folder(state,name)
+            assignment=validate_profile({'executionRole':body.get('executionRole','supervisor'),'supervisedBy':body.get('supervisedBy','')},set())
             TeamManager.create_team(name,'overall-head','not-started',description=goal,user='local',leader_agent_type='overall-head')
-            profile=save_profile(state,name,{'projectLabel':label,'projectRoot':str(folder),'workspaceKind':kind,'goal':goal,'members':{'overall-head':{'displayName':'Overall head','department':'Direction & delivery','model':'','reportsTo':None}}},{'overall-head'})
-            bridge(state).set_budget(name, 200000, True)
+            profile=save_profile(state,name,{'projectLabel':label,'projectRoot':str(folder),'workspaceKind':kind,'goal':goal,'executionRole':assignment['executionRole'],'supervisedBy':assignment['supervisedBy'],'members':{'overall-head':{'displayName':'Overall head' if assignment['executionRole']=='supervisor' else 'Delegated '+assignment['executionRole'],'department':'Direction & delivery','model':'','reportsTo':None}}},{'overall-head'})
+            bridge(state).set_budget(name, 0, False)
             handler._serve_json({'team':name,'company':profile,'started':False});return True
         parts=path.strip('/').split('/')
         if len(parts)==4 and parts[:2]==['api','workspaces'] and parts[3]=='attach':
@@ -646,7 +718,7 @@ def handle_post(handler,state,path,body):
         if parts[1]=='budget':
             if len(parts)!=3: raise ValueError('Unknown budget route')
             project_for(state,name)
-            budget=bridge(state).set_budget(name, body.get('limitTokens', body.get('maxTotalTokens', 200000)), body.get('enforced', True))
+            budget=bridge(state).set_budget(name, body.get('limitTokens', body.get('maxTotalTokens', 0)), body.get('enforced', False))
             handler._serve_json({'updated':True,'budget':budget});return True
         if parts[1]=='knowledge':
             if demo_mode():
@@ -661,7 +733,10 @@ def handle_post(handler,state,path,body):
             if len(parts)!=4: raise ValueError('Task ID required')
             project_for(state,name)
             status=TaskStatus(body.get('status'))
-            task=TaskStore(name).update(parts[3],status=status,caller='user')
+            store=TaskStore(name)
+            current=store.get(parts[3])
+            if current is None: raise ValueError('Task not found')
+            task=store.update(parts[3],status=status,caller=current.owner or 'user')
             if task is None: raise ValueError('Task not found')
             handler._serve_json({'updated':True});return True
         if parts[1]!='runtime' or len(parts)!=4: raise ValueError('Unknown action')
@@ -669,6 +744,9 @@ def handle_post(handler,state,path,body):
         if demo_mode() and action in ('start','send','execute','approve','respond','access'):
             raise ValueError('Model execution is disabled in model-free demo mode')
         if action in ('start','send'):
+            from chat_management import ChatManagement
+            if name in ChatManagement(state).deleted():
+                raise ValueError('This chat is in Trash. Restore it before sending a message.')
             prompt=body.get('prompt','')
             if not isinstance(prompt,str) or not prompt.strip() or len(prompt)>24000: raise ValueError('Enter a message of at most 24000 characters')
             project_for(state, name)
@@ -680,25 +758,35 @@ def handle_post(handler,state,path,body):
                 if provider=='codex':
                     if model=='auto':model=_default_supervisor_model(routing)
                     if model not in routing['reviewed_codex_models']: raise ValueError('Choose a reviewed available Codex model')
-                elif provider=='claude':
+                elif provider in ('claude','kimi','zai','deepseek'):
                     if not isinstance(model,str) or not model or len(model)>200 or model=='auto':
-                        raise ValueError('Check the Claude connection and choose a reported model.')
+                        raise ValueError(f'Check the {provider} connection and choose a reported model.')
                     # ProviderHub verifies this exact selection against the
                     # official initialize response before sending any prompt.
-                    image_options['provider']='claude'
+                    image_options['provider']=provider
                 else: raise ValueError('This provider does not have a verified HQ execution adapter.')
+                routing_service(state).authorize(provider,model)
                 with workspace_operation_lock(name):
+                    if name in ChatManagement(state).deleted(): raise ValueError('Restore this chat from Trash before starting work.')
                     project=project_for(state,name)
                     work_mode=body.get('workMode','plan')
                     if work_mode not in ('plan','auto','full'):raise ValueError('Choose plan or automatic work')
                     if work_mode in ('auto','full'): image_options['work_mode'] = work_mode
                     result=client.start(name,project,prompt.strip(),model,**image_options)
+                routing_service(state).register(name)
             else:
-                project_for(state,name)
-                result=client.send(name,prompt.strip(),**image_options)
+                current=client.status(name)
+                routing_service(state).authorize(current.get('provider','codex'),current.get('model',''))
+                with workspace_operation_lock(name):
+                    if name in ChatManagement(state).deleted(): raise ValueError('Restore this chat from Trash before sending.')
+                    project_for(state,name)
+                    result=client.send(name,prompt.strip(),**image_options)
+                routing_service(state).register(name)
         elif action=='execute':
-            project_for(state,name)
-            result=client.begin_execution(name)
+            with workspace_operation_lock(name):
+                if name in ChatManagement(state).deleted(): raise ValueError('Restore this chat from Trash before starting work.')
+                project_for(state,name)
+                result=client.begin_execution(name)
         elif action=='access':
             project_for(state,name)
             result=client.set_access(name,body.get('accessMode'))
@@ -706,10 +794,27 @@ def handle_post(handler,state,path,body):
             project_for(state,name)
             result=client.stop(name)
         elif action=='worker-message':
-            project_for(state,name)
             if demo_mode(): raise ValueError('Worker execution is disabled in demo mode.')
             if set(body) != {'threadId', 'prompt'}: raise ValueError('Choose a worker and enter a message.')
-            result=client.send_worker(name,body['threadId'],body['prompt'])
+            current=client.status(name)
+            routing_service(state).authorize(current.get('provider','codex'),current.get('model',''))
+            with workspace_operation_lock(name):
+                from chat_management import ChatManagement
+                if name in ChatManagement(state).deleted(): raise ValueError('Restore this chat from Trash before messaging a worker.')
+                project_for(state,name)
+                result=client.send_worker(name,body['threadId'],body['prompt'])
+            routing_service(state).register(name)
+        elif action=='worker-report':
+            if demo_mode(): raise ValueError('Worker reporting is disabled in demo mode.')
+            if set(body) != {'threadId', 'summary'}: raise ValueError('Choose a worker and enter its summary.')
+            current=client.status(name)
+            routing_service(state).authorize(current.get('provider','codex'),current.get('model',''))
+            with workspace_operation_lock(name):
+                from chat_management import ChatManagement
+                if name in ChatManagement(state).deleted(): raise ValueError('Restore this chat from Trash before reporting.')
+                project_for(state,name)
+                result=client.report_worker(name,body['threadId'],body['summary'])
+            routing_service(state).register(name)
         elif action=='stop-workers':
             project_for(state,name)
             result=client.stop_workers(name)

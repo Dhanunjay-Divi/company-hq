@@ -30,6 +30,17 @@ def validate_profile(value: object, names: set[str]) -> dict:
     if workspace_kind == 'managed' and not project:
         raise ValueError('Managed workspace must have a private workspace folder')
     result['workspaceKind'] = workspace_kind
+    # Describes an explicit assignment, not a native parent-child relationship.
+    execution_role = value.get('executionRole', 'supervisor')
+    if execution_role not in {'supervisor', 'lead', 'worker'}:
+        raise ValueError('Execution role must be supervisor, lead, or worker')
+    supervised_by = value.get('supervisedBy', '')
+    if not isinstance(supervised_by, str) or len(supervised_by) > 200:
+        raise ValueError('Supervised by must be short text')
+    if execution_role != 'supervisor' and not supervised_by.strip():
+        raise ValueError('Delegated work must identify its reviewing supervisor')
+    result['executionRole'] = execution_role
+    result['supervisedBy'] = supervised_by.strip() if execution_role != 'supervisor' else ''
     entries = value.get('members', {})
     if not isinstance(entries, dict) or not set(entries).issubset(names):
         raise ValueError('Company profile must reference registered members only')

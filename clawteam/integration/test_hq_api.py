@@ -73,7 +73,8 @@ class HQAPIDemoTest(unittest.TestCase):
             }, {"overall-head"})
             team = SimpleNamespace(members=[SimpleNamespace(name="overall-head")])
             handler, fake_bridge = Handler(), Bridge()
-            with patch.object(hq_api.TeamManager, "get_team", return_value=team), patch("hq_api.bridge", return_value=fake_bridge), patch("hq_api.routing_path", return_value=routing):
+            with patch.object(hq_api.TeamManager, "get_team", return_value=team), patch("hq_api.bridge", return_value=fake_bridge), patch("hq_api.routing_path", return_value=routing), patch("hq_api.routing_service"):
+                # Routing policy has its own service tests; this fixture isolates workspace binding.
                 handled = hq_api.handle_post(handler, state, "/api/runtime/chat-one/start", {
                     "prompt": "Help me shape this idea.", "model": "auto",
                 })
@@ -159,7 +160,8 @@ class HQAPIDemoTest(unittest.TestCase):
             team = SimpleNamespace(members=[SimpleNamespace(name="overall-head")])
             start_handler, attach_handler = Handler(), Handler()
             fake_bridge = BlockingBridge(managed.resolve())
-            with patch.object(hq_api.TeamManager, "get_team", return_value=team), patch("hq_api.bridge", return_value=fake_bridge), patch("hq_api.routing_path", return_value=routing):
+            with patch.object(hq_api.TeamManager, "get_team", return_value=team), patch("hq_api.bridge", return_value=fake_bridge), patch("hq_api.routing_path", return_value=routing), patch("hq_api.routing_service"):
+                # Routing policy has its own service tests; this fixture isolates workspace binding.
                 start_thread = threading.Thread(target=hq_api.handle_post, args=(start_handler, state, "/api/runtime/chat-one/start", {"prompt": "Start", "model": "gpt-5.6-luna"}))
                 attach_thread = threading.Thread(target=hq_api.handle_post, args=(attach_handler, state, "/api/workspaces/chat-one/attach", {"project": str(attached)}))
                 start_thread.start()

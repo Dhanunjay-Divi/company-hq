@@ -29,6 +29,7 @@ def _inventory():
 
 
 HELP_URLS = {
+    'deepseek': 'https://platform.deepseek.com/api_keys',
     'codex': 'https://chatgpt.com/',
     'claude': 'https://claude.ai/login',
     'kimi': 'https://www.kimi.com/code/',
@@ -319,6 +320,8 @@ class ProviderConnections:
         self.auth = auth or CodexSignIn()
         from claude_connection import ClaudeConnection
         self.claude = ClaudeConnection()
+        from native_provider_connection import NativeProviderConnection
+        self.native = {key:NativeProviderConnection(key) for key in ("kimi","zai")}
         self.activity = deque(maxlen=60)
         self.lock = threading.RLock()
 
@@ -328,6 +331,8 @@ class ProviderConnections:
 
     def snapshot(self):
         snapshot = deepcopy(_inventory())
+        from deepseek_connection import connection as deepseek_connection
+        snapshot['providers'].append({'id':'deepseek','label':'DeepSeek','installed':True, 'desktopInstalled':False,'cliInstalled':False, **deepseek_connection().snapshot()})
         with self.lock:
             activity = list(self.activity)
         for row in snapshot['providers']:
@@ -343,6 +348,16 @@ class ProviderConnections:
                 row['runtimeReady']=bool(binary)
                 if binary: row['cliPath']=binary
                 row['reason']='Official Claude Code adapter. Sign in to load available models.'
+            elif row['id'] in self.native:
+                native_snapshot = self.native[row['id']].snapshot()
+                row.update(native_snapshot)
+                import importlib
+                module=importlib.import_module('kimi_runtime' if row['id']=='kimi' else 'zcode_runtime')
+                binary=module.kimi_binary() if row['id']=='kimi' else module.zcode_command()
+                row['installed']=bool(row.get('installed') or binary)
+                row['runtimeReady']=native_snapshot.get('runtimeReady',bool(binary))
+                if binary: row['cliPath']=binary[0] if isinstance(binary,list) else binary
+                row['reason']='Native provider connection. Check sign-in to load available models.'
             # File locations remain server-side implementation details.
             row['desktopInstalled'] = bool(row.pop('desktopPath', None))
             row['cliInstalled'] = bool(row.pop('cliPath', None))
@@ -358,16 +373,26 @@ class ProviderConnections:
             raise ValueError('Provider task browsing is disabled in demo mode.')
         return self.auth.read_task(thread_id)
 
-    def action(self, provider, action):
+    def action(self, provider, action, *, api_key=None):
         if demo_mode():
             raise ValueError('Provider connections are disabled in demo mode.')
         if provider not in HELP_URLS or action not in ('connect', 'check', 'open', 'cancel'):
             raise ValueError('Unknown provider connection action.')
         try:
+            if provider == 'deepseek':
+                from deepseek_connection import connection
+                if action == 'open': raise ValueError('Open the DeepSeek API platform to create a key.')
+                result = connection().connect(api_key) if action == 'connect' else getattr(connection(), action)()
+                self._record(provider, result.get('message','Connection checked'), result.get('authentication','completed'))
+                return result
             rows = _inventory()['providers']
             row = next((item for item in rows if item['id'] == provider), None)
             if not row:
                 raise ValueError('Provider is not available.')
+            if provider in self.native and action != 'open':
+                result=getattr(self.native[provider],action)()
+                self._record(provider,result.get('message','Connection checked'),result.get('authentication','completed'))
+                return result
             if provider == 'claude' and action != 'open':
                 result=getattr(self.claude,action)()
                 self._record(provider,result.get('message','Connection checked'),result.get('authentication','completed'))
@@ -399,6 +424,7 @@ class ProviderConnections:
 _connections = ProviderConnections()
 atexit.register(_connections.auth.close)
 atexit.register(_connections.claude.close)
+for _native in _connections.native.values():atexit.register(_native.close)
 
 
 def connections():

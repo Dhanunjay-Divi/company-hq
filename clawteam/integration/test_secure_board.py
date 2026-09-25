@@ -72,6 +72,23 @@ class SecureBoardIntegrationTest(unittest.TestCase):
         req = urllib.request.Request(self.base + path, data=body, method=method, headers=request_headers)
         return urllib.request.urlopen(req, timeout=30)  # First Beads migration initializes its isolated database.
 
+    def test_routing_settings_round_trip_and_origin_guard(self):
+        with self.request('/api/routing') as response:
+            saved = json.load(response)['settings']
+        config = {key: saved[key] for key in ('models', 'preferredSupervisor') if key in saved}
+        config['autoFallback'] = False
+        with self.assertRaises(urllib.error.HTTPError) as missing_origin:
+            self.request('/api/routing', method='POST', payload=config)
+        self.assertEqual(missing_origin.exception.code, 403)
+        missing_origin.exception.close()
+        with self.request('/api/routing', method='POST', payload=config, headers={'Origin': self.base}) as response:
+            self.assertFalse(json.load(response)['settings']['autoFallback'])
+        with self.request('/api/routing') as response:
+            current = json.load(response)['settings']
+        self.assertFalse(current['autoFallback'])
+        self.assertEqual(current['models'], saved['models'])
+        self.assertEqual(current.get('preferredSupervisor'), saved.get('preferredSupervisor'))
+
     def test_real_task_inbox_receive_and_ack_flow(self):
         with self.request("/") as response:
             html = response.read().decode()
@@ -148,6 +165,10 @@ class SecureBoardIntegrationTest(unittest.TestCase):
                 "worker": {"displayName": "Researcher", "reportsTo": "head", "model": "fixture-model"},
             },
         }
+        delegated = validate_profile({**profile, "executionRole": "worker", "supervisedBy": "Outer Codex reviewer"}, {"head", "worker"})
+        self.assertEqual(delegated["executionRole"], "worker")
+        with self.assertRaisesRegex(ValueError, "reviewing supervisor"):
+            validate_profile({**profile, "executionRole": "worker"}, {"head", "worker"})
         path = profile_path(self.state, "verification-team")
         path.parent.mkdir(parents=True)
         path.write_text(json.dumps(validate_profile(profile, {"head", "worker"})))
@@ -199,7 +220,8 @@ class SecureBoardIntegrationTest(unittest.TestCase):
             native=json.load(response)
         self.assertEqual(native["state"],"offline")
         self.assertFalse(native["connected"])
-        self.assertTrue(native["budget"]["enforced"])
+        self.assertFalse(native["budget"]["enforced"])
+        self.assertEqual(native["budget"]["limitTokens"], 0)
         with self.request("/api/budget/"+name,method="POST",payload={
             "limitTokens":5000,"enforced":True
         },headers={"Origin":self.base}) as response:

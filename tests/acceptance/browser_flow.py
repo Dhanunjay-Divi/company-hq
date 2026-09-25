@@ -100,6 +100,27 @@ with tempfile.TemporaryDirectory(prefix='hq-browser-') as td:
             assert page.locator('.traffic-lights').count() == 0, 'Duplicate fake window controls'
             page.screenshot(path=str(OUT / 'chat-home.png'), full_page=True, animations='disabled')
 
+            print('acceptance: office preview',flush=True)
+            before_office = json.loads(urllib.request.urlopen(url + '/api/overview').read())
+            page.get_by_role('navigation', name='Workspace tools').get_by_role('button', name='Office', exact=True).click()
+            expect(page.get_by_role('heading', name='Your office is ready')).to_be_visible()
+            page.get_by_role('button', name='Preview example', exact=True).click()
+            expect(page.get_by_text('Example office · no model calls', exact=True)).to_be_visible()
+            page.get_by_role('button', name='Inspect Engineering lead', exact=True).click()
+            expect(page.get_by_role('heading', name='Engineering lead', exact=True)).to_be_visible()
+            page.get_by_role('button', name='Pause motion', exact=True).click()
+            assert page.locator('.office-desk.working .office-person').first.evaluate('(e)=>getComputedStyle(e).animationPlayState') == 'paused'
+            page.emulate_media(reduced_motion='reduce')
+            assert page.locator('.office-desk.working .office-person').first.evaluate('(e)=>getComputedStyle(e).animationName') == 'none'
+            page.screenshot(path=str(OUT / 'office-example.png'), full_page=True, animations='disabled')
+            page.set_viewport_size({'width':390,'height':844})
+            assert page.evaluate('document.documentElement.scrollWidth <= innerWidth'), 'Office overflows page'
+            page.get_by_role('button', name='Try a real conversation', exact=True).click()
+            expect(page.get_by_label('Direction for the team')).to_be_focused()
+            assert json.loads(urllib.request.urlopen(url + '/api/overview').read()) == before_office, 'Preview created real work'
+            page.set_viewport_size({'width':1440,'height':1000})
+            page.emulate_media(reduced_motion='no-preference')
+
             print('acceptance: settings',flush=True)
             page.get_by_role('button', name='Settings', exact=True).click()
             expect(page.get_by_role('heading', name='Connections and allowance')).to_be_visible()

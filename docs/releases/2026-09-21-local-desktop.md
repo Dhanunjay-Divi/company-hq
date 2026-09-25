@@ -3,7 +3,7 @@
 Application code checkpoint: `63bd09b0966e4813576c158dff8557873090d4f4`.
 This receipt and the updated reusable skill were recorded after the application freeze.
 
-Installed application: `/Users/uno/Applications/Company HQ.app`.
+Installed application: `~/Applications/Company HQ.app`.
 Open it in Finder, choose New chat and type an outcome. A project folder is optional.
 The default mode is Work automatically; broader Full access is a deliberate per-chat choice.
 

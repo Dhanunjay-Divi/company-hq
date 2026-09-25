@@ -22,7 +22,7 @@ import { homedir } from 'node:os';
 
 const INTEGRATION_DIR = dirname(fileURLToPath(import.meta.url));
 const TOOLKIT_DIR = realpathSync(resolve(INTEGRATION_DIR, '..'));
-const RUFLO_DIR = realpathSync(join(TOOLKIT_DIR, 'ruflo-3.41.2'));
+const RUFLO_DIR = realpathSync(process.env.RUFLO_INSTALL_ROOT || join(TOOLKIT_DIR, 'ruflo-3.41.2'));
 const CLI_DIR = join(RUFLO_DIR, 'node_modules', '@claude-flow', 'cli');
 const CONFIG_PATH = join(INTEGRATION_DIR, 'allowed-tools.json');
 const MAX_LINE_BYTES = 2 * 1024 * 1024;
@@ -101,12 +101,16 @@ function emit(message) { process.stdout.write(`${JSON.stringify(message)}\n`); }
 function sleep(ms) { return new Promise((done) => setTimeout(done, ms)); }
 
 function bindProject(input) {
-  const requested = input?.project_root || process.env.RUFLO_PROJECT_ROOT;
+  const launchRoot = process.env.RUFLO_PROJECT_ROOT;
+  const requested = launchRoot || input?.project_root;
   if (typeof requested !== 'string' || !requested) {
     throw new Error('project_root is required (or set RUFLO_PROJECT_ROOT for a per-project launch)');
   }
   if (!isAbsolute(requested)) throw new Error('project_root must be absolute');
   const physical = requireDirectory(requested, 'project root');
+  if (launchRoot && input?.project_root && requireDirectory(input.project_root, 'project root') !== physical) {
+    throw new Error('project_root differs from the launch-bound workspace');
+  }
   if (physical === '/' || physical === realpathSync(homedir())) {
     throw new Error('refusing a filesystem root or home directory as a project scope');
   }

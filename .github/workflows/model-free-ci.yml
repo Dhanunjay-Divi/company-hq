@@ -48,7 +48,7 @@ jobs:
         run: python scripts/install_engines.py
 
       - name: Test durable draft helpers
-        run: node --test tests/test_draft_storage.mjs tests/test_native_team_view.mjs
+        run: node --test tests/test_draft_storage.mjs tests/test_native_team_view.mjs tests/test_office_state.mjs
 
       - name: Run root model-free tests
         run: python -m unittest -v test_check_updates test_discover test_provider_registry

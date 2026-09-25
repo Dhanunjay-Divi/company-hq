@@ -135,10 +135,19 @@ def component_state_root(component: str) -> Path:
     component_override = os.environ.get(_COMPONENT_ENV[component])
     if component_override:
         candidate = _expand(component_override)
+    elif component == "codebase-memory" and sys.platform == "darwin":
+        base = state_root()
+        if os.environ.get("COMPANY_HQ_STATE_ROOT") and not base.is_relative_to(Path.home().resolve()):
+            candidate = base / component
+        else:
+            # The code guard denies account-home access. A normal HQ data
+            # directory under ~/.local/state must not disable code navigation.
+            candidate = Path("/Users/Shared") / f"company-hq-codebase-memory-{os.getuid()}"
+            if base != _default_state_root().resolve():
+                import hashlib
+                candidate = candidate / hashlib.sha256(str(base).encode()).hexdigest()[:12]
     elif os.environ.get("COMPANY_HQ_STATE_ROOT"):
         candidate = state_root() / component
-    elif component == "codebase-memory" and sys.platform == "darwin":
-        candidate = Path("/Users/Shared") / f"company-hq-codebase-memory-{os.getuid()}"
     else:
         candidate = state_root() / component
     return validate_component_state_root(candidate, component)
@@ -160,6 +169,15 @@ def ruflo_launcher() -> Path:
         shared=Path(os.environ.get("XDG_DATA_HOME",str(Path.home()/".local/share"))) / "agent-toolkit/ruflo-integration/ruflo-mcp"
         if shared.is_file(): return shared
     return bundled
+
+
+def _ruflo_handler(launcher: Path) -> Path:
+    """Return the pinned handler required by the selected Ruflo wrapper."""
+    install_root = launcher.parent.parent
+    dependency = install_root / "ruflo-3.41.2"
+    if not dependency.is_dir() and getattr(sys, "frozen", False) and launcher == REPO_ROOT / "ruflo-integration" / "ruflo-mcp":
+        dependency = Path(os.environ.get("XDG_DATA_HOME", str(Path.home()/".local/share"))) / "agent-toolkit/ruflo-3.41.2"
+    return dependency / "node_modules" / "@claude-flow" / "cli" / "dist" / "src" / "mcp-tools" / "memory-tools.js"
 
 
 def graft_install_root() -> Path:
@@ -305,7 +323,7 @@ def health_snapshot(data_dir: Path | None = None) -> dict[str, Any]:
     cbm = codebase_memory_launcher()
     cbm_binary = cbm.parent / "codebase-memory-mcp"
     cbm_guard = cbm.parent / "mcp_guard.py"
-    ruflo_handler = REPO_ROOT / "ruflo-3.41.2" / "node_modules" / "@claude-flow" / "cli" / "dist" / "src" / "mcp-tools" / "memory-tools.js"
+    ruflo_handler = _ruflo_handler(ruflo)
     node = node_executable()
     sandbox = sandbox_executable()
     codex = codex_executable()

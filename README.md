@@ -17,7 +17,7 @@ Company HQ is a local development application for macOS Apple Silicon. Open **Co
 - [Portable setup and isolation](docs/PORTABILITY.md)
 - [Packaging provenance](docs/PACKAGING.md)
 
-The desktop includes a conversation, live team view, Beads task board, project editor, native command runner, provider connections and allowance controls. Codex is the fully exercised execution path. Claude Code has an adapter and sign-in flow; authenticated execution must be verified after the user signs in. Other detected providers are not represented as executable integrations.
+The desktop includes a conversation, live team view, Beads task board, project editor, native command runner, provider connections and allowance controls. Codex is the fully exercised execution path. Claude Code has an adapter and sign-in flow; authenticated execution must be verified after the user signs in. Kimi Code and Z.ai/GLM have native adapters; see [provider acceptance and boundaries](docs/STATUS.md). Kimi coding entitlement on this machine is still pending. Other detected providers are not represented as executable integrations.
 
 The user talks primarily to the overall supervisor. Useful functional leads and specialists should be allocated according to the actual goal, available account access, complexity and cost. A visible roster is not proof that those agents are running.
 
@@ -38,7 +38,7 @@ The user talks primarily to the overall supervisor. Useful functional leads and 
 
 ## Run the app
 
-Open **Company HQ.app** from Applications. Choose **New chat**, describe the result, and send. **Work automatically** is the default; attach a folder with **Add project → Choose folder** when needed. Open **Team** for workers, **Tasks** for the plan, **Files** for the editor/commands, and **Settings** for providers and account allowance.
+Open **Company HQ.app** from Applications. Choose **New chat**, describe the result, and send. **Work automatically** is the default; attach a folder with **Add project → Choose folder** when needed. Open **Office** for workers, **Tasks** for the plan, **Files** for the editor/commands, and **Settings** for providers and account allowance.
 
 To build the macOS app from this checkout, run `python3 scripts/build_desktop.py --dmg`; see [desktop packaging](docs/DESKTOP.md). The standalone core includes its Python runtime. Source development commands below require Python and Node.
 
@@ -74,7 +74,7 @@ The original live installation remains a separate deployment target. Running thi
 
 ## Cost and data
 
-Opening the board does not start an agent. New chats default to **Work automatically**, which permits workspace work while native permission requests still require a decision. Choose **Plan first** for a read-only planning turn and then use **Approve plan & start execution**. Existing planning chats remain in planning until that approval. **Full access** is an explicit per-chat choice: it requests native `dangerFullAccess` with approval policy `never`; native administrator and account policies still apply. Native work uses the existing authorized provider account and may consume its allowance. Company HQ applies a per-workspace reported-token action gate, with a default 200,000-token ceiling adjustable in Activity. Reported tokens, account allowance and billed money remain distinct; this is not a provider-side billing cap or account-wide quota.
+Opening the board does not start an agent. New chats default to **Work automatically**, which permits workspace work while native permission requests still require a decision. Choose **Plan first** for a read-only planning turn and then use **Approve plan & start execution**. Existing planning chats remain in planning until that approval. **Full access** is an explicit per-chat choice: it requests native `dangerFullAccess` with approval policy `never`; native administrator and account policies still apply. Native work uses the existing authorized provider account and may consume its allowance. Company HQ applies a per-workspace reported-token action gate, with no local ceiling by default; an optional limit can be set in Activity. Reported tokens, account allowance and billed money remain distinct; this is not a provider-side billing cap or account-wide quota.
 
 No credentials, Codex conversations, runtime bindings, local task/message databases, user project lists, product files, downloaded binaries, virtual environments or dependency caches are intentionally included.
 

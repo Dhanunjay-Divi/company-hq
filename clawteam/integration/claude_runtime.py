@@ -153,6 +153,13 @@ class ClaudeCodeRuntime(ProviderRuntime):
             # causes permission asks to arrive as control_request records.
             "--permission-prompt-tool", "stdio",
         ]
+        if getattr(self, "shared_tools", False) and self.project:
+            from shared_tools import servers
+            shared = servers(self.project,team=getattr(self,"context_team",None),access=self.access)
+            if shared:
+                config = {"mcpServers":{item["name"]:{"command":item["command"],"args":item["args"],
+                    "env":{e["name"]:e["value"] for e in item.get("env",[])}} for item in shared}}
+                args.extend(["--mcp-config", json.dumps(config)])
         if self.model:
             args.extend(["--model", self.model])
         if self.access == "full":

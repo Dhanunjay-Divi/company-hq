@@ -28,7 +28,7 @@ from provider_runtime import ProviderRuntime, ProviderRuntimeError, create_runti
 from transcript_archive import TranscriptArchive
 
 
-SUPPORTED_PROVIDERS = {"codex", "claude"}
+SUPPORTED_PROVIDERS = {"codex", "claude", "kimi", "zai", "deepseek"}
 DEFAULT_EXECUTION_PROMPT = (
     "The user approved the current plan. Begin bounded execution now. "
     "Do not repeat planning or ask for plan approval again. Verify the work and "
@@ -39,6 +39,7 @@ DEFAULT_EXECUTION_PROMPT = (
 @dataclass
 class _ProviderSession:
     team: str
+    provider: str
     runtime: ProviderRuntime
     project: Path
     model: str
@@ -47,6 +48,8 @@ class _ProviderSession:
     session_id: str | None = None
     plan_ready: bool = False
     reported_tokens: int = 0
+    usage_reported: bool = False
+    usage_details: dict[str, Any] = field(default_factory=dict)
     runtime_cursor: int = 0
     next_event_seq: int = 1
     turn_id: str | None = None
@@ -64,6 +67,7 @@ class _ProviderSession:
     history_warning: str | None = None
     persistence_warning: str | None = None
     usage_pending: bool = False
+    quota_failure: dict[str, Any] | None = None
 
 
 class ProviderHub:
@@ -157,24 +161,27 @@ class ProviderHub:
             if Path(binding["projectRoot"]).resolve() != project:
                 raise BridgeError("chat is already bound to a different project root")
             return binding
-        if provider != "codex":
+        if provider != "codex" and not binding:
             codex_status = self.codex.status(team)
             if codex_status.get("threadId") or codex_status.get("project"):
                 raise BridgeError("This chat is already bound to codex; start a new chat to change providers")
         return None
 
     def _new_provider_session(
-        self, team: str, project: Path, model: str, mode: str, access: str,
+        self, team: str, provider: str, project: Path, model: str, mode: str, access: str,
         binding: dict[str, Any] | None,
     ) -> _ProviderSession:
         runtime = self.runtime_factory(
-            "claude", model=None, access="plan" if mode == "plan" else access,
+            provider, model=None, access="plan" if mode == "plan" else access,
             session_id=binding.get("sessionId") if binding else None,
+            **({"shared_tools":True} if provider in {"kimi","zai"} else {}),
         )
+        runtime.context_team = team
+        runtime.shared_tools = True
         restored = self._event_store.load(team)
         next_seq = self._event_store.next_sequence(team, restored[-1]["seq"] + 1 if restored else 1)
         session = _ProviderSession(
-            team=team,
+            team=team, provider=provider,
             runtime=runtime,
             project=project,
             model=model,
@@ -183,6 +190,8 @@ class ProviderHub:
             session_id=binding.get("sessionId") if binding else None,
             plan_ready=bool(binding.get("planReady", False)) if binding else False,
             reported_tokens=int(binding.get("reportedTokens", 0)) if binding and isinstance(binding.get("reportedTokens", 0), int) else 0,
+            usage_reported=bool(binding and (binding.get("usageReported") or binding.get("reportedTokens",0))),
+            usage_details=dict(binding.get('usageDetails') or {}) if binding else {},
             next_event_seq=next_seq,
             events=deque(restored, maxlen=self.max_events),
             replay_events=deque(restored, maxlen=self.max_events),
@@ -211,10 +220,12 @@ class ProviderHub:
     def _persist_session(self, session: _ProviderSession) -> None:
         try:
             self._write_binding(
-                session.team, provider="claude", projectRoot=str(session.project),
+                session.team, provider=session.provider, projectRoot=str(session.project),
                 sessionId=session.session_id, model=session.model, mode=session.mode,
                 accessMode=session.access, planReady=session.plan_ready,
                 reportedTokens=session.reported_tokens,
+                usageReported=session.usage_reported,
+                usageDetails=session.usage_details,
             )
             session.persistence_warning = None
         except (OSError, ValueError, BridgeError):
@@ -222,13 +233,13 @@ class ProviderHub:
 
     def _validate_live_binding(self, session: _ProviderSession) -> None:
         binding = self._read_binding(session.team)
-        if not binding or binding.get("provider") != "claude":
-            raise BridgeError("Claude provider binding is missing or changed")
+        if not binding or binding.get("provider") != session.provider:
+            raise BridgeError("provider binding is missing or changed")
         if Path(binding["projectRoot"]).resolve() != session.project:
-            raise BridgeError("Claude provider project binding changed")
+            raise BridgeError("provider project binding changed")
         bound_session = binding.get("sessionId")
         if bound_session and session.session_id and bound_session != session.session_id:
-            raise BridgeError("Claude provider session binding changed")
+            raise BridgeError("provider session binding changed")
 
     @staticmethod
     def _catalog_values(models: list[dict[str, Any]]) -> set[str]:
@@ -282,17 +293,20 @@ class ProviderHub:
 
         mode = binding.get("mode", "plan") if binding else ("full" if work_mode == "full" else "execute" if work_mode == "auto" else "plan")
         access = binding.get("accessMode", "workspace") if binding else ("full" if work_mode == "full" else "workspace")
-        session = self._new_provider_session(team, project_path, model, mode, access, binding)
+        session = self._new_provider_session(team, provider, project_path, model, mode, access, binding)
         try:
-            initialized = session.runtime.initialize(project=project_path)  # type: ignore[attr-defined]
+            # Native providers must select the requested model while creating
+            # the session; validating a later catalog must not permit a
+            # transport default to accept the first paid turn.
+            initialized = session.runtime.initialize(project=project_path, model=model)  # type: ignore[attr-defined]
             models = initialized.get("models") if isinstance(initialized, dict) else None
             if not isinstance(models, list) or model not in self._catalog_values(models):
-                raise BridgeError("model is not in Claude Code's initialized model catalog")
+                raise BridgeError("model is not in the initialized provider model catalog")
             session.session_id = session.runtime.status().get("sessionId") or session.session_id
             # Commit provider/project/session authority before the user turn is
             # accepted so a metadata write failure cannot orphan paid work.
             self._write_binding(
-                team, provider="claude", projectRoot=str(project_path), sessionId=session.session_id,
+                team, provider=provider, projectRoot=str(project_path), sessionId=session.session_id,
                 model=model, mode=mode, accessMode=access, planReady=False,
                 reportedTokens=session.reported_tokens,
             )
@@ -306,7 +320,7 @@ class ProviderHub:
             self._drain(session)
             return self.status(team)
         except Exception as exc:
-            public_error = str(exc) if isinstance(exc, (BridgeError, ProviderRuntimeError)) else "Claude provider could not start"
+            public_error = str(exc) if isinstance(exc, (BridgeError, ProviderRuntimeError)) else f"{provider} provider could not start"
             session.error = public_error[:1000]
             try:
                 session.runtime.stop()
@@ -352,7 +366,7 @@ class ProviderHub:
                 })
         return {
             "requestId": data.get("requestId"), "kind": "questions",
-            "text": "Claude needs your input", "reason": data.get("reason"),
+            "text": "The provider needs your input", "reason": data.get("reason"),
             "questions": questions, "availableDecisions": ["respond", "reject"],
             "sessionId": data.get("sessionId"), "turnId": data.get("turnId"), "itemId": data.get("itemId"),
             "recovered": bool(data.get("recovered")),
@@ -368,7 +382,7 @@ class ProviderHub:
             "requestId": data.get("requestId"),
             "kind": "command" if tool in {"Bash", "PowerShell", "REPL"} else "fileChange" if tool in {"Edit", "Write", "NotebookEdit"} else "tool",
             "title": tool,
-            "reason": data.get("reason") or f"Claude requested {tool}",
+            "reason": data.get("reason") or f"The provider requested {tool}",
             "command": command[:4000],
             "path": path[:2000] if isinstance(path, str) else None,
             "tool": tool,
@@ -473,6 +487,7 @@ class ProviderHub:
                     session.active_turns.discard(data["turnId"])
             if event_type == "message.user" and isinstance(data.get("turnId"), str):
                 session.active_turns.add(data["turnId"])
+                session.quota_failure = None
             if event_type in {"question.requested", "approval.requested"} and data.get("recovered") and isinstance(data.get("turnId"), str):
                 session.active_turns.add(data["turnId"])
             if isinstance(data.get("turnId"), str):
@@ -481,16 +496,31 @@ class ProviderHub:
                 if isinstance(data.get("turnId"), str):
                     session.active_turns.discard(data["turnId"])
                 session.plan_ready = session.mode == "plan" and not bool(data.get("isError"))
+            if event_type in {'message.completed','usage'}:
                 usage = data.get("usage")
                 if isinstance(usage, dict):
+                    session.usage_reported = True
                     turn_tokens = sum(
                         int(usage.get(key, 0)) for key in ("input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens")
                         if isinstance(usage.get(key, 0), (int, float)) and not isinstance(usage.get(key, 0), bool)
                     )
                     session.reported_tokens += max(0, turn_tokens)
-                session.usage_pending = True
+                native_usage = data.get("nativeUsage")
+                if isinstance(native_usage, dict):
+                    total = native_usage.get("totalTokens")
+                    if isinstance(total, int) and not isinstance(total, bool) and total >= 0:
+                        # ZCode reports a cumulative session total. Cached tokens
+                        # are already included; replay/resume must not add it twice.
+                        session.reported_tokens = max(session.reported_tokens, total)
+                        session.usage_reported = True
+                        session.usage_details = {key:native_usage[key] for key in ('totalTokens','inputTokens','outputTokens','reasoningTokens') if isinstance(native_usage.get(key),int) and not isinstance(native_usage.get(key),bool) and native_usage[key]>=0}
+                        cached=native_usage.get('cacheReadTokens')
+                        if isinstance(cached,int) and not isinstance(cached,bool) and cached>=0:session.usage_details['cachedInputTokens']=cached
+                session.usage_pending = session.usage_reported
             if event_type == "runtime.error":
-                session.error = str(data.get("message") or data.get("text") or "Claude runtime error")[:1000]
+                from quota_errors import quota_failure
+                session.quota_failure = quota_failure(data.get('message') or data.get('text'))
+                session.error = str(data.get("message") or data.get("text") or "Provider runtime error")[:1000]
                 failed_turn = data.get("turnId")
                 if isinstance(failed_turn, str):
                     session.active_turns.discard(failed_turn)
@@ -515,11 +545,11 @@ class ProviderHub:
             if event_type != "message.delta":
                 session.replay_events.append(event)
             self._archive(session, event)
-            binding_update = event_type in {"runtime.started", "message.completed", "runtime.access"}
+            binding_update = event_type in {"runtime.started", "message.completed", "runtime.access", "usage"}
             plan_ready = session.plan_ready
             reported_tokens = session.reported_tokens
             session_id = session.session_id or data.get("sessionId")
-        if event_type == "message.completed" and session_id:
+        if event_type in {"message.completed", "usage"} and session_id:
             self._flush_usage(session)
         if binding_update:
             self._persist_session(session)
@@ -529,17 +559,17 @@ class ProviderHub:
             session = self._sessions.get(team)
         if not session and resume:
             binding = self._read_binding(team)
-            if not binding or binding.get("provider") != "claude":
+            if not binding or binding.get("provider") not in SUPPORTED_PROVIDERS - {"codex"}:
                 raise BridgeError("Connect this Claude chat before continuing")
             project = self._project(binding["projectRoot"])
             session = self._new_provider_session(
-                team, project, binding.get("model"), binding["mode"], binding["accessMode"], binding,
+                team, binding["provider"], project, binding.get("model"), binding["mode"], binding["accessMode"], binding,
             )
             try:
-                initialized = session.runtime.initialize(project=project)  # type: ignore[attr-defined]
+                initialized = session.runtime.initialize(project=project, model=session.model)  # type: ignore[attr-defined]
                 models = initialized.get("models") if isinstance(initialized, dict) else None
                 if not isinstance(models, list) or session.model not in self._catalog_values(models):
-                    raise BridgeError("persisted model is not in Claude Code's initialized model catalog")
+                    raise BridgeError("persisted model is not in the initialized provider model catalog")
                 session.session_id = session.runtime.status().get("sessionId") or session.session_id
                 self._persist_session(session)
                 self._start_watcher(session)
@@ -553,7 +583,7 @@ class ProviderHub:
                     raise
                 if isinstance(exc, ProviderRuntimeError):
                     raise BridgeError(str(exc)) from exc
-                raise BridgeError("Claude provider could not resume") from exc
+                raise BridgeError(f"{binding['provider']} provider could not resume") from exc
         if not session:
             raise BridgeError("Connect this Claude chat before continuing")
         return session
@@ -566,6 +596,7 @@ class ProviderHub:
         self.codex._budget.authorize(team)
         session = self._session(team, resume=True)
         with session.operation_lock:
+            self._validate_live_binding(session)
             try:
                 if not session.runtime.status().get("connected"):
                     session.runtime.initialize(project=session.project, model=session.model)  # type: ignore[attr-defined]
@@ -573,12 +604,12 @@ class ProviderHub:
                 if session.pending:
                     raise BridgeError("Respond to the pending native request before sending another message")
                 if session.runtime.status().get("state") not in {"idle", "running"}:
-                    raise BridgeError("Claude runtime cannot accept input in its current state")
+                    raise BridgeError("provider runtime cannot accept input in its current state")
                 if session.mode == "plan":
                     session.plan_ready = False
                 # Persist the resumed identity and plan state before acceptance.
                 self._write_binding(
-                    team, provider="claude", projectRoot=str(session.project), sessionId=session.session_id,
+                    team, provider=session.provider, projectRoot=str(session.project), sessionId=session.session_id,
                     model=session.model, mode=session.mode, accessMode=session.access,
                     planReady=session.plan_ready, reportedTokens=session.reported_tokens,
                 )
@@ -622,18 +653,31 @@ class ProviderHub:
             self._validate_live_binding(session)
             if session.mode == "plan":
                 raise BridgeError("Approve the plan before changing execution access")
+            # ZCode exposes a native mode change while its tool permission is
+            # pending. This explicit chat-level choice does not approve the
+            # pending tool itself; the caller still answers that request.
+            if session.provider == 'zai' and access == 'full' and session.pending:
+                try:
+                    session.runtime.set_access(access)
+                    session.access=access
+                    session.mode='full'
+                    self._write_binding(team,mode='full',accessMode=access)
+                    self._drain(session)
+                    return self.status(team)
+                except ProviderRuntimeError as exc:
+                    raise BridgeError(str(exc)) from exc
             if session.runtime.status().get("state") != "idle" or session.pending:
                 raise BridgeError("Finish or stop the current turn before changing access")
             try:
                 next_mode = "full" if access == "full" else "execute"
                 self._write_binding(
-                    team, provider="claude", projectRoot=str(session.project), sessionId=session.session_id,
+                    team, provider=session.provider, projectRoot=str(session.project), sessionId=session.session_id,
                     model=session.model, mode=next_mode, accessMode=access,
                     planReady=False, reportedTokens=session.reported_tokens,
                 )
+                previous_access = session.access
                 session.access = access
                 session.mode = next_mode
-                previous_access = session.runtime.status().get("access") or session.access
                 if session.runtime.status().get("connected") and "full" in {previous_access, access} and previous_access != access:
                     session.runtime.stop()
                 session.runtime.set_access(access)
@@ -687,7 +731,7 @@ class ProviderHub:
             if not pending or pending.get("kind") != "questions":
                 raise BridgeError("native question is unknown, stale, or already resolved")
             if pending.get("sessionId") not in {None, session.session_id} or pending.get("turnId") not in session.active_turns:
-                raise BridgeError("native question no longer belongs to an active Claude turn")
+                raise BridgeError("native question no longer belongs to an active provider turn")
             answers = self._claude_answers(pending, response)
             allow = bool(answers)
             self.codex._budget.authorize(team) if allow else None
@@ -713,7 +757,7 @@ class ProviderHub:
             if not pending or pending.get("kind") == "questions":
                 raise BridgeError("native approval is unknown, stale, or already resolved")
             if pending.get("sessionId") not in {None, session.session_id} or pending.get("turnId") not in session.active_turns:
-                raise BridgeError("native approval no longer belongs to an active Claude turn")
+                raise BridgeError("native approval no longer belongs to an active provider turn")
             if decision == "approve" and session.mode == "plan":
                 raise BridgeError("tool approvals cannot be granted during read-only planning")
             try:
@@ -727,21 +771,31 @@ class ProviderHub:
         team = _validate_team(team)
         binding = self._read_binding(team)
         if not binding or binding["provider"] == "codex":
-            return {**self.codex.status(team), "provider": "codex", "providerBound": bool(binding)}
+            value = self.codex.status(team)
+            # Retain reported usage in HQ's binding so app restarts do not erase
+            # model attribution. Native provider histories remain untouched.
+            usage = value.get("usageSummary") or {}
+            total = usage.get("totalTokens", usage.get("reportedTokens"))
+            if binding and isinstance(total, int) and not isinstance(total, bool) and total >= 0:
+                if total > binding.get("reportedTokens", 0) or not binding.get("usageReported"):
+                    self._write_binding(team, reportedTokens=total, usageReported=True, usageDetails=usage)
+            elif binding and binding.get("usageReported"):
+                value["usageSummary"] = {**(binding.get("usageDetails") or {}), "reportedTokens": binding.get("reportedTokens")}
+            return {**value, "provider": "codex", "providerBound": bool(binding)}
         with self._sessions_lock:
             session = self._sessions.get(team)
         budget = self.codex._budget.status(team)
         restored = self._event_store.load(team)
         if not session:
             return {
-                "team": team, "provider": "claude", "providerBound": True, "state": "offline", "connected": False,
+                "team": team, "provider": binding["provider"], "providerBound": True, "state": "offline", "connected": False,
                 "project": binding["projectRoot"], "model": binding.get("model"),
                 "mode": "execute" if binding["mode"] == "full" else binding["mode"],
                 "accessMode": binding["accessMode"], "planReady": bool(binding.get("planReady")),
                 "threadId": binding.get("sessionId"), "sessionId": binding.get("sessionId"), "turnId": None,
                 "lastEventSeq": self._event_store.next_sequence(team, restored[-1]["seq"] + 1 if restored else 1) - 1,
                 "pendingApprovals": [], "unrecoverableRequests": _unresolved_replay_requests(restored),
-                "children": [], "usageSummary": {"reportedTokens": binding.get("reportedTokens", 0)},
+                "children": [], "usageSummary": {**(binding.get('usageDetails') or {}), "reportedTokens": binding.get("reportedTokens") if binding.get("usageReported") or binding.get("reportedTokens",0) else None},
                 "budget": budget, "limits": {"blockedReason": budget["reason"]} if budget["blocked"] else {},
                 "capabilities": {"images": True, "workers": False, "toolsInventory": False, "nativePermissions": True},
             }
@@ -750,7 +804,7 @@ class ProviderHub:
         with session.lock:
             state = "awaiting_approval" if session.pending else runtime_status.get("state", "offline")
             return {
-                "team": team, "provider": "claude", "providerBound": True, "state": state,
+                "team": team, "provider": session.provider, "providerBound": True, "state": state,
                 "connected": bool(runtime_status.get("connected")), "project": str(session.project),
                 "model": session.model, "models": runtime_status.get("models", []),
                 "mode": "execute" if session.mode == "full" else session.mode,
@@ -758,10 +812,16 @@ class ProviderHub:
                 "threadId": session.session_id, "sessionId": session.session_id, "turnId": session.turn_id,
                 "lastEventSeq": session.next_event_seq - 1,
                 "pendingApprovals": [dict(item) for item in session.pending.values()],
-                "unrecoverableRequests": [], "children": [],
-                "usageSummary": {"reportedTokens": session.reported_tokens},
+                "unrecoverableRequests": [], "children": [
+                    {**child, "verified":(runtime_status.get("nativeStatus") or {}).get("childrenVerified") is True and not child.get("stale")}
+                    for child in runtime_status.get("children", []) or []] if isinstance(runtime_status.get("children"), list) else None,
+                "usageSummary": {**session.usage_details, "reportedTokens": session.reported_tokens if session.usage_reported else None},
+                "nativeStatus": {**(runtime_status.get("nativeStatus") or {}),
+                    "childInventory": (runtime_status.get("nativeStatus") or {}).get("childInventory") or
+                        {"complete": (runtime_status.get("nativeStatus") or {}).get("childrenVerified") is True}},
+                "quotaFailure": session.quota_failure or runtime_status.get('quotaFailure'),
                 "budget": budget, "limits": {"blockedReason": budget["reason"]} if budget["blocked"] else {},
-                "capabilities": {"images": True, "workers": False, "toolsInventory": False, "nativePermissions": True},
+                "capabilities": {"images": True, "workers": session.provider == "zai", "workerControl": False, "toolsInventory": session.provider == "zai", "nativePermissions": True},
                 "historyWarning": session.history_warning,
                 "persistenceWarning": session.persistence_warning,
                 **({"error": session.error} if session.error else {}),
@@ -801,26 +861,139 @@ class ProviderHub:
     def set_budget(self, team: str, limit_tokens: object, enforced: object = True) -> dict[str, Any]:
         return self.codex.set_budget(team, limit_tokens, enforced)
 
+    def rotate_idle_binding(self, team, target_provider, target_model, handoff_id):
+        """Rotate one verified terminal session; retain its private provenance.
+
+        The caller holds HQ's workspace operation lock across rotation/start.
+        No native history is deleted and the canonical team ID stays unchanged.
+        """
+        from provider_handoff import ProviderHandoff
+        team = _validate_team(team)
+        if target_provider not in SUPPORTED_PROVIDERS or not isinstance(target_model, str) or not target_model:
+            raise BridgeError('Choose a supported provider and model')
+        if not isinstance(handoff_id, str) or len(handoff_id) != 32 or any(c not in '0123456789abcdef' for c in handoff_id):
+            raise BridgeError('Invalid handoff identity')
+        status = self.status(team)
+        reason = ProviderHandoff._checkpoint_reason(status)
+        if reason or not status.get('quotaFailure'):
+            raise BridgeError(reason or 'Native quota evidence is required for automatic rotation')
+        binding = self._read_binding(team)
+        if not binding:
+            raise BridgeError('Provider binding is unavailable')
+        folder = self.state_dir / 'handoff-epochs'
+        if folder.is_symlink():
+            raise BridgeError('Invalid handoff storage')
+        folder.mkdir(mode=0o700, exist_ok=True)
+        epoch_path = folder / (handoff_id + '.json')
+        if epoch_path.exists():
+            raise BridgeError('This handoff already rotated; inspect its checkpoint before retrying')
+        # Quiesce readers before a successor starts writing the shared event log.
+        if binding['provider'] == 'codex':
+            with self.codex._sessions_lock:
+                old = self.codex._sessions.get(team)
+            if not old:
+                raise BridgeError('Native Codex checkpoint is no longer connected')
+            with old.operation_lock, old.lock:
+                if old.state not in {'idle', 'error'} or old.approvals:
+                    raise BridgeError('Native work resumed before handoff')
+                old.closing = True
+                old.state = 'offline'
+            old.connection.close()
+            if old.connection.running():
+                raise BridgeError('Native Codex connection did not stop')
+            with self.codex._sessions_lock:
+                self.codex._sessions.pop(team, None)
+        else:
+            old = self._session(team)
+            with old.operation_lock:
+                old.stop_event.set()
+                old.runtime.stop()
+                if old.watcher and old.watcher is not threading.current_thread():
+                    old.watcher.join(timeout=3)
+                    if old.watcher.is_alive():
+                        raise BridgeError('Previous provider is still saving events; handoff was not started')
+                self._drain(old)
+                if old.runtime.status().get('connected'):
+                    raise BridgeError('Previous provider did not stop')
+            with self._sessions_lock:
+                self._sessions.pop(team, None)
+        native_path = self.codex._binding_path(team)
+        worker_path = self.codex._worker_store._path(team)
+        native_binding = self.codex._read_binding(team)
+        usage = status.get('usageSummary') or {}
+        epoch = {**binding, 'nativeBinding': native_binding,
+                 'reportedTokens': usage.get('totalTokens', usage.get('reportedTokens')),
+                 'handoffId': handoff_id, 'lastEventSeq': status.get('lastEventSeq')}
+        descriptor = os.open(epoch_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(descriptor, 'w') as handle:
+            json.dump(epoch, handle)
+        # These are HQ pointers only, not provider history files.
+        if native_path.exists():
+            native_path.unlink()
+        if worker_path.exists():
+            os.replace(worker_path, folder / (handoff_id + '.workers'))
+        self._write_binding(team, provider=target_provider, model=target_model,
+            sessionId=None, projectRoot=binding['projectRoot'], mode=binding['mode'],
+            accessMode=binding['accessMode'], planReady=False, reportedTokens=0,
+            usageReported=False, usageDetails={}, previousHandoff=handoff_id)
+        return {'rotated': True, 'project': binding['projectRoot'],
+                'workMode': 'plan' if binding['mode'] == 'plan' else 'full' if binding['accessMode'] == 'full' else 'auto',
+                'oldSessionId': binding.get('sessionId'), 'bindingSeq': status.get('lastEventSeq')}
+
     def tools(self, team: str) -> dict[str, Any]:
-        if self._provider(_validate_team(team)) == "codex":
-            return self.codex.tools(team)
-        return {"provider": "claude", "available": False, "tools": [], "reason": "Claude exposes tool activity but no verified HQ tool-inventory control adapter"}
+        provider = self._provider(_validate_team(team))
+        if provider == 'codex':
+            result={**self.codex.tools(team), 'provider':'codex', 'readOnly':False}
+        elif provider == 'zai':
+            session = self._session(team)
+            try: result=session.runtime.tools()
+            except ProviderRuntimeError as exc: raise BridgeError(str(exc)) from exc
+        else:
+            result={"provider": provider, "available": False, "readOnly":True, "tools": [], "reason": f"{provider} exposes tool activity but no verified HQ tool-inventory control adapter"}
+        binding=self._read_binding(team)
+        if binding:
+            try:
+                from project_context import ProjectContext
+                result['sharedSkills']=ProjectContext(binding['projectRoot'],team).skills()
+            except (ValueError,OSError):
+                result['sharedSkillsUnavailable']=True
+        return result
 
     def workers(self, team: str) -> dict[str, Any]:
         if self._provider(_validate_team(team)) == "codex":
-            return self.codex.workers(team)
+            return {**self.codex.workers(team), "provider":"codex", "workerControl":True}
+        if self._provider(team) == "zai":
+            session = self._session(team)
+            value = session.runtime.workers()
+            return {**value, "team":team, "provider":"zai", "workerControl":False,
+                    "connected":session.runtime.status().get("connected", False)}
         status = self.status(team)
-        return {"team": team, "rootThreadId": status.get("threadId"), "connected": status["connected"], "authoritative": False, "complete": False, "workers": [], "error": "Claude worker hierarchy synchronization is not yet a verified capability"}
+        return {"team": team, "provider":status.get("provider"), "workerControl":False, "rootThreadId": status.get("threadId"), "connected": status["connected"], "authoritative": False, "complete": False, "workers": [], "error": "Worker hierarchy synchronization is not yet verified for this provider"}
 
     def send_worker(self, team: str, thread_id: str, prompt: str) -> dict[str, Any]:
         if self._provider(_validate_team(team)) == "codex":
             return self.codex.send_worker(team, thread_id, prompt)
-        raise BridgeError("Claude worker messaging is unavailable because hierarchy synchronization is not verified")
+        raise BridgeError("Worker messaging is not supported by this provider adapter")
+
+    def worker_conversation(self, team: str, thread_id: str) -> dict[str, Any]:
+        team = _validate_team(team)
+        if self._provider(team) == "codex":
+            return {**self.codex.worker_conversation(team, thread_id), "provider": "codex"}
+        status = self.status(team)
+        return {"team": team, "threadId": thread_id, "worker": None, "messages": [],
+                "provider": status.get("provider"), "truncated": False, "readOnly": True, "conversationAvailable": False,
+                "error": "Worker conversation reading is not supported by this provider adapter"}
+
+    def report_worker(self, team: str, thread_id: str, summary: str) -> dict[str, Any]:
+        team = _validate_team(team)
+        if self._provider(team) == "codex":
+            return self.codex.report_worker(team, thread_id, summary)
+        raise BridgeError("Worker reporting is not supported by this provider adapter")
 
     def stop_workers(self, team: str) -> dict[str, Any]:
         if self._provider(_validate_team(team)) == "codex":
             return self.codex.stop_workers(team)
-        raise BridgeError("Claude worker stopping is unavailable because hierarchy synchronization is not verified")
+        raise BridgeError("Worker stopping is not supported by this provider adapter")
 
     def _shutdown_session(self, session: _ProviderSession) -> None:
         try:

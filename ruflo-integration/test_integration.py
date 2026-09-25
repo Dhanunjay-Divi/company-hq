@@ -15,13 +15,15 @@ PROFILE = ROOT / "sandbox.sb"
 
 
 class MCPProcess:
-    def __init__(self, cwd, state):
+    def __init__(self, cwd, state, project=None):
         state = state.resolve()
         env = os.environ.copy()
         env.update(
             RUFLO_INTEGRATION_STATE_ROOT=str(state),
             RUFLO_INTEGRATION_TESTING="1",
         )
+        if project is not None:
+            env['RUFLO_PROJECT_ROOT'] = str(project)
         command = ["/usr/bin/env", "node", str(SERVER)]
         if Path("/usr/bin/sandbox-exec").exists():
             command = [
@@ -89,6 +91,15 @@ class MCPProcess:
 
 
 class RufloIntegrationTests(unittest.TestCase):
+    def test_launch_binding_cannot_be_overridden_on_first_call(self):
+        other = self.base / 'other-project'
+        other.mkdir()
+        server = MCPProcess(self.base, self.state, project=self.project)
+        self.addCleanup(server.close)
+        result = server.call('tools/call', {'name': 'memory_list', 'arguments': {'project_root': str(other)}})
+        self.assertIn('launch-bound', json.dumps(result))
+        self.assertFalse((self.state / 'projects').exists())
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)

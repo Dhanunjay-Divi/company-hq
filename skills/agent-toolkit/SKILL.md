@@ -168,3 +168,7 @@ Shared files/skills are not shared authentication, cloud history or quotas.
 Do not swap or synchronize `auth.json` or active session databases. Preserve
 account/workspace privacy boundaries. For simultaneous writers use separate
 Git worktrees; share reviewed notes, not concurrent edits to the same files.
+
+## HQ review workflow
+
+The user can give the outer Codex supervisor a task; dispatch useful build work through the installed Company HQ API/app and independently review the result. Report which work actually ran in HQ and which fixes were made externally. Keep a compact task packet and reuse the existing worker on follow-up. Local HQ token ceilings are disabled at the user's request until changed; retain usage reporting and respect provider limits. Consult `skills/ponytail-review` for a focused complexity review and `skills/ui-ux-pro-max` for interface work, on demand. Do not load both on every backend task or activate upstream lifecycle hooks.

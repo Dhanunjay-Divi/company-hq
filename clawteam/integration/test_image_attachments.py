@@ -186,6 +186,9 @@ class ImageAttachmentsTest(unittest.TestCase):
         class Bridge:
             sent = None
 
+            def status(self, team):
+                return {"provider":"codex", "model":"gpt-fixture"}
+
             def send(self, *args, **kwargs):
                 self.sent = (args, kwargs)
                 return {'accepted': True}
@@ -200,7 +203,7 @@ class ImageAttachmentsTest(unittest.TestCase):
             'path': str((self.state / 'images' / 'chat-one' / ('a' * 32 + '.png')).resolve()),
         }
         handler = Handler()
-        with patch.object(hq_api, 'bridge', return_value=bridge), patch.object(
+        with patch.object(hq_api, 'routing_service'), patch.object(hq_api, 'bridge', return_value=bridge), patch.object(
             hq_api, 'project_for', return_value='/managed/chat-one',
         ), patch.object(hq_api, 'demo_mode', return_value=False), patch.object(
             image_attachments, 'resolve', return_value=[server_attachment],

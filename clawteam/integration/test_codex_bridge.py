@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import json
 import hashlib
+import sys
 import tempfile
 import threading
+import types
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -169,6 +171,7 @@ class WorkerConnection(FakeConnection):
         self.root_status = "active"
         self.root_turn_id = f"turn-{number}-1"
         self.rows: list[dict] = []
+        self.read_rows: dict[str, dict] = {}
         self.worker_turns: dict[str, str] = {}
         self.reissue_question = False
         self.reissue_permission = False
@@ -187,7 +190,17 @@ class WorkerConnection(FakeConnection):
         }:
             self.sent.append(json.loads(json.dumps(message)))
             if method == "thread/read":
-                result = {"thread": self.root()}
+                thread_id = message["params"]["threadId"]
+                if thread_id == f"thr-{self.number}":
+                    result = {"thread": self.root()}
+                else:
+                    thread = self.read_rows.get(thread_id)
+                    if thread is None:
+                        thread = next(
+                            (row for row in self.rows if row.get("id") == thread_id),
+                            None,
+                        )
+                    result = {"thread": thread} if thread is not None else {}
             elif method == "thread/list":
                 result = {"data": [self.root(), *self.rows], "nextCursor": None}
             elif method == "thread/turns/list":
@@ -199,7 +212,9 @@ class WorkerConnection(FakeConnection):
                 if thread_id == f"thr-{self.number}":
                     thread = self.root()
                 else:
-                    thread = next(row for row in self.rows if row["id"] == thread_id)
+                    thread = self.read_rows.get(thread_id)
+                    if thread is None:
+                        thread = next(row for row in self.rows if row["id"] == thread_id)
                     active_turn = self.worker_turns.get(thread_id)
                     thread = {**thread, "turns": ([{
                         "id": active_turn, "status": "inProgress", "items": [],
@@ -232,6 +247,7 @@ class WorkerFactory:
     def __init__(self):
         self.connections: list[WorkerConnection] = []
         self.rows: list[dict] = []
+        self.read_rows: dict[str, dict] = {}
         self.worker_turns: dict[str, str] = {}
         self.root_status = "active"
         self.reissue_question = False
@@ -240,6 +256,7 @@ class WorkerFactory:
     def __call__(self, codex_path: Path):
         connection = WorkerConnection(codex_path, len(self.connections) + 1)
         connection.rows = json.loads(json.dumps(self.rows))
+        connection.read_rows = json.loads(json.dumps(self.read_rows))
         connection.worker_turns = dict(self.worker_turns)
         connection.root_status = self.root_status
         connection.reissue_question = self.reissue_question
@@ -288,6 +305,7 @@ class CodexBridgeTest(unittest.TestCase):
         return connection
 
     def test_start_uses_safe_policy_and_persists_exact_binding(self):
+        self.bridge.set_budget("team-one", 200_000, True)
         status = self.start()
         connection = self.factory.connections[0]
         self.assertEqual(status["state"], "running")
@@ -1020,6 +1038,7 @@ class CodexBridgeTest(unittest.TestCase):
             "threadId": "child-real-1",
             "state": "running",
             "source": "collabAgentToolCall",
+            "verified": False, "stale": False,
         }])
         self.assertEqual(status["usageSummary"]["inputTokens"], 7)
         self.assertEqual(status["usageSummary"]["cachedInputTokens"], 2)
@@ -1031,13 +1050,12 @@ class CodexBridgeTest(unittest.TestCase):
         self.assertTrue(events["truncated"])
         self.assertNotIn("accountEmail", json.dumps(events))
 
-    def test_workers_reconcile_only_same_session_parent_linked_descendants(self):
+    def test_workers_reconcile_parent_linked_descendants_with_distinct_sessions(self):
         factory = WorkerFactory()
         factory.rows = [
-            native_thread("lead", "thr-1", status="active", model="gpt-5.6-terra"),
-            native_thread("worker", "lead", model="gpt-5.6-luna"),
+            native_thread("lead", "thr-1", session_id="lead-session", status="active", model="gpt-5.6-terra"),
+            native_thread("worker", "lead", session_id="worker-session", model="gpt-5.6-luna"),
             native_thread("unrelated", None, status="active"),
-            native_thread("cross-session", "thr-1", session_id="other", status="active"),
         ]
         factory.worker_turns = {"lead": "lead-turn"}
         bridge = CodexBridge(
@@ -1073,6 +1091,173 @@ class CodexBridgeTest(unittest.TestCase):
         self.assertFalse(snapshot["authoritative"])
         self.assertTrue(all(item["stale"] for item in snapshot["workers"]))
         self.assertNotIn("activeTurnId", json.dumps(snapshot))
+
+    def test_worker_conversation_and_explicit_report_require_verified_descendant(self):
+        factory = WorkerFactory()
+        factory.rows = [native_thread(
+            "worker", "thr-1", session_id="worker-session", status="idle",
+            turns=[{"id": "worker-turn", "items": [
+                {"id": "user-item", "type": "userMessage", "content": [{"type": "text", "text": "Investigate the bounded issue."}, {"type": "image", "url": "not-exposed"}]},
+                {"id": "assistant-item", "type": "agentMessage", "text": "The bounded result is ready."},
+            ]}],
+        )]
+        bridge = CodexBridge(
+            state_dir=self.root / "worker-conversation-runtime", connection_factory=factory,
+            request_timeout=0.2, max_events=40,
+        )
+        self.addCleanup(bridge.shutdown_all)
+        with patch.dict(sys.modules, {"hq_tools": types.SimpleNamespace(tool_specs=lambda: [])}):
+            bridge.start("worker-conversation-team", self.project, "work", "gpt-5.6-terra", work_mode="auto")
+        conversation = bridge.worker_conversation("worker-conversation-team", "worker")
+        self.assertTrue(conversation["readOnly"])
+        self.assertTrue(conversation["conversationAvailable"])
+        self.assertEqual(conversation["messages"], [
+            {"messageId": "user-item", "role": "user", "text": "Investigate the bounded issue."},
+            {"messageId": "assistant-item", "role": "assistant", "text": "The bounded result is ready."},
+        ])
+        read = [item for item in factory.connections[0].sent if item.get("method") == "thread/read" and item["params"]["threadId"] == "worker"][-1]
+        self.assertTrue(read["params"]["includeTurns"])
+        with self.assertRaisesRegex(BridgeError, "verified descendant"):
+            bridge.worker_conversation("worker-conversation-team", "other-team-worker")
+        report = bridge.report_worker("worker-conversation-team", "worker", "The user-approved summary.")
+        self.assertTrue(report["accepted"])
+        self.assertTrue(report["summarySent"])
+        self.assertIn("supervisor", report)
+
+    def test_worker_message_parser_returns_a_bounded_tail(self):
+        thread = {"turns": [{"id": "turn", "items": [
+            {"id": f"message-{index}", "type": "userMessage", "content": [{"type": "text", "text": str(index)}]}
+            for index in range(102)
+        ]}]}
+        messages, truncated = CodexBridge._worker_messages(thread)
+        self.assertTrue(truncated)
+        self.assertEqual(len(messages), 100)
+        self.assertEqual(messages[0]["messageId"], "message-2")
+        self.assertEqual(messages[-1]["text"], "101")
+
+    def test_workers_reread_observed_child_omitted_from_complete_listing(self):
+        factory = WorkerFactory()
+        child_id = "01a0c6c6-7c86-7760-b0fe-f1320ff9d0f0"
+        factory.read_rows[child_id] = native_thread(
+            child_id, "thr-1", session_id="child-native-session",
+            status="active", model="gpt-5.6-terra",
+        )
+        factory.worker_turns = {child_id: "child-turn"}
+        bridge = CodexBridge(
+            state_dir=self.root / "omitted-worker-runtime", connection_factory=factory,
+            request_timeout=0.2, max_events=40,
+        )
+        self.addCleanup(bridge.shutdown_all)
+        bridge.start("omitted-worker-team", self.project, "work", "gpt-5.6-terra", work_mode="auto")
+        connection = factory.connections[0]
+        connection.emit({
+            "method": "item/started",
+            "params": {
+                "threadId": "thr-1", "turnId": "turn-1-1",
+                "item": {
+                    "id": "spawn-one", "type": "subAgentActivity",
+                    "agentThreadId": child_id, "kind": "started",
+                },
+            },
+        })
+
+        result = bridge.workers("omitted-worker-team")
+
+        self.assertTrue(result["authoritative"])
+        self.assertFalse(result["complete"])
+        self.assertEqual([item["threadId"] for item in result["workers"]], [child_id])
+        self.assertFalse(result["workers"][0]["stale"])
+        self.assertEqual(result["workers"][0]["activeTurnId"], "child-turn")
+        child_read = next(
+            item for item in connection.sent
+            if item.get("method") == "thread/read"
+            and item["params"]["threadId"] == child_id
+        )
+        self.assertFalse(child_read["params"]["includeTurns"])
+        sent = bridge.send_worker("omitted-worker-team", child_id, "Review the bounded result")
+        self.assertEqual(sent["mode"], "turn/steer")
+        self.assertEqual(sent["turnId"], "child-turn")
+
+    def test_workers_keep_unresolved_observed_child_stale_and_inactionable(self):
+        factory = WorkerFactory()
+        child_id = "observed-but-unresolved"
+        bridge = CodexBridge(
+            state_dir=self.root / "unresolved-worker-runtime", connection_factory=factory,
+            request_timeout=0.2, max_events=40,
+        )
+        self.addCleanup(bridge.shutdown_all)
+        bridge.start("unresolved-worker-team", self.project, "work", "gpt-5.6-terra", work_mode="auto")
+        connection = factory.connections[0]
+        connection.emit({
+            "method": "item/started",
+            "params": {
+                "threadId": "thr-1", "turnId": "turn-1-1",
+                "item": {
+                    "id": "spawn-unresolved", "type": "subAgentActivity",
+                    "agentThreadId": child_id, "kind": "started",
+                },
+            },
+        })
+
+        result = bridge.workers("unresolved-worker-team")
+
+        self.assertFalse(result["authoritative"])
+        self.assertFalse(result["complete"])
+        self.assertEqual(result["workers"][0]["threadId"], child_id)
+        self.assertTrue(result["workers"][0]["stale"])
+        self.assertIn("could not be verified", result["error"])
+        with self.assertRaisesRegex(BridgeError, "verified descendant"):
+            bridge.send_worker("unresolved-worker-team", child_id, "Must not send")
+        self.assertFalse(any(
+            item.get("method") in {"thread/resume", "turn/steer", "turn/start"}
+            and item.get("params", {}).get("threadId") == child_id
+            for item in connection.sent
+        ))
+
+    def test_worker_observed_during_reconcile_is_not_erased(self):
+        factory = WorkerFactory()
+        factory.rows = [native_thread("lead", "thr-1", status="active")]
+        factory.worker_turns = {"lead": "lead-turn"}
+        bridge = CodexBridge(
+            state_dir=self.root / "worker-reconcile-race-runtime", connection_factory=factory,
+            request_timeout=0.2, max_events=40,
+        )
+        self.addCleanup(bridge.shutdown_all)
+        bridge.start("worker-reconcile-race", self.project, "work", "gpt-5.6-terra", work_mode="auto")
+        connection = factory.connections[0]
+        original_send = connection.send
+        injected = False
+
+        def observe_during_turn_lookup(message):
+            nonlocal injected
+            original_send(message)
+            if message.get("method") == "thread/turns/list" and not injected:
+                injected = True
+                connection.emit({
+                    "method": "item/started",
+                    "params": {
+                        "threadId": "thr-1", "turnId": "turn-1-1",
+                        "item": {
+                            "id": "spawn-race", "type": "subAgentActivity",
+                            "agentThreadId": "concurrent-child", "kind": "started",
+                        },
+                    },
+                })
+
+        connection.send = observe_during_turn_lookup
+        result = bridge.workers("worker-reconcile-race")
+
+        self.assertEqual(
+            {item["threadId"] for item in result["workers"]},
+            {"lead", "concurrent-child"},
+        )
+        concurrent = next(
+            item for item in result["workers"]
+            if item["threadId"] == "concurrent-child"
+        )
+        self.assertTrue(concurrent["stale"])
+        self.assertFalse(result["complete"])
+        self.assertFalse(result["authoritative"])
 
     def test_send_worker_steers_active_starts_idle_and_rejects_unrelated(self):
         factory = WorkerFactory()
@@ -1312,6 +1497,38 @@ class CodexBridgeTest(unittest.TestCase):
                 "permissions": {"network": {"enabled": True}}, "scope": "turn",
             },
         }, second_factory.connections[0].sent)
+
+    def test_default_budget_tracks_usage_without_a_local_ceiling(self):
+        team = "default-unlimited"
+        before = self.bridge.status(team)["budget"]
+        self.assertEqual(before["limitTokens"], 0)
+        self.assertFalse(before["enforced"])
+        self.assertFalse(before["blocked"])
+        self.assertIsNone(before["remainingTokens"])
+
+        self.bridge.start(
+            team, self.project, "Track this work without a local ceiling.",
+            "gpt-5.6-terra", work_mode="auto",
+        )
+        connection = self.factory.connections[0]
+        self.assertFalse(any(
+            item.get("method") == "thread/goal/set" for item in connection.sent
+        ))
+        connection.emit({
+            "method": "thread/tokenUsage/updated",
+            "params": {
+                "threadId": "thr-1", "turnId": "turn-1-1",
+                "tokenUsage": {"total": {"totalTokens": 250_000}},
+            },
+        })
+        after = self.bridge.status(team)["budget"]
+        self.assertEqual(after["usedTokens"], 250_000)
+        self.assertFalse(after["blocked"])
+        self.assertIsNone(after["usedPercent"])
+        self.assertFalse(any(
+            event["type"].startswith("budget.stop")
+            for event in self.bridge.events(team)["events"]
+        ))
 
     def test_budget_gate_blocks_later_runtime_actions(self):
         self.bridge.set_budget("team-one", 10, True)

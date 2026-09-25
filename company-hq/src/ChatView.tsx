@@ -20,12 +20,15 @@ export function conversationMessages(events:Data[]):Message[] {
   }
   return messages;
 }
-export default function ChatView({events,runtime,empty,composer,onDraft,busy,demo,onApproval,onRespond,historyControl}:{
+export default function ChatView({events,runtime,empty,composer,onDraft,busy,demo,onApproval,onRespond,historyControl,assignment,onFullAccess}:{
+  onFullAccess?: (id:string)=>unknown;
+  assignment?: {executionRole?: string; supervisedBy?: string};
   historyControl?:React.ReactNode;events:Data[];runtime:Data;empty:boolean;composer:React.ReactNode;onDraft:(text:string)=>void;
   busy:boolean;demo:boolean;onApproval:(id:string,decision:string)=>void;onRespond:(id:string,response:Data)=>unknown;
 }) {
   const scroll=useRef<HTMLDivElement>(null); const follow=useRef(true); const [atBottom,setAtBottom]=useState(true);
   const messages=conversationMessages(events); const working=busy||['starting','running','stopping'].includes(runtime.state);
+  const roleLabel=assignment?.executionRole==='lead'?'Delegated lead':assignment?.executionRole==='worker'?'Delegated builder':'Supervisor';
   useEffect(()=>{if(follow.current&&scroll.current)scroll.current.scrollTop=scroll.current.scrollHeight;},[events,working,runtime.pendingApprovals]);
   return <div className={`conversation ${empty&&!working?'welcome':'has-messages'}`}>
     {empty&&!working?<div className="welcome-scroll"><div className="welcome-inner">
@@ -42,11 +45,11 @@ export default function ChatView({events,runtime,empty,composer,onDraft,busy,dem
           {historyControl}
           {demo&&<p className="fixture-notice">Synthetic demo · no provider calls</p>}
           {messages.map((message,index)=><article className={`chat-message ${message.role}`} key={message.key}>
-            {message.role==='assistant'&&messages[index-1]?.role!=='assistant'&&<div className="message-byline"><span className="mini-mark"><Layers3 size={15}/></span>Supervisor<span>{runtime.model?.replace('gpt-','GPT ').replaceAll('-',' ') || 'Your team'}</span></div>}
+            {message.role==='assistant'&&messages[index-1]?.role!=='assistant'&&<div className="message-byline" title={roleLabel!=='Supervisor'&&assignment?.supervisedBy?`Assigned and reviewed by ${assignment.supervisedBy}. This is a separate native provider session.`:undefined}><span className="mini-mark"><Layers3 size={15}/></span>{roleLabel}<span>{runtime.model?.replace(/^account:[^/]+\//,'').replace('gpt-','GPT ').replaceAll('-',' ') || 'Your team'}</span></div>}
             <div className="message-body">{message.role==='user'?<>{message.text}{message.attachments?.length ? <div className="message-attachments">{message.attachments.map(attachment => <img key={attachment.id} src={safeAttachmentUrl(attachment.url)} alt={attachment.name || 'Attached image'} />)}</div> : null}</>:<Markdown skipHtml components={{a:({children,...props})=><a {...props} target="_blank" rel="noopener noreferrer">{children}</a>,img:({alt})=><span>{alt?`[Image: ${alt}]`:'[Image]'}</span>}}>{message.text}</Markdown>}</div>
           </article>)}
           {working&&<div className="thinking-indicator" role="status"><span/><span/><span/>{busy?'Sending your message…':runtime.state==='starting'?'Connecting to your provider…':runtime.state==='stopping'?'Stopping…':'Working on it…'}</div>}
-          <NativeRequests requests={runtime.pendingApprovals||[]} busy={busy || demo} onApproval={onApproval} onRespond={onRespond}/>
+          <NativeRequests requests={runtime.pendingApprovals||[]} onFullAccess={onFullAccess} busy={busy || demo} onApproval={onApproval} onRespond={onRespond}/>
           {runtime.historyWarning&&<p role="status">{runtime.historyWarning}</p>}
           {runtime.error&&<p className="chat-runtime-error" role="alert">{runtime.error}</p>}
           {!messages.length&&!working&&<p className="chat-recovery">This chat is ready to continue. Send a message to pick up where you left off.</p>}

@@ -287,10 +287,19 @@ def create_runtime(provider: str, **kwargs: Any) -> ProviderRuntime:
     """Construct a real adapter only for a reviewed provider transport."""
     if provider == "ollama":
         return OllamaRuntime(**kwargs)
+    if provider == "deepseek":
+        from deepseek_runtime import runtime
+        return runtime(**kwargs)
     if provider == "claude":
         from claude_runtime import runtime
         return runtime(**kwargs)
-    if provider in {"cursor", "kimi", "zai"}:
+    if provider == "kimi":
+        from kimi_runtime import runtime
+        return runtime(**kwargs)
+    if provider == "zai":
+        from zcode_runtime import runtime
+        return runtime(**kwargs)
+    if provider == "cursor":
         from acp_runtime import runtime_for_provider
         return runtime_for_provider(provider, **kwargs)
     return UnavailableRuntime(provider, f"{provider} does not have a verified Company HQ native runtime adapter.")

@@ -61,6 +61,15 @@ spec = importlib.util.spec_from_file_location('runtime_config', integration / 'r
 module = importlib.util.module_from_spec(spec)
 sys.modules['runtime_config'] = module
 spec.loader.exec_module(module)
+if len(sys.argv) == 4 and sys.argv[1] == '--project-context-mcp':
+    import os
+    os.environ['COMPANY_HQ_CONTEXT_PROJECT'] = sys.argv[2]
+    os.environ['COMPANY_HQ_CONTEXT_TEAM'] = sys.argv[3]
+    from runtime_config import clawteam_data_dir
+    os.environ['CLAWTEAM_DATA_DIR'] = str(clawteam_data_dir())
+    os.environ['CLAWTEAM_TRANSPORT'] = 'file'
+    from project_context_mcp import main
+    raise SystemExit(main())
 runpy.run_path(str(integration / 'secure_board.py'), run_name='__main__')
 """, encoding='utf-8')
     command = [
@@ -68,15 +77,25 @@ runpy.run_path(str(integration / 'secure_board.py'), run_name='__main__')
         '--distpath', str(dist), '--workpath', str(work / 'work'), '--specpath', str(work / 'spec'),
         '--paths', str(ROOT), '--paths', str(ROOT / 'clawteam' / 'integration'),
         '--collect-submodules', 'clawteam',
+        '--hidden-import', 'deepseek_connection', '--hidden-import', 'deepseek_runtime',
+        '--hidden-import', 'project_context', '--hidden-import', 'project_context_mcp',
         '--hidden-import', 'hq_api', '--hidden-import', 'company_profile', '--hidden-import', 'runtime_config',
         '--hidden-import', 'provider_connections', '--hidden-import', 'native_tasks', '--hidden-import', 'folder_picker',
         '--hidden-import', 'context_pipeline',
+        '--hidden-import', 'kimi_runtime', '--hidden-import', 'zcode_runtime',
+        '--hidden-import', 'native_rpc', '--hidden-import', 'native_provider_connection',
+        '--hidden-import', 'chat_management', '--hidden-import', 'shared_tools',
+        '--hidden-import', 'routing_policy', '--hidden-import', 'routing_service',
+        '--hidden-import', 'provider_handoff', '--hidden-import', 'quota_errors',
         '--add-data', f'{ROOT / "clawteam" / "integration"}:clawteam/integration',
         '--add-data', f'{ROOT / "routing.json"}:.',
         '--add-data', f'{ROOT / "docs"}:docs',
         '--add-data', f'{ROOT / "benchmarks"}:benchmarks',
         '--add-data', f'{ROOT / "licenses"}:licenses',
         '--add-data', f'{ROOT / "roles"}:roles',
+        '--add-data', f'{ROOT / "skills"}:skills',
+        '--add-data', f'{ROOT / "ruflo-integration"}:ruflo-integration',
+        '--add-data', f'{ROOT / "scripts" / "resolve_state_path.py"}:scripts',
         '--add-data', f'{ROOT / "agency-agents"}:agency-agents',
         '--add-data', f'{ROOT / "codebase-memory-mcp-0.10.8"}:codebase-memory-mcp-0.10.8',
         '--add-data', f'{ROOT / "build" / "providers"}:build/providers',

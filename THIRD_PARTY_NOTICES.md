@@ -29,3 +29,13 @@ README.md, retained alongside the installed packages. They are not relicensed
 as Company HQ source. Authentication, billing and native permissions remain
 with Anthropic's runtime. A public redistribution is not authorized by the
 Company HQ source license alone.
+
+## Office and targeted review guidance
+
+- **Munder Difflin**, copyright (c) 2026 Chaitanya Giri, MIT, commit `c7c8921f4491104d342861e32fa214e486442304`: procedural `portraitArt.ts` only, adapted under `company-hq/vendor/munder-office`; license/provenance retained there. No separately licensed LimeZu artwork included.
+- **Ponytail review skill**, DietrichGebert, MIT, commit `e3ba2aa6f1e6f0bc4d69eb09c9f0d0a93af56156`, https://github.com/DietrichGebert/ponytail. `skills/ponytail-review` retains the skill/license; no always-on hooks.
+- **UI/UX Pro Max**, Next Level Builder, MIT, commit `dcc40ff5133ef78276117db0cc34e7b83cc8aeba`, https://github.com/nextlevelbuilder/ui-ux-pro-max-skill. Local design/search skill in `skills/ui-ux-pro-max`, with its license; no CLI installer or remote service enabled.
+
+## ZCode native compatibility
+
+The optional ZCode 0.16.9 bridge uses small protocol compatibility fragments from [zai-org/ZCode](https://github.com/zai-org/ZCode), Apache-2.0. See [integration provenance](docs/ZCODE-INTEGRATION.md) and [license](licenses/ZCODE-APACHE-2.0.txt). The installed vendor runtime is not bundled or modified.

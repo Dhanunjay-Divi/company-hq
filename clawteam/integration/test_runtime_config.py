@@ -10,6 +10,31 @@ import runtime_config as config
 
 
 class RuntimeConfigTest(unittest.TestCase):
+    def test_home_based_app_state_keeps_code_memory_external_on_mac(self):
+        with tempfile.TemporaryDirectory() as temp, patch.object(config.sys,'platform','darwin'), patch.object(Path,'home',return_value=Path(temp)), patch.dict(os.environ,{'COMPANY_HQ_STATE_ROOT':str(Path(temp)/'.local/state/hq-fixture')},clear=True):
+            value=config.component_state_root('codebase-memory')
+            self.assertTrue(value.is_relative_to(Path('/Users/Shared')))
+            self.assertFalse(value.is_relative_to(Path(temp)))
+            with patch.dict(os.environ,{'COMPANY_HQ_CODEBASE_MEMORY_STATE_ROOT':str(Path(temp)/'unsafe')}):
+                with self.assertRaises(config.ConfigurationError):config.component_state_root('codebase-memory')
+
+    def _make_executable(self, path: Path) -> Path:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.touch()
+        path.chmod(0o700)
+        return path
+
+    def _make_ruflo_install(self, root: Path) -> Path:
+        launcher = self._make_executable(root / "ruflo-integration" / "ruflo-mcp")
+        handler = root / "ruflo-3.41.2" / "node_modules" / "@claude-flow" / "cli" / "dist" / "src" / "mcp-tools" / "memory-tools.js"
+        handler.parent.mkdir(parents=True, exist_ok=True)
+        handler.touch()
+        return launcher
+
+    def _ruflo_health(self, state: Path) -> dict[str, object]:
+        with patch.object(config, "node_executable", return_value=self._make_executable(state / "bin" / "node")), patch.object(config, "sandbox_executable", return_value=self._make_executable(state / "bin" / "sandbox-exec")), patch.object(config, "_graft_availability", return_value={"available": False, "path": "", "reason": "test fixture"}):
+            return config.health_snapshot(state / "board")["capabilities"]["rufloMemory"]
+
     def test_explicit_state_root_is_external_and_project_state_is_nested(self):
         with tempfile.TemporaryDirectory(prefix="company-hq-config-") as temp:
             root = Path(temp) / "state"
@@ -90,6 +115,99 @@ class RuntimeConfigTest(unittest.TestCase):
             self.assertEqual(health["mode"], "demo")
             self.assertFalse(health["modelExecutionEnabled"])
             self.assertTrue(health["accountHomePreserved"])
+
+    def test_health_uses_bundled_ruflo_wrapper_dependency_root(self):
+        with tempfile.TemporaryDirectory(prefix="company-hq-ruflo-bundled-") as temp:
+            root = Path(temp)
+            bundle = root / "bundle"
+            launcher = self._make_ruflo_install(bundle)
+            with patch.object(config, "REPO_ROOT", bundle), patch.dict(os.environ, {"COMPANY_HQ_STATE_ROOT": str(root / "state")}, clear=True):
+                health = self._ruflo_health(root)
+            self.assertTrue(health["available"])
+            self.assertEqual(Path(health["path"]).resolve(), launcher.resolve())
+
+    def test_health_uses_shared_ruflo_wrapper_dependency_root_when_frozen(self):
+        with tempfile.TemporaryDirectory(prefix="company-hq-ruflo-shared-") as temp:
+            root = Path(temp)
+            shared_root = root / "shared" / "agent-toolkit"
+            launcher = self._make_ruflo_install(shared_root)
+            env = {
+                "COMPANY_HQ_STATE_ROOT": str(root / "state"),
+                "XDG_DATA_HOME": str(root / "shared"),
+            }
+            with patch.object(config, "REPO_ROOT", root / "bundle"), patch.object(config.sys, "frozen", True, create=True), patch.dict(os.environ, env, clear=True):
+                health = self._ruflo_health(root)
+            self.assertTrue(health["available"])
+            self.assertEqual(Path(health["path"]).resolve(), launcher.resolve())
+
+    def test_health_reports_missing_selected_ruflo_dependency(self):
+        with tempfile.TemporaryDirectory(prefix="company-hq-ruflo-missing-") as temp:
+            root = Path(temp)
+            repository = root / "repository"
+            self._make_ruflo_install(repository)
+            launcher = self._make_executable(root / "selected" / "ruflo-integration" / "ruflo-mcp")
+            env = {
+                "COMPANY_HQ_STATE_ROOT": str(root / "state"),
+                "COMPANY_HQ_RUFLO_LAUNCHER": str(launcher),
+            }
+            with patch.object(config, "REPO_ROOT", repository), patch.dict(os.environ, env, clear=True):
+                health = self._ruflo_health(root)
+            self.assertFalse(health["available"])
+            self.assertIn(str(root / "selected" / "ruflo-3.41.2"), health["reason"])
+
+    def test_health_honors_explicit_ruflo_and_dependency_overrides(self):
+        with tempfile.TemporaryDirectory(prefix="company-hq-ruflo-override-") as temp:
+            root = Path(temp)
+            launcher = self._make_ruflo_install(root / "override")
+            node = self._make_executable(root / "override-node")
+            sandbox = self._make_executable(root / "override-sandbox")
+            env = {
+                "COMPANY_HQ_STATE_ROOT": str(root / "state"),
+                "COMPANY_HQ_RUFLO_LAUNCHER": str(launcher),
+                "COMPANY_HQ_NODE": str(node),
+                "COMPANY_HQ_SANDBOX_EXEC": str(sandbox),
+            }
+            with patch.object(config, "_graft_availability", return_value={"available": False, "path": "", "reason": "test fixture"}), patch.dict(os.environ, env, clear=True):
+                health = config.health_snapshot(root / "board")["capabilities"]["rufloMemory"]
+            self.assertTrue(health["available"])
+            self.assertEqual(Path(health["path"]).resolve(), launcher.resolve())
+
+    def test_health_rejects_unavailable_ruflo_executables(self):
+        with tempfile.TemporaryDirectory(prefix="company-hq-ruflo-executables-") as temp:
+            root = Path(temp)
+            launcher = self._make_ruflo_install(root)
+            node = self._make_executable(root / "node")
+            sandbox = self._make_executable(root / "sandbox-exec")
+            cases = {
+                "launcher": (launcher, node, sandbox),
+                "node": (launcher, root / "node-missing", sandbox),
+                "sandbox": (launcher, node, root / "sandbox-missing"),
+                "node-not-executable": (launcher, root / "node-not-executable", sandbox),
+                "sandbox-not-executable": (launcher, node, root / "sandbox-not-executable"),
+            }
+            for name, (selected, selected_node, selected_sandbox) in cases.items():
+                with self.subTest(name=name):
+                    if name == "launcher":
+                        launcher.chmod(0o600)
+                    elif name == "node-not-executable":
+                        selected_node.parent.mkdir(parents=True, exist_ok=True)
+                        selected_node.touch()
+                        selected_node.chmod(0o600)
+                    elif name == "sandbox-not-executable":
+                        selected_sandbox.parent.mkdir(parents=True, exist_ok=True)
+                        selected_sandbox.touch()
+                        selected_sandbox.chmod(0o600)
+                    env = {
+                        "COMPANY_HQ_STATE_ROOT": str(root / "state"),
+                        "COMPANY_HQ_RUFLO_LAUNCHER": str(selected),
+                        "COMPANY_HQ_NODE": str(selected_node),
+                        "COMPANY_HQ_SANDBOX_EXEC": str(selected_sandbox),
+                    }
+                    with patch.object(config, "_graft_availability", return_value={"available": False, "path": "", "reason": "test fixture"}), patch.dict(os.environ, env, clear=True):
+                        health = config.health_snapshot(root / "board")["capabilities"]["rufloMemory"]
+                    self.assertFalse(health["available"])
+                    if name == "launcher":
+                        launcher.chmod(0o700)
 
 
 if __name__ == "__main__":

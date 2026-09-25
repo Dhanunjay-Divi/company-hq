@@ -24,10 +24,17 @@ fi
 mkdir -p "$STATE_ROOT"
 chmod 700 "$STATE_ROOT"
 
+INSTALL_ROOT="$REPO_ROOT/ruflo-3.41.2"
+if [ ! -d "$INSTALL_ROOT" ]; then
+  INSTALL_ROOT="${XDG_DATA_HOME:-$HOME/.local/share}/agent-toolkit/ruflo-3.41.2"
+fi
+
 exec /usr/bin/env -i \
   PATH=/usr/bin:/bin:/usr/sbin:/sbin \
   LANG=${LANG:-C.UTF-8} USER=${USER:-local} LOGNAME=${LOGNAME:-${USER:-local}} \
   RUFLO_INTEGRATION_STATE_ROOT="$STATE_ROOT" \
+  RUFLO_INSTALL_ROOT="$INSTALL_ROOT" \
+  RUFLO_PROJECT_ROOT="${RUFLO_PROJECT_ROOT:-}" \
   "$SANDBOX_EXEC" \
   -D STATE_ROOT="$STATE_ROOT" \
   -f "$SCRIPT_DIR/sandbox.sb" \
