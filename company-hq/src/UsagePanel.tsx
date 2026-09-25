@@ -12,8 +12,8 @@ export function AccountUsage({ account }: { account?: Account }) {
   const rows = windows;
   if (!rows.length) return null;
   return <section className="account-usage" aria-label="Account allowance"><header><div><span className="usage-kicker">ACCOUNT ALLOWANCE</span><h3>{account?.label || account?.id || 'Provider'} account allowance</h3></div><small>Separate from this chat</small></header><div className="account-window-grid">{rows.map((row, index) => {
-    const used = Math.max(0, Math.min(100, Number(row.usedPercent))), left = Math.round((100 - used) * 10) / 10;
-    return <article className="account-window" key={row.id || `${row.bucketId || 'account'}-${index}`}><div className="usage-window-top"><span>{label(row)}</span><b>{left}% remaining</b></div><div className="usage-meter" aria-label={`${label(row)}: ${left}% remaining`}><i style={{ width: `${Math.min(100, left)}%` }} /></div><small>{used}% used · {resetText(row.resetsAt)}</small></article>;
+    const reportedUsed = Number(row.usedPercent), used = Math.max(0, Math.min(100, reportedUsed)), left = Math.round((100 - used) * 10) / 10;
+    return <article className="account-window" key={row.id || `${row.bucketId || 'account'}-${index}`}><div className="usage-window-top"><span>{label(row)}</span><b>{left}% remaining</b></div><div className="usage-meter" aria-label={`${label(row)}: ${left}% remaining`}><i style={{ width: `${Math.min(100, left)}%` }} /></div><small>{reportedUsed}% used · {resetText(row.resetsAt)}</small></article>;
   })}</div>{!rows.length && <p className="allowance-explanation">{account?.authentication === 'signed_in' ? 'Signed in. This provider has not exposed an account allowance through its connected runtime. Session tokens, when reported, appear below.' : 'Check this provider’s connection to load the allowance it reports.'}</p>}{rows.length > 0 && <p className="allowance-explanation">Shared across this account’s models. Only provider-reported windows are shown.</p>}</section>;
 }
 

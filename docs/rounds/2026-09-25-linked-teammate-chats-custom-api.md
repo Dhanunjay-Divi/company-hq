@@ -32,3 +32,11 @@ redirect, secret, model and turn boundaries. A live UI pass confirmed a GLM
 lead with its own conversation under its project coordinator. An unsigned
 macOS development app must be rebuilt after this source change; a real Qwen
 turn depends on reachability of the user's service or tunnel.
+
+The GitHub browser-acceptance job then exposed a pre-existing plan approval
+error: the execute route used `ChatManagement` before its conditional import.
+The route now imports it before dispatch. The acceptance fixture was updated
+to reflect hidden unreported allowance windows and the signed-out Claude
+adapter, and the usage card preserves a provider-reported value above 100%
+while clamping only its visual meter. The full local browser acceptance flow
+passed through planning, approval, permission questions and Full access.

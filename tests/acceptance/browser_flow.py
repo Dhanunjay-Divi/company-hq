@@ -140,7 +140,7 @@ with tempfile.TemporaryDirectory(prefix='hq-browser-') as td:
             page.get_by_label('Close provider details').click()
             expect(page.get_by_role('dialog')).not_to_be_visible()
             page.get_by_role('button', name=re.compile('Claude')).last.click()
-            expect(page.get_by_text('HQ execution adapter unavailable', exact=True)).to_be_visible()
+            expect(page.get_by_role('dialog').get_by_text('Sign in required', exact=True)).to_be_visible()
             page.get_by_role('button', name='Open provider app', exact=True).click()
             page.wait_for_timeout(100)
             assert len(opened) == 1, opened
@@ -149,8 +149,9 @@ with tempfile.TemporaryDirectory(prefix='hq-browser-') as td:
             # Window values are separate: an overspent 5-hour window does not affect weekly remaining.
             providers = provider_payload(five_hour=125, weekly=59, include_five_hour=False)
             page.get_by_role('button', name='Check again', exact=True).click()
-            expect(page.get_by_text('5-hour account allowance', exact=True)).to_be_visible()
-            expect(page.get_by_text('Not reported', exact=True).first).to_be_visible()
+            # Missing provider windows are omitted rather than rendered as
+            # fake zeroes or empty cards.
+            expect(page.get_by_text('5-hour account allowance', exact=True)).not_to_be_visible()
             expect(page.get_by_text('41% remaining', exact=True)).to_be_visible()
             assert '0% remaining' not in page.locator('body').inner_text(), 'missing 5-hour must stay unknown'
             providers = provider_payload(five_hour=125, weekly=59)

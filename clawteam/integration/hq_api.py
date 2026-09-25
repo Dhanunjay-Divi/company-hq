@@ -753,6 +753,7 @@ def handle_post(handler,state,path,body):
             if task is None: raise ValueError('Task not found')
             handler._serve_json({'updated':True});return True
         if parts[1]!='runtime' or len(parts)!=4: raise ValueError('Unknown action')
+        from chat_management import ChatManagement
         client=bridge(state);action=parts[3]
         if demo_mode() and action in ('start','send','execute','approve','respond','access'):
             raise ValueError('Model execution is disabled in model-free demo mode')
