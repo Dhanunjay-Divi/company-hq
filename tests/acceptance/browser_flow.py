@@ -30,7 +30,8 @@ def provider_payload(*, five_hour=28, weekly=61, include_five_hour=True):
         {'id': 'codex', 'label': 'Codex', 'installed': True, 'cliInstalled': True, 'runtimeReady': True,
          'authentication': 'signed_in', 'usageWindows': windows, 'models': ['gpt-6-astra']},
         {'id': 'claude', 'label': 'Claude', 'installed': True, 'desktopInstalled': True, 'runtimeReady': False,
-         'authentication': 'not_checked', 'reason': 'Desktop application detected; HQ adapter unavailable.'},
+         'authentication': 'not_checked', 'reason': 'Desktop application detected; HQ adapter unavailable.',
+         'setup': {'state': 'idle', 'message': '', 'canAutoInstall': True, 'installCommand': 'brew install --cask claude-code'}},
     ]}
 
 
@@ -82,6 +83,17 @@ with tempfile.TemporaryDirectory(prefix='hq-browser-') as td:
                 elif route.request.url.endswith('/claude/open'):
                     opened.append(route.request.url)
                     route.fulfill(content_type='application/json', body=json.dumps({'message': 'Provider app opened.', 'desktopInstalled': True, 'runtimeReady': False}))
+                elif route.request.url.endswith('/claude/guide') or route.request.url.endswith('/claude/terminal'):
+                    opened.append(route.request.url)
+                    route.fulfill(content_type='application/json', body=json.dumps({'message': 'Setup action opened.'}))
+                elif route.request.url.endswith('/claude/install'):
+                    assert route.request.post_data_json == {'approved': True}
+                    opened.append(route.request.url)
+                    providers['providers'][1]['setup']['state'] = 'installed'
+                    providers['providers'][1]['runtimeReady'] = True
+                    route.fulfill(content_type='application/json', body=json.dumps({'setup': {'state': 'installing', 'canAutoInstall': True, 'message': 'Installing'}}))
+                elif route.request.url.endswith('/claude/check'):
+                    route.fulfill(content_type='application/json', body=json.dumps({'authentication': 'sign_in_required', 'runtimeReady': True, 'models': []}))
                 else:
                     route.continue_()
 
@@ -144,12 +156,19 @@ with tempfile.TemporaryDirectory(prefix='hq-browser-') as td:
             # guarantees the provider details and desktop-open action.
             expect(page.get_by_role('dialog').get_by_role('heading', name='Claude')).to_be_visible()
             expect(page.get_by_role('dialog').get_by_role('status').get_by_text('Setup needed for HQ', exact=True)).to_be_visible()
-            expect(page.get_by_role('dialog').get_by_role('link', name='Set up Claude Code')).to_be_visible()
+            expect(page.get_by_role('dialog').get_by_text('curl -fsSL https://claude.ai/install.sh | bash')).to_be_visible()
             expect(page.get_by_role('dialog').get_by_role('button', name='Sign in with Claude')).not_to_be_visible()
+            page.get_by_role('dialog').get_by_role('button', name='Claude Code install guide').click()
+            page.get_by_role('dialog').get_by_role('button', name='Open Terminal').click()
+            expect(page.get_by_role('dialog').get_by_role('button', name='Approve & install with Homebrew')).to_be_visible()
+            page.once('dialog', lambda dialog: dialog.accept())
+            page.get_by_role('dialog').get_by_role('button', name='Approve & install with Homebrew').click()
+            expect(page.get_by_role('dialog').get_by_role('button', name='Sign in with Claude')).to_be_visible(timeout=8000)
+            assert len(opened) == 3, opened
             page.get_by_text('Connection details and activity', exact=True).click()
             page.get_by_role('button', name='Open desktop app', exact=True).click()
             page.wait_for_timeout(100)
-            assert len(opened) == 1, opened
+            assert len(opened) == 4, opened
             page.get_by_label('Close provider details').click()
 
             # Window values are separate: an overspent 5-hour window does not affect weekly remaining.

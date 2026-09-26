@@ -40,6 +40,13 @@ HELP_URLS = {
     'ollama': 'https://ollama.com/',
 }
 
+SETUP_URLS = {
+    'codex': 'https://developers.openai.com/codex/quickstart',
+    'claude': 'https://code.claude.com/docs/en/setup',
+    'kimi': 'https://moonshotai.github.io/kimi-code/en/guides/getting-started',
+    'zai': 'https://zcode.z.ai/en/docs/install',
+}
+
 OFFICIAL_CODEX_AUTH_HOSTS = frozenset({
     'auth.openai.com',
     'auth0.openai.com',
@@ -347,6 +354,7 @@ class ProviderConnections:
             if row['id'] == 'codex':
                 row.update(self.auth.snapshot())
             elif row['id'] == 'claude':
+                from provider_setup import setup
                 from claude_runtime import claude_binary
                 binary=claude_binary()
                 claude_snapshot = self.claude.snapshot()
@@ -355,6 +363,7 @@ class ProviderConnections:
                 row['runtimeReady']=bool(binary) and claude_snapshot.get('runtimeReady', True)
                 if binary: row['cliPath']=binary
                 row['reason']='Claude Code runtime detected. Sign in to load available models.' if binary else 'Claude Desktop is separate from Claude Code. Set up Claude Code to use it in HQ.'
+                row['setup'] = setup().snapshot()
             elif row['id'] in self.native:
                 native_snapshot = self.native[row['id']].snapshot()
                 row.update(native_snapshot)
@@ -382,12 +391,22 @@ class ProviderConnections:
             raise ValueError('Provider task browsing is disabled in demo mode.')
         return self.auth.read_task(thread_id)
 
-    def action(self, provider, action, *, api_key=None, base_url=None, model=None, temperature=None, context_hint=None):
+    def action(self, provider, action, *, api_key=None, base_url=None, model=None, temperature=None, context_hint=None, approved=False):
         if demo_mode():
             raise ValueError('Provider connections are disabled in demo mode.')
-        if provider not in HELP_URLS or action not in ('connect', 'check', 'open', 'cancel', 'test-generation') or (action == 'test-generation' and provider != 'openai-compatible'):
+        if provider not in HELP_URLS or action not in ('connect', 'check', 'open', 'cancel', 'test-generation', 'guide', 'terminal', 'install') or (action == 'test-generation' and provider != 'openai-compatible'):
             raise ValueError('Unknown provider connection action.')
         try:
+            if action == 'install':
+                if provider != 'claude': raise ValueError('Automatic installation is not reviewed for this provider.')
+                from provider_setup import setup
+                return {'setup': setup().start(approved)}
+            if action in ('guide', 'terminal'):
+                if provider not in SETUP_URLS or sys.platform != 'darwin':
+                    raise ValueError('Open the setup guide or Terminal manually on this device.')
+                command = ['/usr/bin/open', SETUP_URLS[provider]] if action == 'guide' else ['/usr/bin/open', '-a', 'Terminal']
+                subprocess.run(command, check=True, timeout=10, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                return {'message': 'Setup guide opened in your browser.' if action == 'guide' else 'Terminal opened. Copy the command shown in HQ and run it there.'}
             if provider == 'openai-compatible':
                 from openai_compatible_connection import connection
                 if action == 'open': raise ValueError('Enter the endpoint address in Company HQ settings.')

@@ -677,14 +677,18 @@ def handle_post(handler,state,path,body):
             parts=path.strip('/').split('/')
             is_deepseek_key = parts == ['api','providers','deepseek','connect']
             is_custom_connect = parts == ['api','providers','openai-compatible','connect']
-            allowed = {'apiKey','baseUrl','model','temperature','contextHint'} if is_custom_connect else {'apiKey'} if is_deepseek_key else set()
+            is_claude_install = parts == ['api','providers','claude','install']
+            allowed = {'apiKey','baseUrl','model','temperature','contextHint'} if is_custom_connect else {'apiKey'} if is_deepseek_key else {'approved'} if is_claude_install else set()
             if not isinstance(body,dict) or set(body)-allowed: raise ValueError('Unsupported provider connection parameters.')
+            if is_claude_install and body.get('approved') is not True:
+                raise ValueError('Approve the displayed Claude Code install command first.')
             if len(parts)!=4: raise ValueError('Unknown provider action')
             from provider_connections import connections
             if is_custom_connect:
                 result=connections().action(parts[2],parts[3],api_key=body.get('apiKey'),base_url=body.get('baseUrl'),
                     model=body.get('model'),temperature=body.get('temperature'),context_hint=body.get('contextHint'))
             elif is_deepseek_key: result=connections().action(parts[2],parts[3],api_key=body.get('apiKey'))
+            elif is_claude_install: result=connections().action('claude','install',approved=True)
             else: result=connections().action(parts[2],parts[3])
             handler._serve_json(result)
         except Exception as exc:handler._json_error(400,str(exc))

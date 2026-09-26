@@ -1,21 +1,21 @@
 import React from 'react';
-import { Brain, Check, ChevronRight, CircleAlert, Code2, Cpu, ExternalLink, PlugZap, RefreshCw, X } from 'lucide-react';
+import { Brain, Check, ChevronRight, CircleAlert, Code2, Copy, Cpu, ExternalLink, PlugZap, RefreshCw, Terminal, X } from 'lucide-react';
 import RuntimeTools from './RuntimeTools';
 import AccessGuide from './AccessGuide';
 import RoutingSettings from './RoutingSettings';
 import UsagePanel, { AccountUsage, type UsageWindow } from './UsagePanel';
 
 type Data = Record<string, any>;
-type Provider = { id: string; label?: string; installed?: boolean; cliInstalled?: boolean; desktopInstalled?: boolean; runtimeReady?: boolean; authentication?: string; verification?: string; reason?: string; helpUrl?: string; activity?: { message?: string; status?: string; time?: string }[]; models?: string[]; usageWindows?: UsageWindow[]; balances?: {currency:string;total_balance:string}[]; message?: string; authUrl?: string };
+type Provider = { id: string; label?: string; installed?: boolean; cliInstalled?: boolean; desktopInstalled?: boolean; runtimeReady?: boolean; authentication?: string; verification?: string; reason?: string; helpUrl?: string; activity?: { message?: string; status?: string; time?: string }[]; models?: string[]; usageWindows?: UsageWindow[]; balances?: {currency:string;total_balance:string}[]; message?: string; authUrl?: string; setup?: {state:string;message:string;canAutoInstall:boolean;installCommand:string} };
 type Props = { health: Data; runtime: Data; events?: Data[]; onRefresh: () => Promise<void>; onModels: () => void };
 const supported = new Set(['deepseek', 'openai-compatible', 'codex', 'claude', 'kimi', 'zai', 'cursor', 'grok', 'ollama']);
 function safeAuthUrl(url?: string) { try { const value = new URL(url || ''); const hosts = new Set(['auth.openai.com', 'chatgpt.com', 'auth0.openai.com','claude.ai','console.anthropic.com','platform.claude.com','auth.anthropic.com','kimi.com','www.kimi.com','auth.kimi.com','code.kimi.com','kimi.ai','www.kimi.ai','auth.kimi.ai','code.kimi.ai','chat.z.ai','zcode.z.ai']); return value.protocol === 'https:' && !value.username && !value.password && !value.port && hosts.has(value.hostname) ? value.href : ''; } catch { return ''; } }
 function status(provider: Provider) { if (provider.id==='openai-compatible') return provider.verification==='generation'?'Generation verified':provider.verification==='model_listing'?'Model listed':provider.authentication==='model_unavailable'?'Model not listed':'Configure endpoint'; if (provider.id==='deepseek') return provider.authentication==='signed_in'?'Connected':'API key needed'; if (provider.authentication === 'signed_in' && provider.runtimeReady) return 'Connected'; if (provider.authentication === 'signing_in') return 'Sign-in in progress'; if (['codex','claude','kimi','zai'].includes(provider.id) && !provider.runtimeReady) return provider.desktopInstalled ? 'Setup needed for HQ' : 'Runtime not found'; if (provider.authentication === 'sign_in_required') return 'Sign in required'; return provider.runtimeReady ? 'Check sign-in' : provider.installed ? 'App detected' : 'Not installed'; }
 const nativeProviders = new Set(['codex', 'claude', 'kimi', 'zai']);
-const setupGuides: Record<string, {url:string; label:string; instruction:string}> = {
+const setupGuides: Record<string, {url:string; label:string; instruction:string; command?:string; signIn?:string}> = {
   codex: {url:'https://developers.openai.com/codex/quickstart', label:'Set up Codex', instruction:'HQ needs the official Codex runtime on this device before it can use your account.'},
-  claude: {url:'https://code.claude.com/docs/en/setup', label:'Set up Claude Code', instruction:'Claude Desktop is separate from Claude Code. HQ needs the Claude Code runtime to work with this account.'},
-  kimi: {url:'https://moonshotai.github.io/kimi-code/en/guides/getting-started', label:'Set up Kimi Code', instruction:'HQ needs the Kimi Code runtime. Signing in to the desktop app alone does not connect coding tasks.'},
+  claude: {url:'https://code.claude.com/docs/en/setup', label:'Claude Code install guide', instruction:'Claude Desktop is separate from Claude Code. Install Claude Code, sign in, then check HQ.', command:'curl -fsSL https://claude.ai/install.sh | bash', signIn:'Run claude in Terminal and follow the browser sign-in.'},
+  kimi: {url:'https://moonshotai.github.io/kimi-code/en/guides/getting-started', label:'Kimi Code install guide', instruction:'HQ needs the Kimi Code runtime. Signing in to the desktop app alone does not connect coding tasks.', command:'curl -fsSL https://code.kimi.com/kimi-code/install.sh | bash', signIn:'Run kimi in Terminal, then enter /login.'},
   zai: {url:'https://zcode.z.ai/en/docs/install', label:'Review Z Code setup', instruction:'HQ needs a compatible Z Code runtime. If the app was updated, its adapter may need a compatibility review.'},
 };
 function connectionStep(provider: Provider) {
@@ -29,7 +29,7 @@ function toolActivity(events: Data[], tool: string) { const terms = tool === 'ru
 
 export default function Connections({ health, runtime, events = [], onRefresh, onModels }: Props) {
   const [providers, setProviders] = React.useState<Provider[]>([]), [checked, setChecked] = React.useState<Date | null>(null), [refreshing, setRefreshing] = React.useState(false), [error, setError] = React.useState(''), [selected, setSelected] = React.useState<Provider | null>(null), [selectedTool, setSelectedTool] = React.useState<string | null>(null);
-  const [apiKey,setApiKey]=React.useState('');
+  const [apiKey,setApiKey]=React.useState(''), [setupFeedback,setSetupFeedback]=React.useState('');
   const [customBaseUrl,setCustomBaseUrl]=React.useState(''),[customModel,setCustomModel]=React.useState(''),[customContext,setCustomContext]=React.useState('32768'),[customTemperature,setCustomTemperature]=React.useState('0.2');
   const dialogRef = React.useRef<HTMLDialogElement>(null); const caps = health?.capabilities || {};
   const tools = [{ id: 'rufloMemory', name: 'Shared memory', description: 'Keeps useful decisions organized for each project.', icon: Brain }, { id: 'codebaseMemory', name: 'Code understanding', description: 'Helps agents navigate code when a project is attached.', icon: Code2 }];
@@ -48,6 +48,7 @@ export default function Connections({ health, runtime, events = [], onRefresh, o
     }
   }, [health?.mode]);
   React.useEffect(() => { loadProviders(true).catch((e: Error) => setError(e.message)); }, [loadProviders]); React.useEffect(() => { if (selected) dialogRef.current?.showModal(); else dialogRef.current?.close(); }, [selected]);
+  React.useEffect(() => { if (selected?.id !== 'claude' || selected.setup?.state !== 'installing') return; const timer = setInterval(async () => { try { const response=await fetch('/api/providers'); const data=await response.json(); const row=data.providers?.find((p:Provider)=>p.id==='claude'); if (row) { if(row.setup?.state==='installed') {const checked=await fetch('/api/providers/claude/check',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});const result=await checked.json().catch(()=>({}));setSelected(current=>current?.id==='claude'?{...row,...(checked.ok?result:{})}:current);setSetupFeedback(checked.ok?'Installed. Sign in with Claude below.':'Installed. Choose Check connection to finish setup.');} else setSelected(current=>current?.id==='claude'?row:current);setProviders(data.providers);} } catch {} },2000); return()=>clearInterval(timer); },[selected?.id,selected?.setup?.state]);
   async function refresh() { setRefreshing(true); setError(''); try { await Promise.all([onRefresh(), loadProviders(true)]); } catch (e: any) { setError(e.message || 'Could not check setup.'); } finally { setRefreshing(false); } }
   async function action(kind: 'connect' | 'check' | 'open' | 'cancel' | 'test-generation') {
     if (!selected || !supported.has(selected.id) || health?.mode === 'demo') return;
@@ -63,6 +64,22 @@ export default function Connections({ health, runtime, events = [], onRefresh, o
     } catch(e:any){setError(e.message||'Provider action failed.');}
     finally {setRefreshing(false);}
   }
+  async function setupAction(kind:'guide'|'terminal'|'install') {
+    if (!selected || !nativeProviders.has(selected.id) || health?.mode==='demo') return;
+    if (kind==='install' && !window.confirm(`Company HQ will run “brew install --cask claude-code” on this Mac. Continue?`)) return;
+    setRefreshing(true);setError('');setSetupFeedback('');
+    try {
+      const command=setupGuides[selected.id]?.command;
+      if(kind==='terminal'&&command) { try { await navigator.clipboard.writeText(command); setSetupFeedback('Install command copied. Paste it into Terminal and press Return.'); } catch { setSetupFeedback('Terminal opened. Copy the install command shown here and run it.'); } }
+      const response=await fetch(`/api/providers/${selected.id}/${kind}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(kind==='install'?{approved:true}:{})});
+      const data=await response.json().catch(()=>({}));
+      if(!response.ok)throw Error(data.error||'Could not open setup.');
+      if(kind==='install')setSelected({...selected,...data});
+      else if(kind==='guide')setSetupFeedback('Official setup guide opened in your browser.');
+      else if(!command)setSetupFeedback(data.message||'Terminal opened.');
+    }catch(e:any){setError(e.message||'Could not open setup.');}
+    finally{setRefreshing(false);}
+  }
   React.useEffect(()=>{if(selected?.authentication!=='signing_in')return;let active=true;const timer=setInterval(async()=>{try{const response=await fetch('/api/providers');const value=await response.json();const row=value.providers?.find((p:Provider)=>p.id===selected.id);if(active&&row)setSelected(current=>current?.id===row.id?row:current)}catch{}},1500);return()=>{active=false;clearInterval(timer)}},[selected?.id,selected?.authentication]);
   const codex = providers.find(provider => provider.id === 'codex');
   const activeProvider = providers.find(provider => provider.id === runtime.provider) || codex;
@@ -71,7 +88,7 @@ export default function Connections({ health, runtime, events = [], onRefresh, o
     <button className="supervisor-setting" onClick={onModels}><span><b>This chat’s supervisor</b><small>{runtime.model || 'Default supervisor for a new chat'}</small></span><span>Choose model<ChevronRight size={15} /></span></button>
     <RoutingSettings demo={health?.mode === 'demo'} catalogRevision={checked?.getTime()}/>
     <UsagePanel runtime={runtime} account={activeProvider} /><div className="connected-provider-usage">{providers.filter(p=>p.id!==activeProvider?.id && p.authentication==='signed_in').map(p=><AccountUsage key={p.id} account={p}/>)}</div>
-    <div className="connections-heading"><h2>Providers</h2><span>Click a provider for its status and actions</span></div><div className="provider-cards">{providers.map(provider => <button className="provider-card" key={provider.id} onClick={() => {setApiKey('');setSelected(provider)}}><span className="provider-monogram">{(provider.label || provider.id).slice(0, 1)}</span><span><b>{provider.label || provider.id}</b><small>{status(provider)}</small></span><span className={`setup-badge ${provider.authentication === 'signed_in' ? 'ok' : ''}`}>{provider.id==='openai-compatible'&&!provider.runtimeReady?'Configure':provider.runtimeReady ? (provider.authentication === 'signed_in' ? 'Connected' : 'Connect') : provider.desktopInstalled ? 'Desktop installed' : provider.cliInstalled ? 'CLI installed' : 'Unavailable'}</span><ChevronRight size={16} /></button>)}</div>
+    <div className="connections-heading"><h2>Providers</h2><span>Click a provider for its status and actions</span></div><div className="provider-cards">{providers.map(provider => <button className="provider-card" key={provider.id} onClick={() => {setApiKey('');setSetupFeedback('');setSelected(provider)}}><span className="provider-monogram">{(provider.label || provider.id).slice(0, 1)}</span><span><b>{provider.label || provider.id}</b><small>{status(provider)}</small></span><span className={`setup-badge ${provider.authentication === 'signed_in' ? 'ok' : ''}`}>{provider.id==='openai-compatible'&&!provider.runtimeReady?'Configure':provider.runtimeReady ? (provider.authentication === 'signed_in' ? 'Connected' : 'Connect') : provider.desktopInstalled ? 'Desktop installed' : provider.cliInstalled ? 'CLI installed' : 'Unavailable'}</span><ChevronRight size={16} /></button>)}</div>
     <RuntimeTools team={runtime.team} connected={runtime.connected}/>
     <div className="connections-heading"><h2>Workspace tools</h2><span>Click for reported activity</span></div><div className="connection-tools">{tools.filter(tool=>caps[tool.id]?.available).map(({ id, name, description, icon: Icon }) => { const activity = toolActivity(events, id); return <article key={id} className={selectedTool === id ? 'is-open' : ''}><button onClick={() => setSelectedTool(selectedTool === id ? null : id)}><span className="tool-tile"><Icon size={20} /></span><span><h3>{name}</h3><p>{description}</p></span><span className={`setup-badge ${caps[id]?.available ? 'ok' : ''}`}>{caps[id]?.available ? <><Check size={12} />Installed</> : 'Unavailable'}</span></button>{selectedTool === id && <div className="tool-activity">{!caps[id]?.available && <p>{caps[id]?.reason || 'Setup check has not finished.'}</p>}<b>Reported activity</b>{activity.length ? activity.map((event, index) => <p key={index}>{event.data?.status || (event.type === 'tool.completed' ? 'Completed' : 'Started')} · {event.data?.tool || event.data?.title}</p>) : <p>Not reported.</p>}</div>}</article>; })}</div>
     <AccessGuide demo={health?.mode === 'demo'}/>
@@ -81,10 +98,17 @@ export default function Connections({ health, runtime, events = [], onRefresh, o
       <span className={`setup-badge ${selected.authentication === 'signed_in' && selected.runtimeReady ? 'ok' : ''}`}>{status(selected)}</span>
       <p>{connectionStep(selected)}</p>
     </div>
+    {nativeProviders.has(selected.id) && !selected.runtimeReady && setupGuides[selected.id] && <section className="provider-setup-guide" aria-label={`${selected.label || selected.id} setup steps`}>
+      <h3>Get connected in three steps</h3>
+      <ol><li><b>Install the coding runtime.</b>{setupGuides[selected.id].command ? <><p>Open Terminal and run this official command:</p><div className="provider-install-command"><code>{setupGuides[selected.id].command}</code><button type="button" className="small-button" onClick={async()=>{try{await navigator.clipboard.writeText(setupGuides[selected.id].command!);setSetupFeedback('Install command copied.');}catch{setError('Clipboard access is unavailable. Select and copy the command instead.')}}} aria-label="Copy install command"><Copy size={15}/> Copy</button></div></> : <p>Use the official setup guide for this provider.</p>}</li><li><b>Sign in with the provider.</b><p>{setupGuides[selected.id].signIn || 'Follow the official setup guide to connect your account.'}</p></li><li><b>Return here and check the connection.</b><p>HQ will show the runtime and models it can verify.</p></li></ol>
+      <div className="provider-setup-buttons">{setupGuides[selected.id].command && <button type="button" className="small-button" onClick={()=>setupAction('terminal')} disabled={refreshing||health?.mode==='demo'}><Terminal size={15}/> Open Terminal</button>}{selected.id==='claude' && selected.setup?.canAutoInstall && selected.setup.state!=='installed' && <button type="button" className="primary-button" onClick={()=>setupAction('install')} disabled={refreshing||selected.setup.state==='installing'||health?.mode==='demo'}>{selected.setup.state==='installing'?'Installing…':'Approve & install with Homebrew'}</button>}<button type="button" className="small-button" onClick={()=>setupAction('guide')} disabled={refreshing||health?.mode==='demo'}>{setupGuides[selected.id].label}<ExternalLink size={14}/></button></div>
+      {selected.setup?.state==='installing' && <p className="provider-install-progress" role="status">Installing Claude Code. Keep HQ open; this may take a few minutes.</p>}
+      {selected.setup?.state==='failed' && <p className="provider-install-progress" role="alert">{selected.setup.message}</p>}
+    </section>}
+    {setupFeedback && <p className="provider-setup-feedback" role="status">{setupFeedback}</p>}
     {error && <p className="connection-error" role="alert"><CircleAlert size={15} />{error}</p>}
     <div className="provider-connection-actions">
       {nativeProviders.has(selected.id) && selected.runtimeReady && selected.authentication !== 'signed_in' && selected.authentication !== 'signing_in' && <button className="primary-button" onClick={() => action('connect')} disabled={refreshing || health?.mode === 'demo'}>{refreshing ? 'Working…' : `Sign in with ${selected.label || selected.id}`}</button>}
-      {nativeProviders.has(selected.id) && !selected.runtimeReady && setupGuides[selected.id] && <a className="primary-button" href={setupGuides[selected.id].url} target="_blank" rel="noreferrer">{setupGuides[selected.id].label} <ExternalLink size={14} /></a>}
       {safeAuthUrl(selected.authUrl) && <a className="primary-button" href={safeAuthUrl(selected.authUrl)} target="_blank" rel="noreferrer">Continue in browser <ExternalLink size={14} /></a>}
       {['codex','claude','kimi','zai','deepseek','openai-compatible'].includes(selected.id) && <button className="small-button" onClick={() => action('check')} disabled={refreshing || health?.mode === 'demo'}>{refreshing ? 'Checking…' : 'Check connection'}</button>}
       {selected.authentication === 'signing_in' && <button className="small-button" onClick={() => action('cancel')} disabled={refreshing || health?.mode === 'demo'}>Cancel sign-in</button>}

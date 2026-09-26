@@ -343,6 +343,20 @@ class ProviderConnectionsTest(unittest.TestCase):
                 providers.action('codex', 'open')
         self.assertNotIn(str(app), str(failure.exception))
 
+    def test_setup_buttons_open_only_fixed_provider_guide_or_terminal(self):
+        providers = ProviderConnections(auth=CodexSignIn(factory=lambda: FakeConnection()))
+        with patch.object(provider_connections, 'demo_mode', return_value=False), patch.object(
+            provider_connections.sys, 'platform', 'darwin'), patch.object(
+            provider_connections.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0),
+        ) as run:
+            providers.action('claude', 'guide')
+            providers.action('claude', 'terminal')
+            with self.assertRaisesRegex(ValueError, 'not reviewed'):
+                providers.action('kimi', 'install', approved=True)
+        self.assertEqual(run.call_args_list[0].args[0], ['/usr/bin/open', 'https://code.claude.com/docs/en/setup'])
+        self.assertEqual(run.call_args_list[1].args[0], ['/usr/bin/open', '-a', 'Terminal'])
+        self.assertEqual(run.call_count, 2)
+
 
 if __name__ == '__main__':
     unittest.main()

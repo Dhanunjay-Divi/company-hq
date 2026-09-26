@@ -81,7 +81,7 @@ runpy.run_path(str(integration / 'secure_board.py'), run_name='__main__')
         '--hidden-import', 'openai_compatible_connection', '--hidden-import', 'openai_compatible_runtime',
         '--hidden-import', 'project_context', '--hidden-import', 'project_context_mcp',
         '--hidden-import', 'hq_api', '--hidden-import', 'company_profile', '--hidden-import', 'runtime_config',
-        '--hidden-import', 'provider_connections', '--hidden-import', 'native_tasks', '--hidden-import', 'folder_picker',
+        '--hidden-import', 'provider_connections', '--hidden-import', 'provider_setup', '--hidden-import', 'native_tasks', '--hidden-import', 'folder_picker',
         '--hidden-import', 'context_pipeline',
         '--hidden-import', 'kimi_runtime', '--hidden-import', 'zcode_runtime',
         '--hidden-import', 'native_rpc', '--hidden-import', 'native_provider_connection',

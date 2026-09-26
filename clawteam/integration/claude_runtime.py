@@ -38,6 +38,8 @@ def claude_binary() -> str | None:
     root = Path(__file__).resolve().parents[2]
     names = ("claude.cmd", "claude") if os.name == "nt" else ("claude",)
     paths = tuple(root / "build" / "providers" / "claude-code" / "node_modules" / ".bin" / name for name in names)
+    if os.name != "nt":
+        paths += (Path.home() / ".local/bin/claude", Path("/opt/homebrew/bin/claude"), Path("/usr/local/bin/claude"))
     return executable_available("claude", paths)
 
 

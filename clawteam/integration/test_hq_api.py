@@ -162,6 +162,27 @@ class HQAPIDemoTest(unittest.TestCase):
                 hq_api.handle_post(handler,Path('/tmp'),url,body)
             self.assertEqual(handler.error[0],400)
 
+    def test_claude_install_requires_approval_and_rejects_other_parameters(self):
+        class Handler:
+            response = None
+            error = None
+            def _serve_json(self, value): self.response = value
+            def _json_error(self, status, message): self.error = (status, message)
+        from unittest.mock import Mock
+        service = Mock()
+        service.action.return_value = {'setup': {'state': 'installing'}}
+        for body in ({}, {'approved': False}, {'approved': 'true'}, {'approved': True, 'command': 'other'}):
+            handler = Handler()
+            with patch('provider_connections.connections', return_value=service):
+                hq_api.handle_post(handler, Path('/tmp'), '/api/providers/claude/install', body)
+            self.assertEqual(handler.error[0], 400)
+        service.action.assert_not_called()
+        handler = Handler()
+        with patch('provider_connections.connections', return_value=service):
+            hq_api.handle_post(handler, Path('/tmp'), '/api/providers/claude/install', {'approved': True})
+        self.assertEqual(handler.response['setup']['state'], 'installing')
+        service.action.assert_called_once_with('claude', 'install', approved=True)
+
     def test_schema_two_default_supervisor_uses_standard_when_no_explicit_tier_exists(self):
         self.assertEqual(hq_api._default_supervisor_model({
             "schema": 2,

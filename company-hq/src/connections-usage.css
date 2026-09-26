@@ -21,3 +21,19 @@
 .provider-connection-details>p{font-size:11px;line-height:1.55}
 .provider-extra-actions{margin-top:14px}
 @media(max-width:650px){.provider-connection-actions>*{flex:1;justify-content:center}}
+
+.provider-setup-guide{padding:18px;border:1px solid #c9a9dd29;border-radius:12px;background:#1d1922}
+.provider-setup-guide h3{margin:0 0 14px;font-size:15px;font-weight:600;color:#e9dcef}
+.provider-setup-guide ol{margin:0;padding-left:23px;display:grid;gap:14px}
+.provider-setup-guide li{padding-left:3px;color:#decfe4;font-size:13px;line-height:1.5}
+.provider-setup-guide li::marker{color:#cba7df;font-weight:700}
+.provider-setup-guide li b{font-weight:600}
+.provider-setup-guide li p{margin:4px 0 0;color:#b9a8c1;font-size:12px}
+.provider-install-command{display:flex;align-items:center;gap:10px;justify-content:space-between;margin-top:9px;padding:9px 10px;border:1px solid #ffffff20;border-radius:9px;background:#121016}
+.provider-install-command code{font-size:12px;color:#eee1f4;overflow-wrap:anywhere;user-select:text}
+.provider-install-command button{display:flex;align-items:center;gap:5px;flex-shrink:0}
+.provider-setup-buttons{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px}
+.provider-setup-buttons button{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:42px}
+.provider-install-progress,.provider-setup-feedback{margin:14px 0 0;color:#cfbdd9;font-size:12px;line-height:1.6}
+.provider-setup-feedback{margin-bottom:12px}
+@media(max-width:650px){.provider-install-command{align-items:stretch;flex-direction:column}.provider-setup-buttons button{width:100%}}
