@@ -341,6 +341,7 @@ class ProviderConnections:
         with self.lock:
             activity = list(self.activity)
         for row in snapshot['providers']:
+            desktop_installed = bool(row.get('desktopPath'))
             row['helpUrl'] = HELP_URLS.get(row['id'])
             row['activity'] = [item for item in activity if item['provider'] == row['id']][-10:]
             if row['id'] == 'codex':
@@ -348,21 +349,24 @@ class ProviderConnections:
             elif row['id'] == 'claude':
                 from claude_runtime import claude_binary
                 binary=claude_binary()
-                row.update(self.claude.snapshot())
-                row['installed']=bool(row.get('installed') or binary)
-                row['runtimeReady']=bool(binary)
+                claude_snapshot = self.claude.snapshot()
+                row.update(claude_snapshot)
+                row['installed']=bool(desktop_installed or row.get('installed') or binary)
+                row['runtimeReady']=bool(binary) and claude_snapshot.get('runtimeReady', True)
                 if binary: row['cliPath']=binary
-                row['reason']='Official Claude Code adapter. Sign in to load available models.'
+                row['reason']='Claude Code runtime detected. Sign in to load available models.' if binary else 'Claude Desktop is separate from Claude Code. Set up Claude Code to use it in HQ.'
             elif row['id'] in self.native:
                 native_snapshot = self.native[row['id']].snapshot()
                 row.update(native_snapshot)
                 import importlib
                 module=importlib.import_module('kimi_runtime' if row['id']=='kimi' else 'zcode_runtime')
                 binary=module.kimi_binary() if row['id']=='kimi' else module.zcode_command()
-                row['installed']=bool(row.get('installed') or binary)
-                row['runtimeReady']=native_snapshot.get('runtimeReady',bool(binary))
+                row['installed']=bool(desktop_installed or row.get('installed') or binary)
+                row['runtimeReady']=bool(binary) and native_snapshot.get('runtimeReady', True)
                 if binary: row['cliPath']=binary[0] if isinstance(binary,list) else binary
-                row['reason']='Native provider connection. Check sign-in to load available models.'
+                row['reason']=('Native provider runtime detected. Check sign-in to load available models.' if row['runtimeReady']
+                               else 'Desktop app detected, but a compatible HQ runtime is not available.' if desktop_installed
+                               else 'No compatible HQ runtime was found.')
             # File locations remain server-side implementation details.
             row['desktopInstalled'] = bool(row.pop('desktopPath', None))
             row['cliInstalled'] = bool(row.pop('cliPath', None))
@@ -402,6 +406,10 @@ class ProviderConnections:
             row = next((item for item in rows if item['id'] == provider), None)
             if not row:
                 raise ValueError('Provider is not available.')
+            if action == 'connect' and provider in ('claude', 'kimi', 'zai'):
+                current = next(item for item in self.snapshot()['providers'] if item['id'] == provider)
+                if not current['runtimeReady']:
+                    raise ValueError(f'{current["label"]} runtime is not ready for Company HQ. Check setup, then retry.')
             if provider in self.native and action != 'open':
                 result=getattr(self.native[provider],action)()
                 self._record(provider,result.get('message','Connection checked'),result.get('authentication','completed'))
@@ -420,9 +428,9 @@ class ProviderConnections:
                     raise ValueError('No supported installed desktop app was found. Use the provider website.')
                 app_path = path.resolve(strict=True)
                 subprocess.run(['/usr/bin/open', str(app_path)], check=True, timeout=10, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                message = 'Provider app opened. Complete sign-in there. HQ cannot verify this desktop account yet.'
-                self._record(provider, message, 'external_sign_in')
-                return {'authentication': 'not_checked', 'state': 'external_sign_in', 'message': message}
+                message = 'Provider app opened. Its desktop sign-in is separate from the runtime HQ uses for tasks.'
+                self._record(provider, message, 'desktop_opened')
+                return {'authentication': 'not_checked', 'state': 'desktop_opened', 'message': message}
             message = 'Desktop sign-in stays with the provider. The HQ execution adapter is not connected yet.'
             self._record(provider, message, 'adapter_required')
             return {'authentication': 'not_checked', 'state': 'adapter_required', 'message': message}

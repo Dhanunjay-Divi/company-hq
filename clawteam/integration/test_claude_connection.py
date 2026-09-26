@@ -13,6 +13,13 @@ class ClaudeConnectionTests(unittest.TestCase):
         with patch('claude_runtime.probe',return_value={'installed':True,'version':'test','authenticated':False}),patch('claude_runtime.runtime') as runtime:
             value=ClaudeConnection().check()
         runtime.assert_not_called();self.assertEqual(value['authentication'],'sign_in_required');self.assertEqual(value['models'],[])
+    def test_missing_runtime_does_not_offer_desktop_login_as_connection(self):
+        with patch('claude_runtime.probe',return_value={'installed':False,'authenticated':False}),patch('claude_runtime.runtime') as runtime:
+            value=ClaudeConnection().check()
+        runtime.assert_not_called()
+        self.assertEqual(value['authentication'],'not_installed')
+        self.assertFalse(value['runtimeReady'])
+        self.assertIn('separate',value['message'])
     def test_metadata_filters_are_bounded_before_execution(self):
         with patch.object(claude_tasks,'_call',return_value={}) as call:
             for cursor in ['../x','0; echo x','-1','12345678']:

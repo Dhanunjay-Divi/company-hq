@@ -302,11 +302,33 @@ class ProviderConnectionsTest(unittest.TestCase):
             provider_connections.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0),
         ) as run:
             result = providers.action('codex', 'open')
-        self.assertEqual(result['state'], 'external_sign_in')
+        self.assertEqual(result['state'], 'desktop_opened')
+        self.assertIn('separate', result['message'])
         self.assertEqual(run.call_args.args[0], ['/usr/bin/open', str(app.resolve())])
         self.assertTrue(run.call_args.kwargs['check'])
         self.assertIs(run.call_args.kwargs['stdout'], subprocess.DEVNULL)
         self.assertIs(run.call_args.kwargs['stderr'], subprocess.DEVNULL)
+
+    def test_desktop_only_claude_is_not_misreported_as_ready_or_signed_in(self):
+        app = self.root / 'Claude.app'
+        app.mkdir()
+        rows = {'providers': [{'id': 'claude', 'label': 'Claude', 'installed': True,
+                              'desktopPath': str(app), 'cliPath': None, 'runtimeReady': False}]}
+        providers = ProviderConnections(auth=CodexSignIn(factory=lambda: FakeConnection()))
+        providers.claude.value = {'authentication': 'not_installed', 'installed': False, 'models': []}
+        with patch.object(provider_connections, '_inventory', return_value=rows), patch(
+            'claude_runtime.claude_binary', return_value=None,
+        ), patch.object(provider_connections, 'demo_mode', return_value=False), patch.object(
+            providers.claude, 'connect', side_effect=AssertionError('login must not start'),
+        ):
+            row = providers.snapshot()['providers'][0]
+            self.assertTrue(row['installed'])
+            self.assertTrue(row['desktopInstalled'])
+            self.assertFalse(row['cliInstalled'])
+            self.assertFalse(row['runtimeReady'])
+            self.assertIn('separate', row['reason'])
+            with self.assertRaisesRegex(ValueError, 'runtime is not ready'):
+                providers.action('claude', 'connect')
 
     def test_open_failure_returns_generic_error_without_app_path(self):
         app = self.root / 'Private Provider.app'

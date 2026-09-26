@@ -6,3 +6,18 @@
 
 .deepseek-connect{display:grid;gap:12px;margin:18px 0;padding:18px;border:1px solid #ffffff16;border-radius:16px;background:#15131a}.deepseek-connect p{margin:0;line-height:1.6}.deepseek-connect label{display:grid;gap:8px}.deepseek-connect input{width:100%;padding:12px;border:1px solid #ffffff25;border-radius:10px;background:#1b181f;color:#eee}.deepseek-connect small{color:#b8aabd;line-height:1.5}.deepseek-connect .primary-button{justify-self:start}
 .custom-endpoint-numbers{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.custom-endpoint-actions{display:flex;gap:10px;flex-wrap:wrap}.custom-endpoint-actions button{min-height:42px}@media(max-width:520px){.custom-endpoint-numbers{grid-template-columns:1fr}}
+/* Provider setup keeps the next action visible; diagnostics stay optional. */
+.provider-connection-status{margin:22px 0 18px;padding:17px 18px;border:1px solid #c9a9dd29;border-radius:12px;background:linear-gradient(140deg,#a77bb921,#ffffff03)}
+.provider-connection-status .setup-badge{display:inline-flex;margin:0 0 9px}
+.provider-connection-status p{margin:0;color:#ddcfe4;font-size:14px;line-height:1.55}
+.provider-connection-actions,.provider-extra-actions{display:flex;align-items:center;flex-wrap:wrap;gap:9px}
+.provider-connection-actions a,.provider-extra-actions a{display:inline-flex;align-items:center;justify-content:center;gap:7px;text-decoration:none}
+.provider-connection-actions .primary-button{min-height:42px}
+.provider-connection-details{margin-top:19px;border-top:1px solid #ffffff18;padding-top:16px;color:#b9a8c1}
+.provider-connection-details summary{cursor:pointer;font-size:12px;line-height:1.5;color:#d8c2e6;list-style:none}
+.provider-connection-details summary::-webkit-details-marker{display:none}
+.provider-connection-details summary::after{content:'+';float:right;font-size:17px;line-height:1}
+.provider-connection-details[open] summary::after{content:'−'}
+.provider-connection-details>p{font-size:11px;line-height:1.55}
+.provider-extra-actions{margin-top:14px}
+@media(max-width:650px){.provider-connection-actions>*{flex:1;justify-content:center}}

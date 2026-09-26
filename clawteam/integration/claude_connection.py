@@ -29,10 +29,10 @@ class ClaudeConnection:
         from claude_runtime import probe, runtime
         with self.operation:
             info=probe()
-            value={'authentication':'signed_in' if info.get('authenticated') else 'sign_in_required',
+            value={'authentication':'signed_in' if info.get('authenticated') else 'not_installed' if not info.get('installed') else 'sign_in_required',
                    'installed':bool(info.get('installed')),'runtimeReady':bool(info.get('version')),
                    'models':[],'usageWindows':[],'usageScope':'account_allowance',
-                   'message':'Claude Code sign-in is verified.' if info.get('authenticated') else 'Sign in with the official Claude Code login. Desktop sign-in may be separate.'}
+                   'message':'Claude Code sign-in is verified.' if info.get('authenticated') else 'Claude Code is not installed. Claude Desktop sign-in is separate from HQ.' if not info.get('installed') else 'Sign in with the official Claude Code login. Desktop sign-in may be separate.'}
             if info.get('authenticated'):
                 folder=state_root()/'provider-checks'/'claude';folder.mkdir(parents=True,exist_ok=True,mode=0o700)
                 client=runtime(access='plan')

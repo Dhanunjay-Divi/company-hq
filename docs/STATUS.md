@@ -5,6 +5,7 @@ Updated 2026-09-25. This is a local development release for macOS Apple Silicon.
 ## Available in this release
 
 - A Rust/Tauri desktop application with a frozen Python backend and React interface. The core app runs without launching a terminal or keeping the source checkout available. State stays outside the application bundle.
+- Provider setup now distinguishes a desktop app from the coding runtime HQ can actually use. The connection sheet presents the official setup or sign-in step first and keeps adapter details and recent activity optional. A second backend using the same private state shows a recovery screen instead of crashing the desktop app.
 - Separate linked teammate conversations under a project coordinator, each with its own provider session, assignment and observed status; cross-provider automatic delegation and reporting are not yet claimed.
 - A text-only custom OpenAI-compatible endpoint adapter with explicit model verification and no automatic coding handoff. The supplied Qwen endpoint did not respond during local acceptance, so no live Qwen turn is claimed.
 - Chat first, optional project attachment with a native folder chooser, Markdown replies, image attachments, persistent text drafts, and paged durable user/final-message history. Private state survives a changed loopback port. Attachment drafts must be selected again after reload.

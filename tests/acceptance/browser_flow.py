@@ -133,7 +133,7 @@ with tempfile.TemporaryDirectory(prefix='hq-browser-') as td:
             assert 'API key' not in visible_text
             page.get_by_role('button', name=re.compile('Codex')).last.click()
             expect(page.get_by_role('dialog')).to_be_visible()
-            expect(page.get_by_role('dialog').get_by_text('Signed in', exact=True)).to_be_visible()
+            expect(page.get_by_role('dialog').get_by_role('status').get_by_text('Connected', exact=True)).to_be_visible()
             page.keyboard.press('Escape')
             expect(page.get_by_role('dialog')).not_to_be_visible()
             page.get_by_role('button', name=re.compile('Codex')).last.click()
@@ -143,7 +143,11 @@ with tempfile.TemporaryDirectory(prefix='hq-browser-') as td:
             # The account state belongs to the runtime host; the fixture only
             # guarantees the provider details and desktop-open action.
             expect(page.get_by_role('dialog').get_by_role('heading', name='Claude')).to_be_visible()
-            page.get_by_role('button', name='Open provider app', exact=True).click()
+            expect(page.get_by_role('dialog').get_by_role('status').get_by_text('Setup needed for HQ', exact=True)).to_be_visible()
+            expect(page.get_by_role('dialog').get_by_role('link', name='Set up Claude Code')).to_be_visible()
+            expect(page.get_by_role('dialog').get_by_role('button', name='Sign in with Claude')).not_to_be_visible()
+            page.get_by_text('Connection details and activity', exact=True).click()
+            page.get_by_role('button', name='Open desktop app', exact=True).click()
             page.wait_for_timeout(100)
             assert len(opened) == 1, opened
             page.get_by_label('Close provider details').click()

@@ -2,7 +2,7 @@ use std::{
     io::{BufRead, BufReader},
     path::PathBuf,
     process::{Child, Command, Stdio},
-    sync::Mutex,
+    sync::{Arc, Mutex},
     time::Duration,
 };
 use tauri::{Manager, RunEvent, State};
@@ -66,12 +66,40 @@ fn start_backend(app: &tauri::AppHandle, state: &State<'_, Backend>) -> Result<S
     let (send, receive) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
         for line in BufReader::new(stdout).lines().map_while(Result::ok) {
-            if let Some(url) = line.strip_prefix("ClawTeam metadata board: ") { let _ = send.send(url.to_string()); }
+            if let Some(url) = line.strip_prefix("ClawTeam metadata board: ") { let _ = send.send(Some(url.to_string())); }
         }
+        let _ = send.send(None);
     });
-    // Always drain stderr: a full pipe must not stall the bundled server.
-    if let Some(stderr) = child.stderr.take() { std::thread::spawn(move || { for _ in BufReader::new(stderr).lines() {} }); }
-    let url = match receive.recv_timeout(Duration::from_secs(45)) { Ok(url) => url, Err(_) => { stop_child(&mut child); return Err("Bundled backend did not report a loopback URL within 45 seconds".into()); } };
+    // Drain stderr and retain only a bounded diagnostic so startup errors can be explained.
+    let diagnostic = Arc::new(Mutex::new(String::new()));
+    let stderr_thread = child.stderr.take().map(|stderr| {
+        let diagnostic = Arc::clone(&diagnostic);
+        std::thread::spawn(move || {
+            for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+                if let Ok(mut text) = diagnostic.lock() {
+                    text.push_str(&line);
+                    text.push('\n');
+                    if text.len() > 8192 { let excess = text.len() - 8192; text.drain(..excess); }
+                }
+            }
+        })
+    });
+    let url = match receive.recv_timeout(Duration::from_secs(45)) {
+        Ok(Some(url)) => url,
+        result => {
+            stop_child(&mut child);
+            if let Some(thread) = stderr_thread { let _ = thread.join(); }
+            let detail = diagnostic.lock().map(|text| text.clone()).unwrap_or_default();
+            if detail.contains("Company HQ is already running with this app data") {
+                return Err("Company HQ is already running with this app data. Close the other instance and reopen this app.".into());
+            }
+            return Err(match result {
+                Ok(None) => "Bundled backend exited before it could start. Check the installation and try again.",
+                Err(_) => "Bundled backend did not report a loopback URL within 45 seconds.",
+                _ => unreachable!(),
+            }.into());
+        }
+    };
     let parsed: url::Url = match url.parse() { Ok(value) => value, Err(_) => { stop_child(&mut child); return Err("Bundled backend reported an invalid URL".into()); } };
     if parsed.scheme() != "http" || parsed.host_str() != Some("127.0.0.1") || parsed.port().is_none() { stop_child(&mut child); return Err("Bundled backend did not report a verified loopback URL".into()); }
     *state.0.lock().map_err(|_| "Backend state is unavailable")? = Some(child);
@@ -84,9 +112,23 @@ pub fn run() {
         .manage(Backend(Mutex::new(None)))
         .invoke_handler(tauri::generate_handler![pick_project_folder])
         .setup(|app| {
-            let url = start_backend(&app.handle(), &app.state::<Backend>())?;
-            let parsed = url.parse().map_err(|e| format!("Invalid loopback URL: {e}"))?;
-            app.get_webview_window("main").ok_or("Missing main window")?.navigate(parsed).map_err(|e| format!("Could not open local backend: {e}"))?;
+            if let Some(window) = app.get_webview_window("main") {
+                match start_backend(&app.handle(), &app.state::<Backend>()) {
+                    Ok(url) => match url.parse() {
+                        Ok(parsed) => { if let Err(error) = window.navigate(parsed) { eprintln!("Company HQ could not open its backend: {error}"); } },
+                        Err(error) => eprintln!("Company HQ backend returned an invalid address: {error}"),
+                    },
+                    Err(error) => {
+                        eprintln!("Company HQ startup: {error}");
+                        let reason = if error.contains("already running") { "already-running" } else { "backend-failed" };
+                        if let Ok(current) = window.url() {
+                            if let Ok(page) = current.join(&format!("startup-error.html?reason={reason}")) {
+                                if let Err(nav_error) = window.navigate(page) { eprintln!("Company HQ could not show its startup page: {nav_error}"); }
+                            }
+                        }
+                    }
+                }
+            }
             Ok(())
         })
         .build(tauri::generate_context!())
