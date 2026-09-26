@@ -71,6 +71,7 @@ with tempfile.TemporaryDirectory(prefix='hq-browser-') as td:
             page.on('pageerror', lambda e: errors.append(str(e)))
             providers = provider_payload()
             opened = []
+            claude_login_started = []
             picker_results = [{'cancelled': True, 'path': ''}, {'cancelled': False, 'path': str(project)}]
 
             def provider_route(route):
@@ -93,7 +94,11 @@ with tempfile.TemporaryDirectory(prefix='hq-browser-') as td:
                     providers['providers'][1]['runtimeReady'] = True
                     route.fulfill(content_type='application/json', body=json.dumps({'setup': {'state': 'installing', 'canAutoInstall': True, 'message': 'Installing'}}))
                 elif route.request.url.endswith('/claude/check'):
-                    route.fulfill(content_type='application/json', body=json.dumps({'authentication': 'sign_in_required', 'runtimeReady': True, 'models': []}))
+                    route.fulfill(content_type='application/json', body=json.dumps({'authentication': 'signed_in' if claude_login_started else 'sign_in_required', 'runtimeReady': True, 'models': []}))
+                elif route.request.url.endswith('/claude/connect'):
+                    claude_login_started.append(True)
+                    providers['providers'][1]['authentication'] = 'not_checked'
+                    route.fulfill(content_type='application/json', body=json.dumps({'authentication': 'signing_in', 'runtimeReady': True, 'message': 'Finish provider login.'}))
                 else:
                     route.continue_()
 
@@ -164,6 +169,8 @@ with tempfile.TemporaryDirectory(prefix='hq-browser-') as td:
             page.once('dialog', lambda dialog: dialog.accept())
             page.get_by_role('dialog').get_by_role('button', name='Approve & install with Homebrew').click()
             expect(page.get_by_role('dialog').get_by_role('button', name='Sign in with Claude')).to_be_visible(timeout=8000)
+            page.get_by_role('dialog').get_by_role('button', name='Sign in with Claude').click()
+            expect(page.get_by_role('dialog').get_by_role('status').get_by_text('Connected', exact=True)).to_be_visible(timeout=12000)
             assert len(opened) == 3, opened
             page.get_by_text('Connection details and activity', exact=True).click()
             page.get_by_role('button', name='Open desktop app', exact=True).click()

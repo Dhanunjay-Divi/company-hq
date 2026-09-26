@@ -2,7 +2,7 @@
 # Install the pinned unsigned Apple Silicon preview from the public GitHub release.
 set -euo pipefail
 
-version='0.1.2'
+version='0.1.3'
 asset="Company_HQ_${version}_aarch64.dmg"
 release="https://github.com/Dhanunjay-Divi/company-hq/releases/download/v${version}"
 destination="$HOME/Applications"

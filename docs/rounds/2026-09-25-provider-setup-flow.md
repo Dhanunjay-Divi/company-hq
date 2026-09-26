@@ -27,3 +27,17 @@ rejected an unapproved install request. `cargo check`, desktop package
 contracts, and `hdiutil verify` passed. The DMG SHA-256 is
 `5f7401837fe5c0f582903cbf7e279938e23897d869d0b63593b24fdac06cee32`.
 The macOS package remains unsigned and unnotarized.
+
+## 0.1.3 follow-up
+
+The first packaged review exposed one extra click after Claude's browser sign-in:
+the native runtime returned to `not_checked`, leaving the user to press Check
+connection manually. HQ now checks the provider when its in-progress sign-in
+ends and updates the sheet to Connected or Sign in required. Updating a provider
+also leaves its existing dialog open instead of asking the browser to reopen it.
+The browser acceptance fixture covers the install → sign-in → connected path,
+and the model-free, provider/API, Vite, and Rust checks passed. This is a
+synthetic sign-in check; an actual Claude account login still belongs to the
+user on their Mac. The 0.1.3 DMG remains unsigned and unnotarized.
+The 0.1.3 DMG passed `hdiutil verify`; its SHA-256 is
+`430421da84604c5f66689cb1faadbd2dd40123df9a70c8fbca39cc7e729abc17`.

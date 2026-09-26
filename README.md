@@ -43,7 +43,7 @@ Open **Company HQ.app** from Applications. Choose **New chat**, describe the res
 For an Apple Silicon Mac, install the pinned public preview into `~/Applications` with:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/Dhanunjay-Divi/company-hq/v0.1.2/scripts/install-macos.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Dhanunjay-Divi/company-hq/v0.1.3/scripts/install-macos.sh | bash
 ```
 
 The installer checks the release SHA-256 before replacing an existing app. It does not change provider sign-ins or private chat data. This preview is unsigned and not notarized, so macOS may require manual approval under **System Settings → Privacy & Security** on first open. See [desktop packaging](docs/DESKTOP.md) for the release and manual download path.
