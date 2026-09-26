@@ -35,6 +35,19 @@ sign-in without a ready Claude Code runtime. The 0.1.1 DMG passed `hdiutil
 verify`; its SHA-256 is
 `2a3e60de9a93988cae3cda042168cfa4217eae6e1924695e22b49f85f0a86371`.
 
+Publication: commit `fb722d04af9259bcb574057c0097613987835d67` was
+pushed to `main`, tagged `v0.1.1`, and published as a public prerelease at
+https://github.com/Dhanunjay-Divi/company-hq/releases/tag/v0.1.1. Both
+[model-free](https://github.com/Dhanunjay-Divi/company-hq/actions/runs/36208222240)
+and [end-to-end](https://github.com/Dhanunjay-Divi/company-hq/actions/runs/36208222231)
+GitHub checks passed on the release commit. The public installer was fetched
+from the tagged repository source, matched to the local installer, and used to
+install the release DMG into a temporary Applications folder. The bundled app
+was then installed to both `~/Applications` and `/Applications`; both report
+version 0.1.1 and the same executable checksum. The installed user app opened
+normally, and its loopback health endpoint reported normal mode with the
+frontend, routing and Codex runtime available.
+
 No model turn or provider login was attempted. Live Claude, Kimi and Z Code
 authentication on another account remains unverified; the available coding
 runtime and entitlement depend on that user's provider installation. The
